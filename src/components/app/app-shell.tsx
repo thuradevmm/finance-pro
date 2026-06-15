@@ -16,6 +16,7 @@ type AppShellProps = {
   mobileAction?: {
     label: string;
     icon: IconName;
+    href?: string;
     title?: string;
   };
 };

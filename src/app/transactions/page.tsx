@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
@@ -13,7 +15,7 @@ export default function TransactionsPage() {
   return (
     <AppShell
       activeNavLabel="Transactions"
-      mobileAction={{ label: "Add transaction", icon: "plus", title: "Add transaction" }}
+      mobileAction={{ label: "Add transaction", icon: "plus", href: "/transactions/add", title: "Add transaction" }}
       mobileSearchLabel="Search transactions on mobile"
       mobileSearchPlaceholder="Search transactions..."
       mobileSubtitle="Transactions"
@@ -30,13 +32,13 @@ export default function TransactionsPage() {
               <Icon className="size-4" name="download" />
               Export
             </button>
-            <button
+            <Link
               className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-              type="button"
+              href="/transactions/add"
             >
               <Icon className="size-4" name="plus" />
               Add Transaction
-            </button>
+            </Link>
           </>
         }
         description="Manage income, expenses, transfers, receipts, and account activity."

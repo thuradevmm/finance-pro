@@ -27,6 +27,7 @@ export type IconName =
   | "timeline"
   | "trendingDown"
   | "trendingUp"
+  | "upload"
   | "users";
 
 const iconPaths: Record<IconName, string[]> = {
@@ -116,6 +117,7 @@ const iconPaths: Record<IconName, string[]> = {
   timeline: ["M4 19h16", "M6 17V9", "M12 17V5", "M18 17v-7"],
   trendingDown: ["M23 18 13.5 8.5l-5 5L1 6", "M17 18h6v-6"],
   trendingUp: ["M23 6 13.5 15.5l-5-5L1 18", "M17 6h6v6"],
+  upload: ["M12 15V3", "M7 8l5-5 5 5", "M5 21h14a2 2 0 0 0 2-2v-3", "M3 16v3a2 2 0 0 0 2 2"],
   users: [
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2",
     "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
