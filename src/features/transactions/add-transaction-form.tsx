@@ -83,9 +83,24 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
 
 export function AddTransactionForm() {
   const [selectedType, setSelectedType] = useState<TransactionType>("Expense");
+  const [amount, setAmount] = useState("");
+  const [showAmountError, setShowAmountError] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
   const isTransfer = selectedType === "Transfer";
   const categoryOptions = selectedType === "Income" ? incomeCategories : expenseCategories;
+  const amountHasError = showAmountError && amount.trim() === "";
+
+  function handleAmountChange(value: string) {
+    setAmount(value);
+
+    if (value.trim() !== "") {
+      setShowAmountError(false);
+    }
+  }
+
+  function handleSaveTransaction() {
+    setShowAmountError(amount.trim() === "");
+  }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -126,12 +141,22 @@ export function AddTransactionForm() {
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-[#45464d]">$</span>
                   <input
-                    className="h-12 w-full rounded-lg border border-[#ba1a1a] bg-white pl-9 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                    aria-invalid={amountHasError}
+                    aria-describedby={amountHasError ? "amount-error" : undefined}
+                    className={`h-12 w-full rounded-lg border bg-white pl-9 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
+                      amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"
+                    }`}
+                    onChange={(event) => handleAmountChange(event.target.value)}
                     placeholder="0.00"
                     type="number"
+                    value={amount}
                   />
                 </div>
-                <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Amount is required.</p>
+                {amountHasError ? (
+                  <p className="mt-1 text-xs font-medium text-[#ba1a1a]" id="amount-error">
+                    Amount is required.
+                  </p>
+                ) : null}
               </div>
 
               <div>
@@ -205,6 +230,7 @@ export function AddTransactionForm() {
             </button>
             <button
               className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+              onClick={handleSaveTransaction}
               type="button"
             >
               Save Transaction
