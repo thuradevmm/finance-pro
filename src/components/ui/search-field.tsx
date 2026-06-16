@@ -4,9 +4,11 @@ type SearchFieldProps = {
   label: string;
   placeholder: string;
   className?: string;
+  onChange?: (value: string) => void;
+  value?: string;
 };
 
-export function SearchField({ label, placeholder, className = "" }: SearchFieldProps) {
+export function SearchField({ label, placeholder, className = "", onChange, value }: SearchFieldProps) {
   return (
     <label className={`relative min-w-56 flex-1 ${className}`}>
       <span className="sr-only">{label}</span>
@@ -14,8 +16,10 @@ export function SearchField({ label, placeholder, className = "" }: SearchFieldP
       <input
         aria-label={label}
         className="h-10 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-3 text-sm text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         placeholder={placeholder}
         type="search"
+        value={value}
       />
     </label>
   );

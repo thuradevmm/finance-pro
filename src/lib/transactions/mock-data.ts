@@ -109,8 +109,8 @@ export const transactions: Transaction[] = [
 ];
 
 export const transactionFilterOptions: TransactionFilterOptions = {
-  category: ["Category", "Food", "Housing", "Subscriptions", "Travel", "Utilities"],
-  account: ["Account", "Chase Sapphire", "Amex Platinum", "Main Checking", "Travel Wallet"],
+  category: ["Category", "Food", "Housing", "Income", "Subscriptions", "Transfer", "Travel", "Utilities"],
+  account: ["Account", "Chase Sapphire", "Amex Platinum", "Main Checking", "High-Yield Savings", "Travel Wallet"],
   type: ["Type", "Income", "Expense", "Transfer"],
   amount: ["Amount", "> $100", "< $100", "$500+"],
 };

@@ -14,6 +14,8 @@ export type IconName =
   | "dashboard"
   | "document"
   | "download"
+  | "edit"
+  | "eye"
   | "help"
   | "moreVertical"
   | "plus"
@@ -25,6 +27,7 @@ export type IconName =
   | "sync"
   | "target"
   | "timeline"
+  | "trash"
   | "trendingDown"
   | "trendingUp"
   | "upload"
@@ -77,6 +80,14 @@ const iconPaths: Record<IconName, string[]> = {
     "M8 17h6",
   ],
   download: ["M12 3v12", "M7 10l5 5 5-5", "M5 21h14"],
+  edit: [
+    "M12 20h9",
+    "M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z",
+  ],
+  eye: [
+    "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z",
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  ],
   help: [
     "M9.1 9a3 3 0 1 1 5.8 1c-.8 1.2-2.9 1.7-2.9 3.5",
     "M12 18h.01",
@@ -85,7 +96,7 @@ const iconPaths: Record<IconName, string[]> = {
   moreVertical: ["M12 8h.01", "M12 12h.01", "M12 16h.01"],
   plus: ["M12 5v14", "M5 12h14"],
   receipt: [
-    "M7 3h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-3 2V5a2 2 0 0 1 2-2z",
+    "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z",
     "M9 8h6",
     "M9 12h6",
     "M9 16h4",
@@ -115,6 +126,7 @@ const iconPaths: Record<IconName, string[]> = {
     "M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
   ],
   timeline: ["M4 19h16", "M6 17V9", "M12 17V5", "M18 17v-7"],
+  trash: ["M3 6h18", "M8 6V4h8v2", "M6 6l1 16h10l1-16", "M10 11v6", "M14 11v6"],
   trendingDown: ["M23 18 13.5 8.5l-5 5L1 6", "M17 18h6v-6"],
   trendingUp: ["M23 6 13.5 15.5l-5-5L1 18", "M17 6h6v6"],
   upload: ["M12 15V3", "M7 8l5-5 5 5", "M5 21h14a2 2 0 0 0 2-2v-3", "M3 16v3a2 2 0 0 0 2 2"],

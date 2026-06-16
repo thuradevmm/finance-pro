@@ -2,14 +2,10 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
-import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
-import { TransactionsFilters } from "@/features/transactions/transactions-filters";
-import { TransactionsTable } from "@/features/transactions/transactions-table";
+import { TransactionsPageContent } from "@/features/transactions/transactions-page-content";
 import { transactionFilterOptions, transactions, transactionSummaries } from "@/lib/transactions/mock-data";
-
-const transactionTabs = ["All", "Income", "Expense", "Transfer"];
 
 export default function TransactionsPage() {
   return (
@@ -46,9 +42,7 @@ export default function TransactionsPage() {
       />
 
       <SummaryCards summaries={transactionSummaries} />
-      <SegmentedTabs activeTab="All" tabs={transactionTabs} />
-      <TransactionsFilters filterOptions={transactionFilterOptions} />
-      <TransactionsTable totalResults={97} transactions={transactions} />
+      <TransactionsPageContent filterOptions={transactionFilterOptions} transactions={transactions} />
     </AppShell>
   );
 }
