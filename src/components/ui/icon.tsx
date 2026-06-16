@@ -16,18 +16,23 @@ export type IconName =
   | "download"
   | "edit"
   | "eye"
+  | "food"
   | "help"
+  | "home"
+  | "medical"
   | "moreVertical"
   | "plus"
   | "receipt"
   | "savings"
   | "search"
   | "settings"
+  | "shopping"
   | "subscriptions"
   | "sync"
   | "target"
   | "timeline"
   | "trash"
+  | "travel"
   | "trendingDown"
   | "trendingUp"
   | "upload"
@@ -88,11 +93,14 @@ const iconPaths: Record<IconName, string[]> = {
     "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   ],
+  food: ["M4 3v8", "M8 3v8", "M6 3v18", "M14 3v18", "M14 3c3 2 5 5 5 9h-5"],
   help: [
     "M9.1 9a3 3 0 1 1 5.8 1c-.8 1.2-2.9 1.7-2.9 3.5",
     "M12 18h.01",
     "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   ],
+  home: ["M3 11 12 4l9 7", "M5 10v10h14V10", "M9 20v-6h6v6"],
+  medical: ["M12 5v14", "M5 12h14", "M4 4h16v16H4z"],
   moreVertical: ["M12 8h.01", "M12 12h.01", "M12 16h.01"],
   plus: ["M12 5v14", "M5 12h14"],
   receipt: [
@@ -113,6 +121,7 @@ const iconPaths: Record<IconName, string[]> = {
     "M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z",
     "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2a2 2 0 1 1-4 0V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7.2 4l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 20 7.2l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1z",
   ],
+  shopping: ["M6 7h12l-1 14H7L6 7z", "M9 7a3 3 0 0 1 6 0", "M9 11h.01", "M15 11h.01"],
   subscriptions: [
     "M7 8h10",
     "M7 12h10",
@@ -127,6 +136,7 @@ const iconPaths: Record<IconName, string[]> = {
   ],
   timeline: ["M4 19h16", "M6 17V9", "M12 17V5", "M18 17v-7"],
   trash: ["M3 6h18", "M8 6V4h8v2", "M6 6l1 16h10l1-16", "M10 11v6", "M14 11v6"],
+  travel: ["M2 16l20-8-20-4 4 6-4 6z", "M6 10l6 2", "M6 16l6-4"],
   trendingDown: ["M23 18 13.5 8.5l-5 5L1 6", "M17 18h6v-6"],
   trendingUp: ["M23 6 13.5 15.5l-5-5L1 18", "M17 6h6v6"],
   upload: ["M12 15V3", "M7 8l5-5 5 5", "M5 21h14a2 2 0 0 0 2-2v-3", "M3 16v3a2 2 0 0 0 2 2"],

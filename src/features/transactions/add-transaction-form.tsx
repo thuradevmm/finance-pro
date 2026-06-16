@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Icon, type IconName } from "@/components/ui/icon";
+import { getCategoriesForScope } from "@/lib/categories/category-scopes";
+import { categories } from "@/lib/categories/mock-data";
 import type { TransactionType } from "@/types/finance";
 
 type TransactionTypeOption = {
@@ -48,8 +50,6 @@ const transactionTypes: TransactionTypeOption[] = [
 ];
 
 const accountOptions = ["Checking Account (...4582)", "Credit Card (...9921)", "Cash Wallet", "High-Yield Savings"];
-const expenseCategories = ["Groceries", "Dining Out", "Utilities", "Transportation", "Subscription"];
-const incomeCategories = ["Salary", "Freelance", "Bonus", "Interest", "Other Income"];
 const transferAccounts = ["High-Yield Savings", "Main Checking", "Cash Wallet", "Travel Wallet"];
 
 function FieldLabel({ children }: { children: string }) {
@@ -87,6 +87,8 @@ export function AddTransactionForm() {
   const [showAmountError, setShowAmountError] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
   const isTransfer = selectedType === "Transfer";
+  const expenseCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", "Expense").map((category) => category.name), []);
+  const incomeCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", "Income").map((category) => category.name), []);
   const categoryOptions = selectedType === "Income" ? incomeCategories : expenseCategories;
   const amountHasError = showAmountError && amount.trim() === "";
 

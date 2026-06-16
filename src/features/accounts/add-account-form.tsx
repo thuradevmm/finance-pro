@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Icon, type IconName } from "@/components/ui/icon";
+import { getCategoriesForScope } from "@/lib/categories/category-scopes";
+import { categories } from "@/lib/categories/mock-data";
 import type { AccountStatus, AccountType } from "@/types/finance";
 
 type AccountTypeOption = {
@@ -139,6 +141,9 @@ export function AddAccountForm() {
   const [openingBalance, setOpeningBalance] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [status, setStatus] = useState<AccountStatus>("Active");
+  const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts").map((category) => category.name), []);
+  const accountCategoryOptions = accountCategories.length > 0 ? accountCategories : ["Everyday Banking"];
+  const [selectedCategory, setSelectedCategory] = useState(accountCategoryOptions[0]);
   const [showErrors, setShowErrors] = useState(false);
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
   const accountNameHasError = showErrors && accountName.trim() === "";
@@ -223,6 +228,10 @@ export function AddAccountForm() {
           <FormCard title="Account Settings">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Status" onChange={(value) => setStatus(value as AccountStatus)} options={statuses} value={status} />
+              <SelectInput label="Account Category" onChange={setSelectedCategory} options={accountCategoryOptions} value={selectedCategory} />
+            </div>
+
+            <div className="mt-5">
               <TextInput label="Monthly Budget Limit" placeholder="Optional" type="number" />
             </div>
 
@@ -286,6 +295,10 @@ export function AddAccountForm() {
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
               <span className="text-sm font-semibold text-[#0b1c30]">{status}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
+              <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory}</span>
             </div>
           </div>
         </div>
