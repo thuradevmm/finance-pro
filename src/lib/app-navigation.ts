@@ -10,7 +10,7 @@ export const navGroups: NavItem[][] = [
   [
     { label: "Dashboard", icon: "dashboard", href: "#" },
     { label: "Transactions", icon: "receipt", href: "/transactions" },
-    { label: "Accounts", icon: "account", href: "#" },
+    { label: "Accounts", icon: "account", href: "/accounts" },
     { label: "Categories", icon: "category", href: "#" },
     { label: "Budgets", icon: "savings", href: "#" },
   ],
