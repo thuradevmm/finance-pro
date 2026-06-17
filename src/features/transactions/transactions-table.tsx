@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
@@ -38,6 +41,18 @@ function AttachmentIcon({ attachment }: { attachment?: Transaction["attachment"]
   );
 }
 
+function getAttachmentLabel(attachment?: Transaction["attachment"]) {
+  if (attachment === "receipt") {
+    return "Receipt attached";
+  }
+
+  if (attachment === "document") {
+    return "Document attached";
+  }
+
+  return "No file attached";
+}
+
 type TransactionAction = "view" | "edit" | "delete";
 
 const transactionActions: {
@@ -53,14 +68,41 @@ const transactionActions: {
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
-  const resultStart = transactions.length > 0 ? 1 : 0;
-  const visibleTransactionIds = useMemo(() => transactions.map((transaction) => transaction.id), [transactions]);
+  const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
+  const [deletedTransactionIds, setDeletedTransactionIds] = useState<string[]>([]);
+  const visibleTransactions = useMemo(
+    () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
+    [deletedTransactionIds, transactions],
+  );
+  const resultStart = visibleTransactions.length > 0 ? 1 : 0;
+  const visibleTotalResults = Math.max(0, totalResults - transactions.filter((transaction) => deletedTransactionIds.includes(transaction.id)).length);
+  const visibleTransactionIds = useMemo(() => visibleTransactions.map((transaction) => transaction.id), [visibleTransactions]);
   const selectedVisibleCount = selectedTransactionIds.filter((id) => visibleTransactionIds.includes(id)).length;
   const hasSelectedTransactions = selectedVisibleCount > 0;
-  const allVisibleSelected = transactions.length > 0 && selectedVisibleCount === transactions.length;
+  const allVisibleSelected = visibleTransactions.length > 0 && selectedVisibleCount === visibleTransactions.length;
 
-  function handleAction() {
-    // Placeholder for wiring transaction detail, edit, and delete flows.
+  function handleAction(action: TransactionAction, transaction: Transaction) {
+    if (action === "view") {
+      setViewedTransaction(transaction);
+      return;
+    }
+
+    if (action === "delete") {
+      setViewedTransaction(null);
+      setDeletingTransaction(transaction);
+    }
+  }
+
+  function confirmDeleteTransaction() {
+    if (!deletingTransaction) {
+      return;
+    }
+
+    setDeletedTransactionIds((currentIds) => [...currentIds, deletingTransaction.id]);
+    setSelectedTransactionIds((currentIds) => currentIds.filter((id) => id !== deletingTransaction.id));
+    setViewedTransaction((currentTransaction) => (currentTransaction?.id === deletingTransaction.id ? null : currentTransaction));
+    setDeletingTransaction(null);
   }
 
   function handleBulkAction() {
@@ -127,7 +169,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   aria-label="Select all visible transactions"
                   checked={allVisibleSelected}
                   className="size-4 rounded border-[#c6c6cd]"
-                  disabled={transactions.length === 0}
+                  disabled={visibleTransactions.length === 0}
                   onChange={toggleAllVisibleTransactions}
                   type="checkbox"
                 />
@@ -151,8 +193,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {transactions.length > 0 ? (
-              transactions.map((transaction) => (
+            {visibleTransactions.length > 0 ? (
+              visibleTransactions.map((transaction) => (
                 <tr className="group transition hover:bg-[#f8f9ff]" key={transaction.id}>
                   <td className="px-4 py-4 text-center">
                     <input
@@ -184,16 +226,28 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <td className="w-36 px-4 py-4 text-right">
                     <div className="flex min-w-28 justify-end gap-1">
                       {transactionActions.map((item) => (
-                        <button
-                          aria-label={`${item.label} for ${transaction.id}`}
-                          className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
-                          key={item.action}
-                          onClick={handleAction}
-                          title={item.label}
-                          type="button"
-                        >
-                          <Icon className="size-4" name={item.icon} />
-                        </button>
+                        item.action === "edit" ? (
+                          <Link
+                            aria-label={`${item.label} for ${transaction.id}`}
+                            className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                            href={`/transactions/${transaction.id}/edit`}
+                            key={item.action}
+                            title={item.label}
+                          >
+                            <Icon className="size-4" name={item.icon} />
+                          </Link>
+                        ) : (
+                          <button
+                            aria-label={`${item.label} for ${transaction.id}`}
+                            className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                            key={item.action}
+                            onClick={() => handleAction(item.action, transaction)}
+                            title={item.label}
+                            type="button"
+                          >
+                            <Icon className="size-4" name={item.icon} />
+                          </button>
+                        )
                       ))}
                     </div>
                   </td>
@@ -211,8 +265,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       </div>
 
       <div className="grid gap-3 lg:hidden">
-        {transactions.length > 0 ? (
-          transactions.map((transaction) => (
+        {visibleTransactions.length > 0 ? (
+          visibleTransactions.map((transaction) => (
             <article className="rounded-md border border-[#c6c6cd]/60 bg-white p-4" key={transaction.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 gap-3">
@@ -241,16 +295,28 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               </div>
               <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
                 {transactionActions.map((item) => (
-                  <button
-                    aria-label={`${item.label} for ${transaction.id}`}
-                    className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
-                    key={item.action}
-                    onClick={handleAction}
-                    title={item.label}
-                    type="button"
-                  >
-                    <Icon className="size-4" name={item.icon} />
-                  </button>
+                  item.action === "edit" ? (
+                    <Link
+                      aria-label={`${item.label} for ${transaction.id}`}
+                      className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                      href={`/transactions/${transaction.id}/edit`}
+                      key={item.action}
+                      title={item.label}
+                    >
+                      <Icon className="size-4" name={item.icon} />
+                    </Link>
+                  ) : (
+                    <button
+                      aria-label={`${item.label} for ${transaction.id}`}
+                      className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                      key={item.action}
+                      onClick={() => handleAction(item.action, transaction)}
+                      title={item.label}
+                      type="button"
+                    >
+                      <Icon className="size-4" name={item.icon} />
+                    </button>
+                  )
                 ))}
               </div>
             </article>
@@ -265,8 +331,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       <div className="flex flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-[#f8f9ff]">
         <p className="text-sm text-[#45464d]">
           Showing <span className="font-semibold text-[#0b1c30]">{resultStart}</span> to{" "}
-          <span className="font-semibold text-[#0b1c30]">{transactions.length}</span> of{" "}
-          <span className="font-semibold text-[#0b1c30]">{totalResults}</span> results
+          <span className="font-semibold text-[#0b1c30]">{visibleTransactions.length}</span> of{" "}
+          <span className="font-semibold text-[#0b1c30]">{visibleTotalResults}</span> results
         </p>
         <nav aria-label="Pagination" className="inline-flex w-fit overflow-hidden rounded-md border border-[#c6c6cd] bg-white shadow-sm">
           <button
@@ -300,6 +366,68 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           </button>
         </nav>
       </div>
+      <DetailModal
+        actions={
+          <>
+            <Link
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+              href={viewedTransaction ? `/transactions/${viewedTransaction.id}/edit` : "/transactions"}
+            >
+              <Icon className="size-4" name="edit" />
+              Edit
+            </Link>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-[#fecaca] bg-white px-4 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0]"
+              onClick={() => {
+                if (viewedTransaction) {
+                  handleAction("delete", viewedTransaction);
+                }
+              }}
+              type="button"
+            >
+              <Icon className="size-4" name="trash" />
+              Delete
+            </button>
+          </>
+        }
+        icon="receipt"
+        iconClassName="bg-[#eff6ff] text-[#0058be]"
+        isOpen={viewedTransaction !== null}
+        onClose={() => setViewedTransaction(null)}
+        subtitle={viewedTransaction ? `${viewedTransaction.date} · ${viewedTransaction.account}` : undefined}
+        title={viewedTransaction ? viewedTransaction.id : "Transaction detail"}
+      >
+        {viewedTransaction ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <TransactionTypeBadge type={viewedTransaction.type} />
+                <CategoryBadge category={viewedTransaction.category} />
+              </div>
+              <p className={`text-lg font-bold ${amountClass(viewedTransaction.type)}`}>{viewedTransaction.amount}</p>
+            </div>
+            <DetailModalSection title="Transaction information">
+              <DetailModalField label="Date" value={viewedTransaction.date} />
+              <DetailModalField label="Payment method" value={viewedTransaction.paymentMethod} />
+              <DetailModalField label="Account" value={viewedTransaction.account} />
+              <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
+            </DetailModalSection>
+            <DetailModalSection title="Note">
+              <div className="rounded-md border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-3 sm:col-span-2">
+                <p className="text-sm font-medium text-[#0b1c30]">{viewedTransaction.note}</p>
+              </div>
+            </DetailModalSection>
+          </div>
+        ) : null}
+      </DetailModal>
+      <DeleteConfirmationDialog
+        description="Deleting this transaction will remove it from the transaction list and clear any selected state for this record."
+        isOpen={deletingTransaction !== null}
+        itemLabel={deletingTransaction ? `${deletingTransaction.id} · ${deletingTransaction.note}` : "Transaction"}
+        onCancel={() => setDeletingTransaction(null)}
+        onConfirm={confirmDeleteTransaction}
+        title="Delete Transaction"
+      />
     </section>
   );
 }

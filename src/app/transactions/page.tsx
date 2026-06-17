@@ -7,7 +7,14 @@ import { Icon } from "@/components/ui/icon";
 import { TransactionsPageContent } from "@/features/transactions/transactions-page-content";
 import { transactionFilterOptions, transactions, transactionSummaries } from "@/lib/transactions/mock-data";
 
-export default function TransactionsPage() {
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ account?: string | string[] }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const requestedAccount = Array.isArray(resolvedSearchParams.account) ? resolvedSearchParams.account[0] : resolvedSearchParams.account;
+
   return (
     <AppShell
       activeNavLabel="Transactions"
@@ -42,7 +49,7 @@ export default function TransactionsPage() {
       />
 
       <SummaryCards summaries={transactionSummaries} />
-      <TransactionsPageContent filterOptions={transactionFilterOptions} transactions={transactions} />
+      <TransactionsPageContent filterOptions={transactionFilterOptions} initialAccountFilter={requestedAccount} transactions={transactions} />
     </AppShell>
   );
 }

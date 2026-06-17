@@ -43,14 +43,6 @@ export function AppSidebar({ activeLabel, groups = navGroups }: AppSidebarProps)
             </div>
           ))}
         </nav>
-
-        <a
-          className="mt-6 flex h-12 items-center gap-3 border-t border-[#c6c6cd]/40 pt-6 text-sm font-semibold text-[#45464d]"
-          href="#"
-        >
-          <span className="grid size-9 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">AF</span>
-          <span>Profile</span>
-        </a>
       </div>
     </aside>
   );

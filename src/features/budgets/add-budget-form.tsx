@@ -55,6 +55,10 @@ export function AddBudgetForm() {
   const [period, setPeriod] = useState<BudgetPeriod>("Monthly");
   const [budgetAmount, setBudgetAmount] = useState("");
   const [startDate, setStartDate] = useState("2026-06-01");
+  const [endDate, setEndDate] = useState("");
+  const [alertThreshold, setAlertThreshold] = useState("80%");
+  const [status, setStatus] = useState("Active");
+  const [description, setDescription] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const selectedCategory = expenseCategories.find((category) => category.id === selectedCategoryId) ?? expenseCategories[0];
   const amountHasError = showErrors && budgetAmount.trim() === "";
@@ -101,17 +105,17 @@ export function AddBudgetForm() {
               <TextInput error={startDateHasError} label="Start Date" onChange={setStartDate} placeholder="2026-06-01" value={startDate} />
               {startDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start date is required.</p> : null}
             </div>
-            <TextInput label="End Date" placeholder={period === "Monthly" ? "2026-06-30" : "2026-12-31"} />
+            <TextInput label="End Date" onChange={setEndDate} placeholder={period === "Monthly" ? "2026-06-30" : "2026-12-31"} value={endDate} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Alert Threshold" options={alertThresholds} />
-            <SelectInput label="Status" options={["Active", "Paused"]} />
+            <SelectInput label="Alert Threshold" onChange={setAlertThreshold} options={alertThresholds} value={alertThreshold} />
+            <SelectInput label="Status" onChange={setStatus} options={["Active", "Paused"]} value={status} />
           </div>
         </FormCard>
 
         <FormCard title="Budget Notes">
-          <TextAreaInput label="Description" placeholder="Optional note about this budget target..." />
+          <TextAreaInput label="Description" onChange={setDescription} placeholder="Optional note about this budget target..." value={description} />
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
@@ -169,9 +173,20 @@ export function AddBudgetForm() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Alert</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">80%</dd>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{alertThreshold}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Status</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{status}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">End</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{endDate || "Not set"}</dd>
               </div>
             </dl>
+            <p className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-sm font-medium text-[#45464d]">
+              {description || "Budget note will appear here."}
+            </p>
           </div>
         </div>
       </aside>

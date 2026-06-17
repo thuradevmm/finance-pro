@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 import { Icon, type IconName } from "@/components/ui/icon";
+import { formatSignedAmount } from "@/features/transactions/transaction-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
 import type { TransactionType } from "@/types/finance";
@@ -56,12 +57,34 @@ function FieldLabel({ children }: { children: string }) {
   return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{children}</label>;
 }
 
-function SelectInput({ label, options }: { label: string; options: string[] }) {
+function formatDatePreview(value: string) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+}
+
+function SelectInput({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: string[];
+  value: string;
+}) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
       <div className="relative">
-        <select className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-10 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20">
+        <select
+          className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-10 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          onChange={(event) => onChange(event.target.value)}
+          value={value}
+        >
           {options.map((option) => (
             <option key={option}>{option}</option>
           ))}
@@ -84,13 +107,27 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
 export function AddTransactionForm() {
   const [selectedType, setSelectedType] = useState<TransactionType>("Expense");
   const [amount, setAmount] = useState("");
+  const [transactionDate, setTransactionDate] = useState("2026-06-15");
+  const [account, setAccount] = useState(accountOptions[0]);
+  const [transferToAccount, setTransferToAccount] = useState(transferAccounts[0]);
+  const [category, setCategory] = useState("Food");
+  const [paymentMethod, setPaymentMethod] = useState("Credit Card");
+  const [status, setStatus] = useState("Cleared");
+  const [note, setNote] = useState("");
   const [showAmountError, setShowAmountError] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
   const isTransfer = selectedType === "Transfer";
   const expenseCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", "Expense").map((category) => category.name), []);
   const incomeCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", "Income").map((category) => category.name), []);
   const categoryOptions = selectedType === "Income" ? incomeCategories : expenseCategories;
+  const paymentMethodOptions = isTransfer
+    ? ["Internal Transfer", "Bank Transfer", "Wallet Transfer"]
+    : selectedType === "Income"
+      ? ["Direct Deposit", "Bank Transfer", "Cash", "Digital Wallet"]
+      : ["Credit Card", "Debit Card", "Cash", "Digital Wallet"];
   const amountHasError = showAmountError && amount.trim() === "";
+  const previewCategory = isTransfer ? transferToAccount : category;
+  const previewAmount = formatSignedAmount(amount, selectedType);
 
   function handleAmountChange(value: string) {
     setAmount(value);
@@ -102,6 +139,24 @@ export function AddTransactionForm() {
 
   function handleSaveTransaction() {
     setShowAmountError(amount.trim() === "");
+  }
+
+  function handleTypeChange(type: TransactionType) {
+    setSelectedType(type);
+
+    if (type === "Income") {
+      setCategory(incomeCategories[0] ?? "");
+      setPaymentMethod("Direct Deposit");
+      return;
+    }
+
+    if (type === "Transfer") {
+      setPaymentMethod("Internal Transfer");
+      return;
+    }
+
+    setCategory(expenseCategories[0] ?? "");
+    setPaymentMethod("Credit Card");
   }
 
   return (
@@ -121,7 +176,7 @@ export function AddTransactionForm() {
                       : "rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 text-left text-[#45464d] transition hover:border-[#2170e4]/50 hover:bg-[#eff4ff]"
                   }
                   key={option.type}
-                  onClick={() => setSelectedType(option.type)}
+                  onClick={() => handleTypeChange(option.type)}
                   type="button"
                 >
                   <span className="mb-3 flex items-center gap-2 text-sm font-bold">
@@ -166,7 +221,8 @@ export function AddTransactionForm() {
                 <input
                   className="h-12 w-full rounded-lg border border-[#c6c6cd] bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                   type="date"
-                  defaultValue="2026-06-15"
+                  onChange={(event) => setTransactionDate(event.target.value)}
+                  value={transactionDate}
                 />
               </div>
             </div>
@@ -174,23 +230,20 @@ export function AddTransactionForm() {
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               {isTransfer ? (
                 <>
-                  <SelectInput label="From Account" options={accountOptions} />
-                  <SelectInput label="To Account" options={transferAccounts} />
+                  <SelectInput label="From Account" onChange={setAccount} options={accountOptions} value={account} />
+                  <SelectInput label="To Account" onChange={setTransferToAccount} options={transferAccounts} value={transferToAccount} />
                 </>
               ) : (
                 <>
-                  <SelectInput label="Account" options={accountOptions} />
-                  <SelectInput label="Category" options={categoryOptions} />
+                  <SelectInput label="Account" onChange={setAccount} options={accountOptions} value={account} />
+                  <SelectInput label="Category" onChange={setCategory} options={categoryOptions} value={category} />
                 </>
               )}
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <SelectInput
-                label="Payment Method"
-                options={isTransfer ? ["Internal Transfer", "Bank Transfer", "Wallet Transfer"] : ["Credit Card", "Debit Card", "Cash", "Digital Wallet"]}
-              />
-              <SelectInput label="Status" options={["Cleared", "Pending", "Scheduled"]} />
+              <SelectInput label="Payment Method" onChange={setPaymentMethod} options={paymentMethodOptions} value={paymentMethod} />
+              <SelectInput label="Status" onChange={setStatus} options={["Cleared", "Pending", "Scheduled"]} value={status} />
             </div>
           </FormCard>
 
@@ -200,7 +253,9 @@ export function AddTransactionForm() {
               <textarea
                 className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                 placeholder={isTransfer ? "Transfer purpose or memo..." : "Optional details..."}
+                onChange={(event) => setNote(event.target.value)}
                 rows={4}
+                value={note}
               />
             </div>
 
@@ -247,20 +302,34 @@ export function AddTransactionForm() {
             <Icon className="size-10" name={selectedOption.previewIcon} />
           </div>
           <p className="text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
-          <h3 className={`mt-2 text-5xl font-bold ${selectedOption.accent}`}>$0.00</h3>
+          <h3 className={`mt-2 text-5xl font-bold ${selectedOption.accent}`}>{previewAmount}</h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-left">
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Date</span>
-              <span className="text-sm font-semibold text-[#0b1c30]">Jun 15, 2026</span>
+              <span className="text-sm font-semibold text-[#0b1c30]">{formatDatePreview(transactionDate)}</span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">{isTransfer ? "From" : "Account"}</span>
-              <span className="text-sm font-semibold text-[#0b1c30]">Checking</span>
+              <span className="text-right text-sm font-semibold text-[#0b1c30]">{account}</span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">{isTransfer ? "To" : "Category"}</span>
-              <span className="text-sm font-semibold text-[#0b1c30]">{isTransfer ? "Savings" : selectedType === "Income" ? "Salary" : "Groceries"}</span>
+              <span className="text-right text-sm font-semibold text-[#0b1c30]">{previewCategory}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Method</span>
+              <span className="text-right text-sm font-semibold text-[#0b1c30]">{paymentMethod}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
+              <span className="text-sm font-semibold text-[#0b1c30]">{status}</span>
+            </div>
+            <div className="border-t border-[#c6c6cd]/40 pt-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Note</span>
+              <p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">
+                {note.trim() || (isTransfer ? "Transfer purpose or memo" : "Optional details")}
+              </p>
             </div>
           </div>
         </div>

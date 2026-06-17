@@ -1,4 +1,11 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
+import { calculateUsageDuration } from "@/lib/date-duration";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
 const statusStyles: Record<AssetStatus, string> = {
@@ -14,7 +21,47 @@ const conditionStyles: Record<AssetRecord["condition"], string> = {
   "Needs Repair": "text-[#b42318]",
 };
 
-function AssetCard({ asset }: { asset: AssetRecord }) {
+const amountRanges = ["All amounts", "Under $500", "$500 - $1,500", "$1,500+"] as const;
+
+function parseCurrency(value: string) {
+  return Number(value.replace(/[^0-9.]/g, "")) || 0;
+}
+
+function formatCurrency(value: number) {
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+}
+
+function getPurchaseYear(asset: AssetRecord) {
+  const purchaseDate = new Date(asset.purchaseDate);
+
+  if (Number.isNaN(purchaseDate.getTime())) {
+    return "Unknown";
+  }
+
+  return String(purchaseDate.getFullYear());
+}
+
+function matchesAmountRange(asset: AssetRecord, range: (typeof amountRanges)[number]) {
+  const purchaseAmount = parseCurrency(asset.purchaseAmount);
+
+  if (range === "Under $500") {
+    return purchaseAmount < 500;
+  }
+
+  if (range === "$500 - $1,500") {
+    return purchaseAmount >= 500 && purchaseAmount <= 1500;
+  }
+
+  if (range === "$1,500+") {
+    return purchaseAmount > 1500;
+  }
+
+  return true;
+}
+
+function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: string) => void }) {
+  const usageDuration = calculateUsageDuration(asset.startUsingDate);
+
   return (
     <article className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="mb-5 flex items-start justify-between gap-4">
@@ -41,7 +88,7 @@ function AssetCard({ asset }: { asset: AssetRecord }) {
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Used</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{asset.usageDuration}</dd>
+          <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{usageDuration}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Condition</dt>
@@ -52,19 +99,14 @@ function AssetCard({ asset }: { asset: AssetRecord }) {
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-4">
         <p className="truncate text-sm font-medium text-[#45464d]">{asset.note}</p>
         <div className="flex shrink-0 gap-1">
-          <button className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff]" type="button">
-            <Icon className="size-4" name="edit" />
-          </button>
-          <button className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]" type="button">
-            <Icon className="size-4" name="trash" />
-          </button>
+          <RecordActions editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
         </div>
       </div>
     </article>
   );
 }
 
-function AssetsTable({ assets }: { assets: AssetRecord[] }) {
+function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (id: string) => void }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -100,16 +142,11 @@ function AssetsTable({ assets }: { assets: AssetRecord[] }) {
                 <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.purchaseDate}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{asset.purchaseAmount}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{asset.currentValue}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.usageDuration}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDate)}</td>
                 <td className={`whitespace-nowrap px-4 py-4 font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <button className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff]" type="button">
-                      <Icon className="size-4" name="edit" />
-                    </button>
-                    <button className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]" type="button">
-                      <Icon className="size-4" name="trash" />
-                    </button>
+                    <RecordActions editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
                   </div>
                 </td>
               </tr>
@@ -121,8 +158,122 @@ function AssetsTable({ assets }: { assets: AssetRecord[] }) {
   );
 }
 
+function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All categories");
+  const [year, setYear] = useState("All years");
+  const [amountRange, setAmountRange] = useState<(typeof amountRanges)[number]>("All amounts");
+
+  const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(assets.map((asset) => asset.category)))], [assets]);
+  const yearOptions = useMemo(
+    () =>
+      [
+        "All years",
+        ...Array.from(new Set(assets.map(getPurchaseYear))).sort((firstYear, secondYear) => Number(secondYear) - Number(firstYear)),
+      ],
+    [assets],
+  );
+  const filteredAssets = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return assets
+      .filter((asset) => {
+        const searchTarget = `${asset.name} ${asset.category} ${asset.note}`.toLowerCase();
+        const searchMatches = normalizedSearch === "" || searchTarget.includes(normalizedSearch);
+        const categoryMatches = category === "All categories" || asset.category === category;
+        const yearMatches = year === "All years" || getPurchaseYear(asset) === year;
+        const amountMatches = matchesAmountRange(asset, amountRange);
+
+        return searchMatches && categoryMatches && yearMatches && amountMatches;
+      })
+      .sort((firstAsset, secondAsset) => new Date(secondAsset.purchaseDate).getTime() - new Date(firstAsset.purchaseDate).getTime());
+  }, [amountRange, assets, category, search, year]);
+  const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + parseCurrency(asset.purchaseAmount), 0);
+
+  function clearFilters() {
+    setSearch("");
+    setCategory("All categories");
+    setYear("All years");
+    setAmountRange("All amounts");
+  }
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-bold uppercase text-[#45464d]">Asset History</h2>
+            <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+              {filteredAssets.length} purchases totaling {formatCurrency(totalPurchaseCost)}
+            </p>
+          </div>
+          <button
+            className="inline-flex h-10 w-fit items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+            onClick={clearFilters}
+            type="button"
+          >
+            Clear Filters
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <TextInput label="Search History" onChange={setSearch} placeholder="Search asset, category, note..." value={search} />
+          <SelectInput label="Category" onChange={setCategory} options={categoryOptions} value={category} />
+          <SelectInput label="Purchase Year" onChange={setYear} options={yearOptions} value={year} />
+          <SelectInput label="Purchase Amount" onChange={(value) => setAmountRange(value as (typeof amountRanges)[number])} options={[...amountRanges]} value={amountRange} />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[920px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-[#c6c6cd]/50">
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Asset</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Bought Date</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Cost at Purchase</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Start Using</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Usage</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+            {filteredAssets.map((asset) => (
+              <tr className="transition hover:bg-[#f8f9ff]" key={`history-${asset.id}`}>
+                <td className="px-4 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`grid size-9 place-items-center rounded-md ${asset.bg} ${asset.tone}`}>
+                      <Icon className="size-4" name={asset.icon} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[#0b1c30]">{asset.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#45464d]">{asset.category}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.purchaseDate}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{asset.purchaseAmount}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.startUsingDate}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDate)}</td>
+                <td className="whitespace-nowrap px-4 py-4">
+                  <span className={`rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filteredAssets.length === 0 ? (
+          <div className="border-t border-[#c6c6cd]/40 px-4 py-10 text-center">
+            <p className="text-sm font-semibold text-[#0b1c30]">No asset purchases match these filters.</p>
+            <p className="mt-1 text-sm font-medium text-[#45464d]">Clear filters or adjust the search terms to review purchase history.</p>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
-  const activeAssets = assets.filter((asset) => asset.status === "Active");
+  const [visibleAssets, setVisibleAssets] = useState(assets);
+  const activeAssets = visibleAssets.filter((asset) => asset.status === "Active");
+  const deleteAsset = (id: string) => setVisibleAssets((items) => items.filter((item) => item.id !== id));
 
   return (
     <>
@@ -141,13 +292,14 @@ export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
           <div className="flex min-w-max gap-4">
             {activeAssets.map((asset) => (
               <div className="w-[320px] shrink-0 xl:w-[360px]" key={asset.id}>
-                <AssetCard asset={asset} />
+                <AssetCard asset={asset} onDelete={deleteAsset} />
               </div>
             ))}
           </div>
         </div>
       </section>
-      <AssetsTable assets={assets} />
+      <AssetsTable assets={visibleAssets} onDelete={deleteAsset} />
+      <AssetHistorySection assets={visibleAssets} />
     </>
   );
 }

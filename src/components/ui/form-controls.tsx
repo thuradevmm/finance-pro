@@ -28,7 +28,7 @@ export function TextInput({
   onChange?: (value: string) => void;
   placeholder: string;
   value?: string;
-  type?: "text" | "number";
+  type?: "date" | "number" | "text";
 }) {
   return (
     <div>

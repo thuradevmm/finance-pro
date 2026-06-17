@@ -1,5 +1,4 @@
 import { Icon } from "@/components/ui/icon";
-import { SearchField } from "@/components/ui/search-field";
 import { SelectFilter } from "@/components/ui/select-filter";
 import type { TransactionFilterOptions } from "@/types/finance";
 
@@ -11,7 +10,6 @@ type TransactionsFiltersProps = {
     category: string;
     dateFrom: string;
     dateTo: string;
-    query: string;
     type: string;
   };
   onApply: () => void;
@@ -22,9 +20,8 @@ type TransactionsFiltersProps = {
 export function TransactionsFilters({ filterOptions, filters, onApply, onClear, onFilterChange }: TransactionsFiltersProps) {
   return (
     <section className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-wrap items-center gap-3">
-        <SearchField label="Search in filters" onChange={(value) => onFilterChange("query", value)} placeholder="Search..." value={filters.query} />
-        <label className="relative min-w-44 flex-1 md:flex-none">
+      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <label className="relative block min-w-0">
           <span className="sr-only">Date from</span>
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
             From
@@ -37,7 +34,7 @@ export function TransactionsFilters({ filterOptions, filters, onApply, onClear, 
             value={filters.dateFrom}
           />
         </label>
-        <label className="relative min-w-44 flex-1 md:flex-none">
+        <label className="relative block min-w-0">
           <span className="sr-only">Date to</span>
           <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
             To
@@ -54,21 +51,23 @@ export function TransactionsFilters({ filterOptions, filters, onApply, onClear, 
         <SelectFilter label="Account filter" onChange={(value) => onFilterChange("account", value)} options={filterOptions.account} value={filters.account} />
         <SelectFilter label="Type filter" onChange={(value) => onFilterChange("type", value)} options={filterOptions.type} value={filters.type} />
         <SelectFilter label="Amount filter" onChange={(value) => onFilterChange("amount", value)} options={filterOptions.amount} value={filters.amount} />
-        <button
-          className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-          onClick={onApply}
-          type="button"
-        >
-          Apply
-        </button>
-        <button
-          className="ml-auto inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]"
-          onClick={onClear}
-          type="button"
-        >
-          <Icon className="size-4" name="close" />
-          Clear
-        </button>
+        <div className="flex min-w-0 items-center justify-end gap-2 sm:col-span-2 xl:col-span-6">
+          <button
+            className="inline-flex h-10 min-w-20 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            onClick={onApply}
+            type="button"
+          >
+            Apply
+          </button>
+          <button
+            className="inline-flex h-10 min-w-20 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]"
+            onClick={onClear}
+            type="button"
+          >
+            <Icon className="size-4" name="close" />
+            Clear
+          </button>
+        </div>
       </div>
     </section>
   );

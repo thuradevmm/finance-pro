@@ -1,4 +1,9 @@
+"use client";
+
+import { useState } from "react";
+
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
 import type { SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
@@ -36,7 +41,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
   );
 }
 
-function SubscriptionsTable({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
+function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void; subscriptions: SubscriptionRecord[] }) {
   return (
     <section>
       <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">All Subscriptions</h2>
@@ -78,22 +83,12 @@ function SubscriptionsTable({ subscriptions }: { subscriptions: SubscriptionReco
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-1">
-                      <button
-                        aria-label={`Edit ${subscription.name}`}
-                        className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-                        title="Edit subscription"
-                        type="button"
-                      >
-                        <Icon className="size-4" name="edit" />
-                      </button>
-                      <button
-                        aria-label={`Delete ${subscription.name}`}
-                        className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
-                        title="Delete subscription"
-                        type="button"
-                      >
-                        <Icon className="size-4" name="trash" />
-                      </button>
+                      <RecordActions
+                        editHref={`/subscriptions/${subscription.id}/edit`}
+                        itemId={subscription.id}
+                        itemLabel={subscription.name}
+                        onDelete={onDelete}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -113,10 +108,15 @@ export function SubscriptionsPageContent({
   billings: UpcomingSubscriptionBilling[];
   subscriptions: SubscriptionRecord[];
 }) {
+  const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
+
   return (
     <>
       <BillingTimeline billings={billings} />
-      <SubscriptionsTable subscriptions={subscriptions} />
+      <SubscriptionsTable
+        onDelete={(id) => setVisibleSubscriptions((items) => items.filter((item) => item.id !== id))}
+        subscriptions={visibleSubscriptions}
+      />
     </>
   );
 }

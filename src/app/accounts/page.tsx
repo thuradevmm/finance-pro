@@ -1,9 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
 import { accountSummaries, accounts } from "@/lib/accounts/mock-data";
 import type { AccountStatus, FinancialAccount } from "@/types/finance";
 
@@ -21,7 +26,15 @@ function StatusBadge({ status }: { status: AccountStatus }) {
   );
 }
 
-function AccountCard({ account }: { account: FinancialAccount }) {
+function AccountCard({
+  account,
+  onDelete,
+  onView,
+}: {
+  account: FinancialAccount;
+  onDelete: (id: string) => void;
+  onView: (account: FinancialAccount) => void;
+}) {
   return (
     <article className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-4">
@@ -69,33 +82,35 @@ function AccountCard({ account }: { account: FinancialAccount }) {
         <button
           aria-label={`View ${account.name}`}
           className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+          onClick={() => onView(account)}
           title="View account"
           type="button"
         >
           <Icon className="size-4" name="eye" />
         </button>
-        <button
-          aria-label={`Edit ${account.name}`}
-          className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-          title="Edit account"
-          type="button"
-        >
-          <Icon className="size-4" name="edit" />
-        </button>
-        <button
+        <RecordActions editHref={`/accounts/${account.id}/edit`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+        <Link
           aria-label={`View transactions for ${account.name}`}
           className="grid size-8 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff]"
+          href={`/transactions?account=${encodeURIComponent(account.name)}`}
           title="View transactions"
-          type="button"
         >
           <Icon className="size-4" name="receipt" />
-        </button>
+        </Link>
       </div>
     </article>
   );
 }
 
-function AccountsTable({ items }: { items: FinancialAccount[] }) {
+function AccountsTable({
+  items,
+  onDelete,
+  onView,
+}: {
+  items: FinancialAccount[];
+  onDelete: (id: string) => void;
+  onView: (account: FinancialAccount) => void;
+}) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -141,16 +156,22 @@ function AccountsTable({ items }: { items: FinancialAccount[] }) {
                 <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{account.lastUpdated}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    {(["eye", "edit", "receipt"] as const).map((icon) => (
-                      <button
-                        aria-label={`${icon === "eye" ? "View" : icon === "edit" ? "Edit" : "View transactions for"} ${account.name}`}
-                        className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-                        key={icon}
-                        type="button"
-                      >
-                        <Icon className="size-4" name={icon} />
-                      </button>
-                    ))}
+                    <button
+                      aria-label={`View ${account.name}`}
+                      className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+                      onClick={() => onView(account)}
+                      type="button"
+                    >
+                      <Icon className="size-4" name="eye" />
+                    </button>
+                    <RecordActions editHref={`/accounts/${account.id}/edit`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+                    <Link
+                      aria-label={`View transactions for ${account.name}`}
+                      className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+                      href={`/transactions?account=${encodeURIComponent(account.name)}`}
+                    >
+                      <Icon className="size-4" name="receipt" />
+                    </Link>
                   </div>
                 </td>
               </tr>
@@ -163,7 +184,13 @@ function AccountsTable({ items }: { items: FinancialAccount[] }) {
 }
 
 export default function AccountsPage() {
-  const activeAccounts = accounts.filter((account) => account.status === "Active");
+  const [visibleAccounts, setVisibleAccounts] = useState(accounts);
+  const [viewedAccount, setViewedAccount] = useState<FinancialAccount | null>(null);
+  const activeAccounts = visibleAccounts.filter((account) => account.status === "Active");
+  const deleteAccount = (id: string) => {
+    setVisibleAccounts((items) => items.filter((item) => item.id !== id));
+    setViewedAccount((account) => (account?.id === id ? null : account));
+  };
 
   return (
     <AppShell
@@ -206,26 +233,74 @@ export default function AccountsPage() {
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Accounts</h2>
             <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{activeAccounts.length} accounts</p>
           </div>
-          <Link
-            className="inline-flex h-9 w-fit items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
-            href="/accounts/add"
-          >
-            <Icon className="size-4" name="plus" />
-            Add Account
-          </Link>
         </div>
         <div className="-mx-4 overflow-x-auto px-4 pb-2">
           <div className="flex min-w-max gap-4">
             {activeAccounts.map((account) => (
               <div className="w-[320px] shrink-0 xl:w-[360px]" key={account.id}>
-                <AccountCard account={account} />
+                <AccountCard account={account} onDelete={deleteAccount} onView={setViewedAccount} />
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <AccountsTable items={accounts} />
+      <AccountsTable items={visibleAccounts} onDelete={deleteAccount} onView={setViewedAccount} />
+      <DetailModal
+        actions={
+          viewedAccount ? (
+            <>
+              <Link
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+                href={`/accounts/${viewedAccount.id}/edit`}
+              >
+                <Icon className="size-4" name="edit" />
+                Edit
+              </Link>
+              <Link
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]"
+                href={`/transactions?account=${encodeURIComponent(viewedAccount.name)}`}
+              >
+                <Icon className="size-4" name="receipt" />
+                Transactions
+              </Link>
+            </>
+          ) : null
+        }
+        icon={viewedAccount?.icon}
+        iconClassName={viewedAccount ? `${viewedAccount.bg} ${viewedAccount.tone}` : undefined}
+        isOpen={viewedAccount !== null}
+        onClose={() => setViewedAccount(null)}
+        subtitle={viewedAccount ? `${viewedAccount.institution} ${viewedAccount.accountNumber}` : undefined}
+        title={viewedAccount?.name ?? "Account details"}
+      >
+        {viewedAccount ? (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
+              <div>
+                <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
+                <p className={`mt-1 text-2xl font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+                  {viewedAccount.balance}
+                </p>
+              </div>
+              <StatusBadge status={viewedAccount.status} />
+            </div>
+            <DetailModalSection title="Account information">
+              <DetailModalField label="Type" value={viewedAccount.type} />
+              <DetailModalField label="Institution" value={viewedAccount.institution} />
+              <DetailModalField label="Account label" value={viewedAccount.accountNumber} />
+              <DetailModalField label="Currency" value={viewedAccount.currency} />
+              <DetailModalField label="Available balance" value={viewedAccount.availableBalance} />
+              <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
+            </DetailModalSection>
+            <DetailModalSection title="Monthly activity">
+              <DetailModalField label="Inflow" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
+              <DetailModalField label="Outflow" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+              <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
+            </DetailModalSection>
+          </div>
+        ) : null}
+      </DetailModal>
     </AppShell>
   );
 }

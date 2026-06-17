@@ -1,4 +1,9 @@
+"use client";
+
+import { useState } from "react";
+
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
 import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
 const statusStyles: Record<DebtStatus, string> = {
@@ -23,7 +28,7 @@ function DebtProgress({ debt }: { debt: DebtRecord }) {
   );
 }
 
-function DebtsTable({ debts }: { debts: DebtRecord[] }) {
+function DebtsTable({ debts, onDelete }: { debts: DebtRecord[]; onDelete: (id: string) => void }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/60 px-4 py-4">
@@ -72,22 +77,7 @@ function DebtsTable({ debts }: { debts: DebtRecord[] }) {
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <button
-                      aria-label={`Edit ${debt.name}`}
-                      className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-                      title="Edit debt"
-                      type="button"
-                    >
-                      <Icon className="size-4" name="edit" />
-                    </button>
-                    <button
-                      aria-label={`Delete ${debt.name}`}
-                      className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
-                      title="Delete debt"
-                      type="button"
-                    >
-                      <Icon className="size-4" name="trash" />
-                    </button>
+                    <RecordActions editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
                   </div>
                 </td>
               </tr>
@@ -126,10 +116,12 @@ function UpcomingPayments({ payments }: { payments: UpcomingDebtPayment[] }) {
 }
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecord[]; payments: UpcomingDebtPayment[] }) {
+  const [visibleDebts, setVisibleDebts] = useState(debts);
+
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="xl:col-span-9">
-        <DebtsTable debts={debts} />
+        <DebtsTable debts={visibleDebts} onDelete={(id) => setVisibleDebts((items) => items.filter((item) => item.id !== id))} />
       </div>
       <div className="xl:col-span-3">
         <UpcomingPayments payments={payments} />

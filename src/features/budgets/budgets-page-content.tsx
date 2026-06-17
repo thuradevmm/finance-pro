@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
@@ -121,7 +122,7 @@ function UsageMeter({ budget }: { budget: BudgetCategory }) {
   );
 }
 
-function BudgetBreakdownTable({ budgets }: { budgets: BudgetCategory[] }) {
+function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]; onDelete: (id: string) => void }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -172,22 +173,7 @@ function BudgetBreakdownTable({ budgets }: { budgets: BudgetCategory[] }) {
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <button
-                      aria-label={`Edit ${budget.category} budget`}
-                      className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-                      title="Edit budget"
-                      type="button"
-                    >
-                      <Icon className="size-4" name="edit" />
-                    </button>
-                    <button
-                      aria-label={`Delete ${budget.category} budget`}
-                      className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
-                      title="Delete budget"
-                      type="button"
-                    >
-                      <Icon className="size-4" name="trash" />
-                    </button>
+                    <RecordActions editHref={`/budgets/${budget.id}/edit`} itemId={budget.id} itemLabel={`${budget.category} budget`} onDelete={onDelete} />
                   </div>
                 </td>
               </tr>
@@ -201,13 +187,14 @@ function BudgetBreakdownTable({ budgets }: { budgets: BudgetCategory[] }) {
 
 export function BudgetsPageContent({ budgets }: { budgets: BudgetCategory[] }) {
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
-  const filteredBudgets = useMemo(() => budgets.filter((budget) => budget.period === activePeriod), [activePeriod, budgets]);
+  const [visibleBudgets, setVisibleBudgets] = useState(budgets);
+  const filteredBudgets = useMemo(() => visibleBudgets.filter((budget) => budget.period === activePeriod), [activePeriod, visibleBudgets]);
 
   return (
     <>
       <BudgetPeriodControls activePeriod={activePeriod} onPeriodChange={setActivePeriod} />
       <OverallBudgetUsage budgets={filteredBudgets} />
-      <BudgetBreakdownTable budgets={filteredBudgets} />
+      <BudgetBreakdownTable budgets={filteredBudgets} onDelete={(id) => setVisibleBudgets((items) => items.filter((item) => item.id !== id))} />
     </>
   );
 }

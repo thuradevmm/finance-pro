@@ -129,6 +129,7 @@ export type AssetRecord = {
   name: string;
   category: string;
   purchaseDate: string;
+  startUsingDate: string;
   purchaseAmount: string;
   currentValue: string;
   usageDuration: string;

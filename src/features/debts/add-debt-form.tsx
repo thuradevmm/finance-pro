@@ -31,6 +31,9 @@ export function AddDebtForm() {
   const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts").map((category) => category.name), []);
   const debtCategoryOptions = debtCategories.length > 0 ? debtCategories : ["Loan Repayment"];
   const [selectedCategory, setSelectedCategory] = useState(debtCategoryOptions[0]);
+  const [status, setStatus] = useState("Active");
+  const [paymentAccount, setPaymentAccount] = useState("Main Checking");
+  const [notes, setNotes] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const lenderHasError = showErrors && lender.trim() === "";
@@ -118,14 +121,14 @@ export function AddDebtForm() {
 
         <FormCard title="Repayment Settings">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Status" options={["Active", "Overdue", "Paid"]} />
+            <SelectInput label="Status" onChange={setStatus} options={["Active", "Overdue", "Paid"]} value={status} />
             <SelectInput label="Debt Category" onChange={setSelectedCategory} options={debtCategoryOptions} value={selectedCategory} />
           </div>
           <div className="mt-5">
-            <SelectInput label="Payment Account" options={["Main Checking", "High-Yield Savings", "Cash Wallet"]} />
+            <SelectInput label="Payment Account" onChange={setPaymentAccount} options={["Main Checking", "High-Yield Savings", "Cash Wallet"]} value={paymentAccount} />
           </div>
           <div className="mt-5">
-            <TextAreaInput label="Notes" placeholder="Optional repayment notes..." />
+            <TextAreaInput label="Notes" onChange={setNotes} placeholder="Optional repayment notes..." value={notes} />
           </div>
         </FormCard>
 
@@ -191,7 +194,18 @@ export function AddDebtForm() {
                 <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
                 <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory}</span>
               </div>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
+                <span className="text-sm font-semibold text-[#0b1c30]">{status}</span>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <span className="text-xs font-bold uppercase text-[#45464d]">Account</span>
+                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{paymentAccount}</span>
+              </div>
             </div>
+            <p className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-sm font-medium text-[#45464d]">
+              {notes || "Repayment notes will appear here."}
+            </p>
           </div>
         </div>
       </aside>

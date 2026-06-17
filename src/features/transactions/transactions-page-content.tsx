@@ -15,25 +15,27 @@ type TransactionFiltersState = {
   category: string;
   dateFrom: string;
   dateTo: string;
-  query: string;
   type: string;
 };
 
 type TransactionsPageContentProps = {
   filterOptions: TransactionFilterOptions;
+  initialAccountFilter?: string;
   transactions: Transaction[];
 };
 
 const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
 
-function getInitialFilters(filterOptions: TransactionFilterOptions): TransactionFiltersState {
+function getInitialFilters(filterOptions: TransactionFilterOptions, initialAccountFilter?: string): TransactionFiltersState {
+  const accountFilter =
+    initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
+
   return {
     amount: filterOptions.amount[0],
-    account: filterOptions.account[0],
+    account: accountFilter,
     category: filterOptions.category[0],
     dateFrom: "",
     dateTo: "",
-    query: "",
     type: filterOptions.type[0],
   };
 }
@@ -69,29 +71,12 @@ function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: s
 }
 
 function filterTransactions(transactions: Transaction[], filters: TransactionFiltersState) {
-  const query = filters.query.trim().toLowerCase();
-
   return transactions.filter((transaction) => {
-    const searchableText = [
-      transaction.id,
-      transaction.date,
-      transaction.type,
-      transaction.category,
-      transaction.account,
-      transaction.paymentMethod,
-      transaction.amount,
-      transaction.note,
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    const matchesQuery = query === "" || searchableText.includes(query);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
     const matchesAccount = filters.account === "Account" || transaction.account === filters.account;
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
     return (
-      matchesQuery &&
       matchesCategory &&
       matchesAccount &&
       matchesType &&
@@ -101,8 +86,8 @@ function filterTransactions(transactions: Transaction[], filters: TransactionFil
   });
 }
 
-export function TransactionsPageContent({ filterOptions, transactions }: TransactionsPageContentProps) {
-  const initialFilters = useMemo(() => getInitialFilters(filterOptions), [filterOptions]);
+export function TransactionsPageContent({ filterOptions, initialAccountFilter, transactions }: TransactionsPageContentProps) {
+  const initialFilters = useMemo(() => getInitialFilters(filterOptions, initialAccountFilter), [filterOptions, initialAccountFilter]);
   const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>("All");
@@ -122,8 +107,10 @@ export function TransactionsPageContent({ filterOptions, transactions }: Transac
   }
 
   function clearFilters() {
-    setDraftFilters(initialFilters);
-    setAppliedFilters(initialFilters);
+    const clearedFilters = getInitialFilters(filterOptions);
+
+    setDraftFilters(clearedFilters);
+    setAppliedFilters(clearedFilters);
     setActiveTab("All");
   }
 

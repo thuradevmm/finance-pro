@@ -1,5 +1,10 @@
+"use client";
+
+import { useState } from "react";
+
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
+import { RecordActions } from "@/components/ui/record-actions";
 import type { SavingsGoal, SavingsGoalStatus } from "@/types/finance";
 
 const statusStyles: Record<SavingsGoalStatus, string> = {
@@ -8,7 +13,7 @@ const statusStyles: Record<SavingsGoalStatus, string> = {
   Completed: "bg-[#eff6ff] text-[#0058be]",
 };
 
-function SavingsGoalCard({ goal }: { goal: SavingsGoal }) {
+function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (id: string) => void }) {
   return (
     <article className="flex flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4">
@@ -43,22 +48,7 @@ function SavingsGoalCard({ goal }: { goal: SavingsGoal }) {
           Target: {goal.targetDate}
         </div>
         <div className="mt-4 flex items-center justify-end gap-1">
-          <button
-            aria-label={`Edit ${goal.name}`}
-            className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-            title="Edit goal"
-            type="button"
-          >
-            <Icon className="size-4" name="edit" />
-          </button>
-          <button
-            aria-label={`Delete ${goal.name}`}
-            className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
-            title="Delete goal"
-            type="button"
-          >
-            <Icon className="size-4" name="trash" />
-          </button>
+          <RecordActions editHref={`/savings-goals/${goal.id}/edit`} itemId={goal.id} itemLabel={goal.name} onDelete={onDelete} />
         </div>
       </div>
     </article>
@@ -66,10 +56,12 @@ function SavingsGoalCard({ goal }: { goal: SavingsGoal }) {
 }
 
 export function SavingsGoalsGrid({ goals }: { goals: SavingsGoal[] }) {
+  const [visibleGoals, setVisibleGoals] = useState(goals);
+
   return (
     <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-      {goals.map((goal) => (
-        <SavingsGoalCard goal={goal} key={goal.id} />
+      {visibleGoals.map((goal) => (
+        <SavingsGoalCard goal={goal} key={goal.id} onDelete={(id) => setVisibleGoals((items) => items.filter((item) => item.id !== id))} />
       ))}
     </section>
   );

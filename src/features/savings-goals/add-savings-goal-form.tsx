@@ -18,10 +18,13 @@ export function AddSavingsGoalForm() {
   const accountOptions = useMemo(() => accounts.filter((account) => account.status === "Active").map((account) => account.name), []);
   const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals"), []);
   const [selectedStyleId, setSelectedStyleId] = useState(goalStyleCategories[0]?.id ?? "");
+  const [account, setAccount] = useState(accountOptions[0] ?? "High-Yield Savings");
   const [name, setName] = useState("");
   const [targetAmount, setTargetAmount] = useState("");
   const [savedAmount, setSavedAmount] = useState("");
   const [targetDate, setTargetDate] = useState("2026-12-31");
+  const [monthlyContribution, setMonthlyContribution] = useState("");
+  const [description, setDescription] = useState("");
   const [showErrors, setShowErrors] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const targetHasError = showErrors && targetAmount.trim() === "";
@@ -44,7 +47,7 @@ export function AddSavingsGoalForm() {
               <TextInput error={nameHasError} label="Goal Name" onChange={setName} placeholder="Emergency Fund" value={name} />
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Goal name is required.</p> : null}
             </div>
-            <SelectInput label="Savings Account" options={accountOptions.length > 0 ? accountOptions : ["High-Yield Savings"]} />
+            <SelectInput label="Savings Account" onChange={setAccount} options={accountOptions.length > 0 ? accountOptions : ["High-Yield Savings"]} value={account} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -67,7 +70,7 @@ export function AddSavingsGoalForm() {
               <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="2026-12-31" value={targetDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
             </div>
-            <TextInput label="Monthly Contribution" placeholder="500" type="number" />
+            <TextInput label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="number" value={monthlyContribution} />
           </div>
         </FormCard>
 
@@ -100,7 +103,7 @@ export function AddSavingsGoalForm() {
         </FormCard>
 
         <FormCard title="Notes">
-          <TextAreaInput label="Description" placeholder="Optional reason or plan for this savings goal..." />
+          <TextAreaInput label="Description" onChange={setDescription} placeholder="Optional reason or plan for this savings goal..." value={description} />
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
@@ -136,6 +139,7 @@ export function AddSavingsGoalForm() {
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">Goal Preview</p>
                 <h3 className="text-xl font-semibold text-[#0b1c30]">{name || "New Savings Goal"}</h3>
+                <p className="mt-1 text-xs font-semibold text-[#45464d]">{account}</p>
               </div>
             </div>
 
@@ -154,6 +158,10 @@ export function AddSavingsGoalForm() {
 
             <div className="mt-5 border-t border-[#c6c6cd]/40 pt-4 text-center text-sm font-medium text-[#45464d]">
               Target: {targetDate || "Not set"}
+            </div>
+            <div className="mt-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
+              Monthly: <span className="font-semibold text-[#0b1c30]">{monthlyContribution ? `$${monthlyContribution}` : "$0"}</span>
+              <p className="mt-2">{description || "Savings plan note will appear here."}</p>
             </div>
           </div>
         </div>

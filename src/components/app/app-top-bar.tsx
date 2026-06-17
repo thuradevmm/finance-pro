@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { SearchField } from "@/components/ui/search-field";
+import { ProfileMenu } from "@/components/app/profile-menu";
 
 type AppTopBarProps = {
   searchLabel?: string;
@@ -33,6 +34,7 @@ export function AppTopBar({
         >
           <Icon name="help" />
         </button>
+        <ProfileMenu />
       </div>
     </header>
   );

@@ -157,6 +157,10 @@ export function AddSubscriptionForm() {
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>
                 <dd className="text-sm font-semibold text-[#0b1c30]">{firstBillingDate || "Not set"}</dd>
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Reminder</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{reminderEnabled ? "Enabled" : "Disabled"}</dd>
+              </div>
             </dl>
           </div>
         </div>

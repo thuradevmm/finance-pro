@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { Icon } from "@/components/ui/icon";
+import { RecordActions } from "@/components/ui/record-actions";
 import type { CategoryType, FinancialCategory } from "@/types/finance";
 
 type CategoryTab = "Expense Categories" | "Income Categories";
@@ -18,7 +19,7 @@ function CategoryBadge({ type }: { type: CategoryType }) {
   );
 }
 
-function CategoryCard({ category }: { category: FinancialCategory }) {
+function CategoryCard({ category, onDelete }: { category: FinancialCategory; onDelete: (id: string) => void }) {
   return (
     <article className="flex min-h-64 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -51,22 +52,7 @@ function CategoryCard({ category }: { category: FinancialCategory }) {
         </div>
 
         <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-4">
-          <button
-            aria-label={`Edit ${category.name}`}
-            className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-            title="Edit category"
-            type="button"
-          >
-            <Icon className="size-4" name="edit" />
-          </button>
-          <button
-            aria-label={`Delete ${category.name}`}
-            className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
-            title="Delete category"
-            type="button"
-          >
-            <Icon className="size-4" name="trash" />
-          </button>
+          <RecordActions editHref={`/categories/${category.id}/edit`} itemId={category.id} itemLabel={category.name} onDelete={onDelete} />
         </div>
       </div>
     </article>
@@ -75,8 +61,9 @@ function CategoryCard({ category }: { category: FinancialCategory }) {
 
 export function CategoriesPageContent({ categories }: { categories: FinancialCategory[] }) {
   const [activeTab, setActiveTab] = useState<CategoryTab>("Expense Categories");
+  const [visibleCategories, setVisibleCategories] = useState(categories);
   const activeType: CategoryType = activeTab === "Expense Categories" ? "Expense" : "Income";
-  const filteredCategories = useMemo(() => categories.filter((category) => category.type === activeType), [activeType, categories]);
+  const filteredCategories = useMemo(() => visibleCategories.filter((category) => category.type === activeType), [activeType, visibleCategories]);
 
   return (
     <>
@@ -84,7 +71,7 @@ export function CategoriesPageContent({ categories }: { categories: FinancialCat
 
       <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
         {filteredCategories.map((category) => (
-          <CategoryCard category={category} key={category.id} />
+          <CategoryCard category={category} key={category.id} onDelete={(id) => setVisibleCategories((items) => items.filter((item) => item.id !== id))} />
         ))}
       </section>
     </>

@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
+import { calculateUsageDuration } from "@/lib/date-duration";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
 const conditions: AssetRecord["condition"][] = ["Excellent", "Good", "Fair", "Needs Repair"];
@@ -18,6 +19,7 @@ export function AddAssetForm() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState(categoryOptions[0]);
   const [purchaseDate, setPurchaseDate] = useState("2026-06-15");
+  const [startUsingDate, setStartUsingDate] = useState("2026-06-15");
   const [purchaseAmount, setPurchaseAmount] = useState("");
   const [currentValue, setCurrentValue] = useState("");
   const [condition, setCondition] = useState<AssetRecord["condition"]>("Good");
@@ -28,9 +30,11 @@ export function AddAssetForm() {
   const nameHasError = showErrors && name.trim() === "";
   const amountHasError = showErrors && purchaseAmount.trim() === "";
   const dateHasError = showErrors && purchaseDate.trim() === "";
+  const startUsingDateHasError = showErrors && startUsingDate.trim() === "";
+  const usageDuration = calculateUsageDuration(startUsingDate);
 
   function handleSaveAsset() {
-    setShowErrors(name.trim() === "" || purchaseAmount.trim() === "" || purchaseDate.trim() === "");
+    setShowErrors(name.trim() === "" || purchaseAmount.trim() === "" || purchaseDate.trim() === "" || startUsingDate.trim() === "");
   }
 
   return (
@@ -47,7 +51,7 @@ export function AddAssetForm() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={dateHasError} label="Purchase Date" onChange={setPurchaseDate} placeholder="2026-06-15" value={purchaseDate} />
+              <TextInput error={dateHasError} label="Purchase Date" onChange={setPurchaseDate} placeholder="2026-06-15" type="date" value={purchaseDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Purchase date is required.</p> : null}
             </div>
             <div>
@@ -71,6 +75,23 @@ export function AddAssetForm() {
 
         <FormCard title="Tracking Settings">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <TextInput
+                error={startUsingDateHasError}
+                label="Start Using Date"
+                onChange={setStartUsingDate}
+                placeholder="2026-06-15"
+                type="date"
+                value={startUsingDate}
+              />
+              {startUsingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start using date is required.</p> : null}
+            </div>
+            <div>
+              <p className="mb-2 block text-sm font-semibold text-[#0b1c30]">Usage Duration</p>
+              <div className="flex h-10 items-center rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 text-sm font-semibold text-[#45464d]">
+                {usageDuration}
+              </div>
+            </div>
             <SelectInput label="Condition" onChange={(value) => setCondition(value as AssetRecord["condition"])} options={conditions} value={condition} />
             <SelectInput label="Status" onChange={(value) => setStatus(value as AssetStatus)} options={statuses} value={status} />
           </div>
@@ -126,8 +147,20 @@ export function AddAssetForm() {
                 <dd className="text-sm font-semibold text-[#0058be]">{currentValue ? `$${currentValue}` : "$0"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Started</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{startUsingDate || "-"}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Used</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{usageDuration}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Condition</dt>
                 <dd className="text-sm font-semibold text-[#0b1c30]">{condition}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Status</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{status}</dd>
               </div>
             </dl>
 
