@@ -6,6 +6,9 @@ import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import { getTransactionDerivedAssets } from "@/lib/transactions/derived-data";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
 const statusStyles: Record<AssetStatus, string> = {
@@ -271,8 +274,12 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
 }
 
 export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transactionDerivedAssets = useMemo(() => getTransactionDerivedAssets(storedTransactions), [storedTransactions]);
   const [visibleAssets, setVisibleAssets] = useState(assets);
-  const activeAssets = visibleAssets.filter((asset) => asset.status === "Active");
+  const visibleAssetIds = useMemo(() => new Set(visibleAssets.map((asset) => asset.id)), [visibleAssets]);
+  const syncedAssets = useMemo(() => transactionDerivedAssets.filter((asset) => visibleAssetIds.has(asset.id)), [transactionDerivedAssets, visibleAssetIds]);
+  const activeAssets = syncedAssets.filter((asset) => asset.status === "Active");
   const deleteAsset = (id: string) => setVisibleAssets((items) => items.filter((item) => item.id !== id));
 
   return (
@@ -298,8 +305,8 @@ export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
           </div>
         </div>
       </section>
-      <AssetsTable assets={visibleAssets} onDelete={deleteAsset} />
-      <AssetHistorySection assets={visibleAssets} />
+      <AssetsTable assets={syncedAssets} onDelete={deleteAsset} />
+      <AssetHistorySection assets={syncedAssets} />
     </>
   );
 }

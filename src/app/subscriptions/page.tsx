@@ -5,9 +5,17 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { SubscriptionsPageContent } from "@/features/subscriptions/subscriptions-page-content";
-import { subscriptionSummaries, subscriptions, upcomingSubscriptionBillings } from "@/lib/subscriptions/mock-data";
+import {
+  getTransactionDerivedSubscriptionBillings,
+  getTransactionDerivedSubscriptions,
+  getTransactionDerivedSubscriptionSummaries,
+} from "@/lib/transactions/derived-data";
 
 export default function SubscriptionsPage() {
+  const derivedSubscriptions = getTransactionDerivedSubscriptions();
+  const derivedBillings = getTransactionDerivedSubscriptionBillings();
+  const summaries = getTransactionDerivedSubscriptionSummaries();
+
   return (
     <AppShell
       activeNavLabel="Subscriptions"
@@ -32,8 +40,8 @@ export default function SubscriptionsPage() {
         title="Subscriptions"
       />
 
-      <SummaryCards summaries={subscriptionSummaries} />
-      <SubscriptionsPageContent billings={upcomingSubscriptionBillings} subscriptions={subscriptions} />
+      <SummaryCards summaries={summaries} />
+      <SubscriptionsPageContent billings={derivedBillings} subscriptions={derivedSubscriptions} />
     </AppShell>
   );
 }

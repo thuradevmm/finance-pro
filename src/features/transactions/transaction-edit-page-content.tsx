@@ -8,6 +8,9 @@ import { Icon } from "@/components/ui/icon";
 import { formatSignedAmount } from "@/features/transactions/transaction-amount";
 import { TransactionEditForm } from "@/features/transactions/transaction-edit-form";
 import { amountClass, transactionTypeIcon } from "@/features/transactions/transaction-styles";
+import { getImpactTarget, getImpactValue, transactionImpactOptions } from "@/lib/transactions/impact-options";
+import { transactions } from "@/lib/transactions/mock-data";
+import { updateTransactionInStorage } from "@/lib/transactions/transaction-store";
 import type { Transaction, TransactionFilterOptions } from "@/types/finance";
 
 type TransactionEditPageContentProps = {
@@ -24,8 +27,14 @@ export function TransactionEditPageContent({ filterOptions, transaction }: Trans
   }
 
   function saveTransaction() {
+    updateTransactionInStorage(draft, transactions);
     router.push("/transactions");
   }
+
+  const impactTarget = getImpactTarget(draft);
+  const impactValue = getImpactValue(draft, impactTarget);
+  const impactRecord = transactionImpactOptions[impactTarget].find((option) => option.value === impactValue);
+  const impactLabel = impactTarget === "None" ? "No linked page" : `${impactTarget}: ${impactRecord?.label ?? "Select record"}`;
 
   return (
     <EditRecordPage
@@ -51,6 +60,10 @@ export function TransactionEditPageContent({ filterOptions, transaction }: Trans
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
               <span className="text-sm font-semibold text-[#0b1c30]">{draft.category || "-"}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Reflects To</span>
+              <span className="text-right text-sm font-semibold text-[#0b1c30]">{impactLabel}</span>
             </div>
             <div className="border-t border-[#c6c6cd]/40 pt-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Note</span>

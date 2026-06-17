@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
@@ -8,7 +9,10 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { formatSignedAmount } from "@/features/transactions/transaction-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
-import type { TransactionType } from "@/types/finance";
+import { transactionImpactOptions, transactionImpactTargets, type TransactionImpactTarget } from "@/lib/transactions/impact-options";
+import { transactions } from "@/lib/transactions/mock-data";
+import { addTransactionToStorage } from "@/lib/transactions/transaction-store";
+import type { Transaction, TransactionCategoryName, TransactionType } from "@/types/finance";
 
 type TransactionTypeOption = {
   type: TransactionType;
@@ -105,6 +109,7 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
 }
 
 export function AddTransactionForm() {
+  const router = useRouter();
   const [selectedType, setSelectedType] = useState<TransactionType>("Expense");
   const [amount, setAmount] = useState("");
   const [transactionDate, setTransactionDate] = useState("2026-06-15");
@@ -113,6 +118,8 @@ export function AddTransactionForm() {
   const [category, setCategory] = useState("Food");
   const [paymentMethod, setPaymentMethod] = useState("Credit Card");
   const [status, setStatus] = useState("Cleared");
+  const [impactTarget, setImpactTarget] = useState<TransactionImpactTarget>("Budget");
+  const [impactRecord, setImpactRecord] = useState("");
   const [note, setNote] = useState("");
   const [showAmountError, setShowAmountError] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
@@ -128,6 +135,10 @@ export function AddTransactionForm() {
   const amountHasError = showAmountError && amount.trim() === "";
   const previewCategory = isTransfer ? transferToAccount : category;
   const previewAmount = formatSignedAmount(amount, selectedType);
+  const impactRecordOptions = transactionImpactOptions[impactTarget];
+  const impactRecordLabels = impactRecordOptions.map((option) => option.label);
+  const selectedImpactRecord = impactRecordOptions.find((option) => option.value === impactRecord) ?? impactRecordOptions[0];
+  const previewImpact = impactTarget === "None" ? "No linked page" : `${impactTarget}: ${selectedImpactRecord?.label ?? "Select record"}`;
 
   function handleAmountChange(value: string) {
     setAmount(value);
@@ -138,7 +149,47 @@ export function AddTransactionForm() {
   }
 
   function handleSaveTransaction() {
-    setShowAmountError(amount.trim() === "");
+    const hasAmountError = amount.trim() === "";
+
+    setShowAmountError(hasAmountError);
+
+    if (hasAmountError) {
+      return;
+    }
+
+    const newTransaction: Transaction = {
+      account,
+      amount: previewAmount,
+      category: (isTransfer ? "Transfer" : category) as TransactionCategoryName,
+      date: formatDatePreview(transactionDate),
+      id: `TRX-${Date.now()}`,
+      note: note.trim() || (isTransfer ? "Transfer transaction" : `${category} transaction`),
+      paymentMethod,
+      type: selectedType,
+    };
+
+    if (impactTarget === "Budget") {
+      newTransaction.linkedBudgetId = selectedImpactRecord?.value;
+    }
+
+    if (impactTarget === "Savings Goal") {
+      newTransaction.linkedSavingsGoalId = selectedImpactRecord?.value;
+    }
+
+    if (impactTarget === "Debt") {
+      newTransaction.linkedDebtId = selectedImpactRecord?.value;
+    }
+
+    if (impactTarget === "Subscription") {
+      newTransaction.linkedSubscriptionId = selectedImpactRecord?.value;
+    }
+
+    if (impactTarget === "Asset") {
+      newTransaction.linkedAssetId = selectedImpactRecord?.value;
+    }
+
+    addTransactionToStorage(newTransaction, transactions);
+    router.push("/transactions");
   }
 
   function handleTypeChange(type: TransactionType) {
@@ -157,6 +208,20 @@ export function AddTransactionForm() {
 
     setCategory(expenseCategories[0] ?? "");
     setPaymentMethod("Credit Card");
+  }
+
+  function handleImpactTargetChange(value: string) {
+    const nextTarget = value as TransactionImpactTarget;
+    const nextOptions = transactionImpactOptions[nextTarget];
+
+    setImpactTarget(nextTarget);
+    setImpactRecord(nextOptions[0]?.value ?? "");
+  }
+
+  function handleImpactRecordChange(value: string) {
+    const selectedOption = impactRecordOptions.find((option) => option.label === value);
+
+    setImpactRecord(selectedOption?.value ?? "");
   }
 
   return (
@@ -247,6 +312,21 @@ export function AddTransactionForm() {
             </div>
           </FormCard>
 
+          <FormCard title="Transaction Impact">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <SelectInput label="Reflect To Page" onChange={handleImpactTargetChange} options={transactionImpactTargets} value={impactTarget} />
+              <SelectInput
+                label="Related Record"
+                onChange={handleImpactRecordChange}
+                options={impactRecordLabels.length > 0 ? impactRecordLabels : ["No record needed"]}
+                value={selectedImpactRecord?.label ?? "No record needed"}
+              />
+            </div>
+            <p className="mt-3 rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] px-3 py-2 text-sm font-medium text-[#45464d]">
+              Linked transactions become the source for calculated budget spending, savings progress, debt repayment, subscription cost, and asset purchase values.
+            </p>
+          </FormCard>
+
           <FormCard title="Additional Information">
             <div>
               <FieldLabel>Note / Description</FieldLabel>
@@ -324,6 +404,10 @@ export function AddTransactionForm() {
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
               <span className="text-sm font-semibold text-[#0b1c30]">{status}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-xs font-bold uppercase text-[#45464d]">Reflects To</span>
+              <span className="text-right text-sm font-semibold text-[#0b1c30]">{previewImpact}</span>
             </div>
             <div className="border-t border-[#c6c6cd]/40 pt-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Note</span>

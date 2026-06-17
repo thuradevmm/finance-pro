@@ -151,6 +151,11 @@ export type Transaction = {
   amount: string;
   note: string;
   attachment?: "receipt" | "document";
+  linkedAssetId?: string;
+  linkedBudgetId?: string;
+  linkedDebtId?: string;
+  linkedSavingsGoalId?: string;
+  linkedSubscriptionId?: string;
 };
 
 export type SummaryMetric = {

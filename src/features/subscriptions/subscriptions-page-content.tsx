@@ -4,6 +4,9 @@ import { useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { getTransactionDerivedSubscriptionBillings, getTransactionDerivedSubscriptions } from "@/lib/transactions/derived-data";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
@@ -108,14 +111,18 @@ export function SubscriptionsPageContent({
   billings: UpcomingSubscriptionBilling[];
   subscriptions: SubscriptionRecord[];
 }) {
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transactionDerivedSubscriptions = getTransactionDerivedSubscriptions(storedTransactions);
+  const transactionDerivedBillings = getTransactionDerivedSubscriptionBillings(storedTransactions);
   const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
+  const visibleSubscriptionIds = new Set(visibleSubscriptions.map((subscription) => subscription.id));
 
   return (
     <>
-      <BillingTimeline billings={billings} />
+      <BillingTimeline billings={transactionDerivedBillings.length > 0 ? transactionDerivedBillings : billings} />
       <SubscriptionsTable
         onDelete={(id) => setVisibleSubscriptions((items) => items.filter((item) => item.id !== id))}
-        subscriptions={visibleSubscriptions}
+        subscriptions={transactionDerivedSubscriptions.filter((subscription) => visibleSubscriptionIds.has(subscription.id))}
       />
     </>
   );

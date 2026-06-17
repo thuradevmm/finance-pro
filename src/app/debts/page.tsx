@@ -5,9 +5,13 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { DebtsPageContent } from "@/features/debts/debts-page-content";
-import { debtSummaries, debts, upcomingDebtPayments } from "@/lib/debts/mock-data";
+import { upcomingDebtPayments } from "@/lib/debts/mock-data";
+import { getTransactionDerivedDebts, getTransactionDerivedDebtSummaries } from "@/lib/transactions/derived-data";
 
 export default function DebtsPage() {
+  const derivedDebts = getTransactionDerivedDebts();
+  const summaries = getTransactionDerivedDebtSummaries();
+
   return (
     <AppShell
       activeNavLabel="Debts"
@@ -32,8 +36,8 @@ export default function DebtsPage() {
         title="Debts"
       />
 
-      <SummaryCards summaries={debtSummaries} />
-      <DebtsPageContent debts={debts} payments={upcomingDebtPayments} />
+      <SummaryCards summaries={summaries} />
+      <DebtsPageContent debts={derivedDebts} payments={upcomingDebtPayments} />
     </AppShell>
   );
 }

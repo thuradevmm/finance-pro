@@ -5,9 +5,12 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { SavingsGoalsGrid } from "@/features/savings-goals/savings-goals-grid";
-import { savingsGoals, savingsGoalSummaries } from "@/lib/savings-goals/mock-data";
+import { getTransactionDerivedSavingsGoals, getTransactionDerivedSavingsGoalSummaries } from "@/lib/transactions/derived-data";
 
 export default function SavingsGoalsPage() {
+  const goals = getTransactionDerivedSavingsGoals();
+  const summaries = getTransactionDerivedSavingsGoalSummaries();
+
   return (
     <AppShell
       activeNavLabel="Savings Goals"
@@ -32,8 +35,8 @@ export default function SavingsGoalsPage() {
         title="Savings Goals"
       />
 
-      <SummaryCards summaries={savingsGoalSummaries} />
-      <SavingsGoalsGrid goals={savingsGoals} />
+      <SummaryCards summaries={summaries} />
+      <SavingsGoalsGrid goals={goals} />
     </AppShell>
   );
 }

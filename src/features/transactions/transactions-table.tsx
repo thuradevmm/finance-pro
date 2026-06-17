@@ -8,6 +8,7 @@ import { DetailModal, DetailModalField, DetailModalSection } from "@/components/
 import { Icon } from "@/components/ui/icon";
 import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
+import { getImpactTarget, getImpactValue, transactionImpactOptions } from "@/lib/transactions/impact-options";
 import type { Transaction } from "@/types/finance";
 
 type TransactionsTableProps = {
@@ -51,6 +52,14 @@ function getAttachmentLabel(attachment?: Transaction["attachment"]) {
   }
 
   return "No file attached";
+}
+
+function getImpactLabel(transaction: Transaction) {
+  const impactTarget = getImpactTarget(transaction);
+  const impactValue = getImpactValue(transaction, impactTarget);
+  const impactRecord = transactionImpactOptions[impactTarget].find((option) => option.value === impactValue);
+
+  return impactTarget === "None" ? "No linked page" : `${impactTarget}: ${impactRecord?.label ?? "Unknown record"}`;
 }
 
 type TransactionAction = "view" | "edit" | "delete";
@@ -411,6 +420,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               <DetailModalField label="Payment method" value={viewedTransaction.paymentMethod} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
+              <DetailModalField label="Reflects to" value={getImpactLabel(viewedTransaction)} />
             </DetailModalSection>
             <DetailModalSection title="Note">
               <div className="rounded-md border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-3 sm:col-span-2">

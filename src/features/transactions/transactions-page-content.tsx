@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 type TransactionTab = "All" | TransactionType;
@@ -87,12 +88,13 @@ function filterTransactions(transactions: Transaction[], filters: TransactionFil
 }
 
 export function TransactionsPageContent({ filterOptions, initialAccountFilter, transactions }: TransactionsPageContentProps) {
+  const storedTransactions = useStoredTransactions(transactions);
   const initialFilters = useMemo(() => getInitialFilters(filterOptions, initialAccountFilter), [filterOptions, initialAccountFilter]);
   const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>("All");
 
-  const filteredTransactions = useMemo(() => filterTransactions(transactions, appliedFilters), [appliedFilters, transactions]);
+  const filteredTransactions = useMemo(() => filterTransactions(storedTransactions, appliedFilters), [appliedFilters, storedTransactions]);
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));

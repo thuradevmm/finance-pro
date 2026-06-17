@@ -5,6 +5,9 @@ import { useState } from "react";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { RecordActions } from "@/components/ui/record-actions";
+import { getTransactionDerivedSavingsGoals } from "@/lib/transactions/derived-data";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { SavingsGoal, SavingsGoalStatus } from "@/types/finance";
 
 const statusStyles: Record<SavingsGoalStatus, string> = {
@@ -56,11 +59,14 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (id:
 }
 
 export function SavingsGoalsGrid({ goals }: { goals: SavingsGoal[] }) {
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transactionDerivedGoals = getTransactionDerivedSavingsGoals(storedTransactions);
   const [visibleGoals, setVisibleGoals] = useState(goals);
+  const visibleGoalIds = new Set(visibleGoals.map((goal) => goal.id));
 
   return (
     <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-      {visibleGoals.map((goal) => (
+      {transactionDerivedGoals.filter((goal) => visibleGoalIds.has(goal.id)).map((goal) => (
         <SavingsGoalCard goal={goal} key={goal.id} onDelete={(id) => setVisibleGoals((items) => items.filter((item) => item.id !== id))} />
       ))}
     </section>

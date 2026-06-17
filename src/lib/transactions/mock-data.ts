@@ -52,6 +52,8 @@ export const transactions: Transaction[] = [
     paymentMethod: "Credit Card",
     amount: "-$20.00",
     note: "ChatGPT monthly subscription",
+    linkedBudgetId: "BUD-1006",
+    linkedSubscriptionId: "SUB-1001",
   },
   {
     id: "TRX-1005",
@@ -73,6 +75,7 @@ export const transactions: Transaction[] = [
     paymentMethod: "Internal Transfer",
     amount: "$500.00",
     note: "Move funds to emergency savings",
+    linkedSavingsGoalId: "SVG-1001",
   },
   {
     id: "TRX-1003",
@@ -84,6 +87,8 @@ export const transactions: Transaction[] = [
     amount: "-$1,850.00",
     note: "Monthly apartment rent",
     attachment: "document",
+    linkedBudgetId: "BUD-1001",
+    linkedDebtId: "DEBT-1001",
   },
   {
     id: "TRX-1002",
@@ -94,6 +99,7 @@ export const transactions: Transaction[] = [
     paymentMethod: "Debit Card",
     amount: "-$96.80",
     note: "Internet and mobile plan",
+    linkedBudgetId: "BUD-1005",
   },
   {
     id: "TRX-1001",
@@ -105,6 +111,7 @@ export const transactions: Transaction[] = [
     amount: "-$58.35",
     note: "Airport ride share",
     attachment: "receipt",
+    linkedBudgetId: "BUD-1003",
   },
 ];
 

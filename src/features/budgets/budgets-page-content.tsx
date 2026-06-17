@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { getTransactionDerivedBudgets } from "@/lib/transactions/derived-data";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
@@ -186,9 +189,15 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
 }
 
 export function BudgetsPageContent({ budgets }: { budgets: BudgetCategory[] }) {
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transactionDerivedBudgets = useMemo(() => getTransactionDerivedBudgets(storedTransactions), [storedTransactions]);
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
-  const filteredBudgets = useMemo(() => visibleBudgets.filter((budget) => budget.period === activePeriod), [activePeriod, visibleBudgets]);
+  const visibleBudgetIds = useMemo(() => new Set(visibleBudgets.map((budget) => budget.id)), [visibleBudgets]);
+  const filteredBudgets = useMemo(
+    () => transactionDerivedBudgets.filter((budget) => budget.period === activePeriod && visibleBudgetIds.has(budget.id)),
+    [activePeriod, transactionDerivedBudgets, visibleBudgetIds],
+  );
 
   return (
     <>

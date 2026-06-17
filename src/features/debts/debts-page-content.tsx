@@ -4,6 +4,9 @@ import { useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { getTransactionDerivedDebts } from "@/lib/transactions/derived-data";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
 const statusStyles: Record<DebtStatus, string> = {
@@ -116,12 +119,15 @@ function UpcomingPayments({ payments }: { payments: UpcomingDebtPayment[] }) {
 }
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecord[]; payments: UpcomingDebtPayment[] }) {
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transactionDerivedDebts = getTransactionDerivedDebts(storedTransactions);
   const [visibleDebts, setVisibleDebts] = useState(debts);
+  const visibleDebtIds = new Set(visibleDebts.map((debt) => debt.id));
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="xl:col-span-9">
-        <DebtsTable debts={visibleDebts} onDelete={(id) => setVisibleDebts((items) => items.filter((item) => item.id !== id))} />
+        <DebtsTable debts={transactionDerivedDebts.filter((debt) => visibleDebtIds.has(debt.id))} onDelete={(id) => setVisibleDebts((items) => items.filter((item) => item.id !== id))} />
       </div>
       <div className="xl:col-span-3">
         <UpcomingPayments payments={payments} />

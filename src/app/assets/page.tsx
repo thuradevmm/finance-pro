@@ -5,9 +5,12 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { AssetsPageContent } from "@/features/assets/assets-page-content";
-import { assets, assetSummaries } from "@/lib/assets/mock-data";
+import { assetSummaries } from "@/lib/assets/mock-data";
+import { getTransactionDerivedAssets } from "@/lib/transactions/derived-data";
 
 export default function AssetsPage() {
+  const derivedAssets = getTransactionDerivedAssets();
+
   return (
     <AppShell
       activeNavLabel="Assets"
@@ -33,7 +36,7 @@ export default function AssetsPage() {
       />
 
       <SummaryCards summaries={assetSummaries} />
-      <AssetsPageContent assets={assets} />
+      <AssetsPageContent assets={derivedAssets} />
     </AppShell>
   );
 }

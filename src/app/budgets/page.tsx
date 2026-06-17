@@ -5,9 +5,12 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { BudgetsPageContent } from "@/features/budgets/budgets-page-content";
-import { budgetCategories, budgetSummaries } from "@/lib/budgets/mock-data";
+import { getTransactionDerivedBudgets, getTransactionDerivedBudgetSummaries } from "@/lib/transactions/derived-data";
 
 export default function BudgetsPage() {
+  const budgets = getTransactionDerivedBudgets();
+  const summaries = getTransactionDerivedBudgetSummaries();
+
   return (
     <AppShell
       activeNavLabel="Budgets"
@@ -32,8 +35,8 @@ export default function BudgetsPage() {
         title="Budgets"
       />
 
-      <SummaryCards summaries={budgetSummaries} />
-      <BudgetsPageContent budgets={budgetCategories} />
+      <SummaryCards summaries={summaries} />
+      <BudgetsPageContent budgets={budgets} />
     </AppShell>
   );
 }
