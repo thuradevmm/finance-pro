@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -6,7 +8,11 @@ import { savingsGoals } from "@/lib/savings-goals/mock-data";
 
 export default async function EditSavingsGoalPage({ params }: { params: Promise<{ goalId: string }> }) {
   const { goalId } = await params;
-  const goal = savingsGoals.find((item) => item.id === goalId) ?? savingsGoals[0];
+  const goal = savingsGoals.find((item) => item.id === goalId);
+
+  if (!goal) {
+    notFound();
+  }
   const savingsAccounts = accounts.filter((account) => account.status === "Active").map((account) => account.name);
 
   return (

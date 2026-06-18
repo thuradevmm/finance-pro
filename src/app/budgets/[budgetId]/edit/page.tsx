@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -8,7 +10,11 @@ const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
 
 export default async function EditBudgetPage({ params }: { params: Promise<{ budgetId: string }> }) {
   const { budgetId } = await params;
-  const budget = budgetCategories.find((item) => item.id === budgetId) ?? budgetCategories[0];
+  const budget = budgetCategories.find((item) => item.id === budgetId);
+
+  if (!budget) {
+    notFound();
+  }
 
   return (
     <AppShell activeNavLabel="Budgets" mobileSearchLabel="Search budgets on mobile" mobileSearchPlaceholder="Search budgets..." mobileSubtitle="Edit Budget" topSearchLabel="Search budgets" topSearchPlaceholder="Search budgets...">

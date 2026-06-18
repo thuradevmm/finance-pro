@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
@@ -15,8 +16,16 @@ const menuItems = [
 ];
 
 export function ProfileMenu({ compact = false }: ProfileMenuProps) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  function handleLogout() {
+    window.localStorage.removeItem("finance-pro.mock-session");
+    window.sessionStorage.removeItem("finance-pro.mock-session");
+    setIsOpen(false);
+    router.push("/login");
+  }
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -72,6 +81,17 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
               <span>{item.label}</span>
             </Link>
           ))}
+          <div className="mt-1 border-t border-[#c6c6cd]/40 pt-1">
+            <button
+              className="flex h-10 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0]"
+              onClick={handleLogout}
+              role="menuitem"
+              type="button"
+            >
+              <Icon className="size-4" name="logout" />
+              <span>Log Out</span>
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

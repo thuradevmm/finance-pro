@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -9,7 +11,11 @@ const statuses: AccountStatus[] = ["Active", "Needs Review", "Archived"];
 
 export default async function EditAccountPage({ params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = await params;
-  const account = accounts.find((item) => item.id === accountId) ?? accounts[0];
+  const account = accounts.find((item) => item.id === accountId);
+
+  if (!account) {
+    notFound();
+  }
 
   return (
     <AppShell

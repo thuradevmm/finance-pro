@@ -16,10 +16,14 @@ export type IconName =
   | "download"
   | "edit"
   | "eye"
+  | "eyeOff"
   | "food"
   | "help"
   | "home"
   | "medical"
+  | "mail"
+  | "lock"
+  | "logout"
   | "moreVertical"
   | "plus"
   | "receipt"
@@ -93,6 +97,12 @@ const iconPaths: Record<IconName, string[]> = {
     "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z",
     "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   ],
+  eyeOff: [
+    "M3 3l18 18",
+    "M10.6 10.7a2 2 0 0 0 2.7 2.7",
+    "M9.9 4.2A10.8 10.8 0 0 1 12 4c6.5 0 10 8 10 8a18 18 0 0 1-2.3 3.2",
+    "M6.6 6.6C3.6 8.5 2 12 2 12s3.5 8 10 8a10.5 10.5 0 0 0 5.4-1.5",
+  ],
   food: ["M4 3v8", "M8 3v8", "M6 3v18", "M14 3v18", "M14 3c3 2 5 5 5 9h-5"],
   help: [
     "M9.1 9a3 3 0 1 1 5.8 1c-.8 1.2-2.9 1.7-2.9 3.5",
@@ -101,6 +111,9 @@ const iconPaths: Record<IconName, string[]> = {
   ],
   home: ["M3 11 12 4l9 7", "M5 10v10h14V10", "M9 20v-6h6v6"],
   medical: ["M12 5v14", "M5 12h14", "M4 4h16v16H4z"],
+  mail: ["M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "m3 7 9 6 9-6"],
+  lock: ["M5 10h14a2 2 0 0 1 2 2v8H3v-8a2 2 0 0 1 2-2z", "M8 10V7a4 4 0 0 1 8 0v3", "M12 14v2"],
+  logout: ["M10 17l5-5-5-5", "M15 12H3", "M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"],
   moreVertical: ["M12 8h.01", "M12 12h.01", "M12 16h.01"],
   plus: ["M12 5v14", "M5 12h14"],
   receipt: [

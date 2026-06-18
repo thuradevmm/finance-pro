@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -9,7 +11,11 @@ const statuses: AssetStatus[] = ["Active", "Sold", "Archived"];
 
 export default async function EditAssetPage({ params }: { params: Promise<{ assetId: string }> }) {
   const { assetId } = await params;
-  const asset = assets.find((item) => item.id === assetId) ?? assets[0];
+  const asset = assets.find((item) => item.id === assetId);
+
+  if (!asset) {
+    notFound();
+  }
 
   return (
     <AppShell activeNavLabel="Assets" mobileSearchLabel="Search assets on mobile" mobileSearchPlaceholder="Search assets..." mobileSubtitle="Edit Asset" topSearchLabel="Search assets" topSearchPlaceholder="Search assets...">

@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -12,7 +14,11 @@ const statuses: SubscriptionStatus[] = ["Active", "Paused", "Expiring"];
 
 export default async function EditSubscriptionPage({ params }: { params: Promise<{ subscriptionId: string }> }) {
   const { subscriptionId } = await params;
-  const subscription = subscriptions.find((item) => item.id === subscriptionId) ?? subscriptions[0];
+  const subscription = subscriptions.find((item) => item.id === subscriptionId);
+
+  if (!subscription) {
+    notFound();
+  }
   const categoryOptions = getCategoriesForScope(categories, "Subscriptions", "Expense").map((category) => category.name);
   const paymentAccountOptions = accounts.filter((account) => account.status === "Active").map((account) => account.name);
 

@@ -1,34 +1,73 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { StatusPage } from "@/components/app/status-page";
 import { EditRecordPage } from "@/components/ui/edit-record-page";
 import { Icon } from "@/components/ui/icon";
 import { formatSignedAmount } from "@/features/transactions/transaction-amount";
 import { TransactionEditForm } from "@/features/transactions/transaction-edit-form";
 import { amountClass, transactionTypeIcon } from "@/features/transactions/transaction-styles";
 import { getImpactTarget, getImpactValue, transactionImpactOptions } from "@/lib/transactions/impact-options";
-import { transactions } from "@/lib/transactions/mock-data";
-import { updateTransactionInStorage } from "@/lib/transactions/transaction-store";
+import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
+import { updateTransactionInStorage, useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { Transaction, TransactionFilterOptions } from "@/types/finance";
 
 type TransactionEditPageContentProps = {
   filterOptions: TransactionFilterOptions;
-  transaction: Transaction;
+  transactionId: string;
 };
 
-export function TransactionEditPageContent({ filterOptions, transaction }: TransactionEditPageContentProps) {
+export function TransactionEditPageContent({ filterOptions, transactionId }: TransactionEditPageContentProps) {
   const router = useRouter();
-  const [draft, setDraft] = useState<Transaction>(transaction);
+  const storedTransactions = useStoredTransactions(fallbackTransactions);
+  const transaction = storedTransactions.find((item) => item.id === transactionId) ?? null;
+  const [overrides, setOverrides] = useState<Partial<Transaction>>({});
+  const draft = transaction ? { ...transaction, ...overrides } : null;
 
   function updateDraft<Key extends keyof Transaction>(key: Key, value: Transaction[Key]) {
-    setDraft((currentDraft) => ({ ...currentDraft, [key]: value }));
+    setOverrides((currentOverrides) => ({ ...currentOverrides, [key]: value }));
   }
 
   function saveTransaction() {
-    updateTransactionInStorage(draft, transactions);
+    if (!draft) {
+      return;
+    }
+
+    updateTransactionInStorage(draft, fallbackTransactions);
     router.push("/transactions");
+  }
+
+  if (!draft) {
+    return (
+      <StatusPage
+        actions={
+          <>
+            <Link
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-[#c6c6cd]/70 bg-white px-5 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+              href="/"
+            >
+              Return Home
+            </Link>
+            <Link
+              className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+              href="/transactions"
+            >
+              <Icon className="size-4" name="receipt" />
+              Back to Transactions
+            </Link>
+          </>
+        }
+        badge="Not Found"
+        code="404"
+        description="This transaction could not be found in the current dataset. It may have been deleted, or the browser no longer has the locally stored record."
+        fullHeight={false}
+        icon="search"
+        title="Transaction record not found"
+      />
+    );
   }
 
   const impactTarget = getImpactTarget(draft);

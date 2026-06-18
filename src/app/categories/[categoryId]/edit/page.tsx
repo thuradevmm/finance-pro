@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
@@ -8,7 +10,11 @@ const categoryTypes: CategoryType[] = ["Expense", "Income"];
 
 export default async function EditCategoryPage({ params }: { params: Promise<{ categoryId: string }> }) {
   const { categoryId } = await params;
-  const category = categories.find((item) => item.id === categoryId) ?? categories[0];
+  const category = categories.find((item) => item.id === categoryId);
+
+  if (!category) {
+    notFound();
+  }
   const record = {
     description: category.description,
     monthlyAverage: category.monthlyAverage,
