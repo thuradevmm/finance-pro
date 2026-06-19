@@ -48,6 +48,10 @@ export function ForgotPasswordForm() {
         <Icon className="mr-2 size-4" name="chevronLeft" />
         Back to Sign In
       </Link>
+      <p className="text-center text-sm text-[#5f6168]">
+        Need an account?{" "}
+        <Link className="font-semibold text-[#0058be] hover:underline" href="/register">Register now</Link>
+      </p>
     </form>
   );
 }

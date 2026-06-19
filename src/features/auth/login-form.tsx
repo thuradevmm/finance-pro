@@ -5,11 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AuthField } from "@/components/auth/auth-field";
-
-const mockAccount = {
-  email: "owner@financepro.app",
-  password: "FinancePro123!",
-};
+import { defaultMockAccount, getRegisteredMockAccount, saveMockSession } from "@/lib/auth/mock-auth";
 
 export function LoginForm() {
   const router = useRouter();
@@ -24,21 +20,24 @@ export function LoginForm() {
 
     if (!email.trim()) nextErrors.email = "Email address is required.";
     if (!password) nextErrors.password = "Password is required.";
-    if (Object.keys(nextErrors).length === 0 && (email.trim().toLowerCase() !== mockAccount.email || password !== mockAccount.password)) {
+    const registeredAccount = getRegisteredMockAccount();
+    const matchingAccount = [registeredAccount, defaultMockAccount].find(
+      (account) => account && account.email === email.trim().toLowerCase() && account.password === password,
+    );
+    if (Object.keys(nextErrors).length === 0 && !matchingAccount) {
       nextErrors.form = "Email or password does not match the mock account.";
     }
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const storage = rememberMe ? window.localStorage : window.sessionStorage;
-    storage.setItem("finance-pro.mock-session", JSON.stringify({ email: mockAccount.email, signedInAt: new Date().toISOString() }));
+    saveMockSession(matchingAccount!, rememberMe);
     router.push("/dashboard");
   }
 
   function useMockAccount() {
-    setEmail(mockAccount.email);
-    setPassword(mockAccount.password);
+    setEmail(defaultMockAccount.email);
+    setPassword(defaultMockAccount.password);
     setErrors({});
   }
 
@@ -66,12 +65,16 @@ export function LoginForm() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase text-[#1d4ed8]">Mock Account</p>
-            <p className="mt-1 text-sm font-medium text-[#0b1c30]">{mockAccount.email}</p>
-            <p className="mt-0.5 text-xs text-[#5f6168]">Password: {mockAccount.password}</p>
+            <p className="mt-1 text-sm font-medium text-[#0b1c30]">{defaultMockAccount.email}</p>
+            <p className="mt-0.5 text-xs text-[#5f6168]">Password: {defaultMockAccount.password}</p>
           </div>
           <button className="shrink-0 rounded-md px-3 py-2 text-xs font-bold text-[#0058be] transition hover:bg-white" onClick={useMockAccount} type="button">Use account</button>
         </div>
       </div>
+      <p className="text-center text-sm text-[#5f6168]">
+        New to FinancePro?{" "}
+        <Link className="font-semibold text-[#0058be] hover:underline" href="/register">Create an account</Link>
+      </p>
     </form>
   );
 }
