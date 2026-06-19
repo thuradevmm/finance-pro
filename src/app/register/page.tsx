@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function RegisterPage() {
   return (
-    <AuthShell description="Create your local mock account to start organizing your personal finances." eyebrow="Get started" title="Create your FinancePro account">
+    <AuthShell description="Create your secure account to start organizing your personal finances." eyebrow="Get started" title="Create your FinancePro account">
       <RegisterForm />
     </AuthShell>
   );

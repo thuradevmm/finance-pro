@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinancePro
 
-## Getting Started
+Next.js 16 personal finance application backed by Supabase Auth, PostgreSQL, Storage, and Row Level Security (RLS). Prisma is not used.
 
-First, run the development server:
+## Local setup
+
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env.local` and set the project URL and publishable key from **Supabase Dashboard → Project Settings → API**.
+3. In **Authentication → URL Configuration**, set the local site URL to `http://localhost:3000` and allow `http://localhost:3000/auth/callback` as a redirect URL. Add the equivalent production URL before deploying.
+4. Start the app with `npm run dev`.
+
+Only the publishable key belongs in browser-accessible environment variables. Never add a Supabase secret or service-role key to a `NEXT_PUBLIC_` variable.
+
+## Cloud database and RLS
+
+The migration in `supabase/migrations` adds the Auth profile trigger, per-user RLS policies, security-invoker views, and a private `receipts` storage bucket. It expects the existing FinancePro tables and views to have already been created in the cloud project's `public` schema.
+
+To apply it:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run db:login
+npm run db:link -- --project-ref YOUR_PROJECT_REF
+npm run db:push
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Generate typed Supabase query definitions after linking:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run db:types
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The old local PostgreSQL schema can be exported as a SQL baseline before the RLS migration with `supabase db dump --db-url YOUR_DATABASE_URL --schema public`. Supabase CLI requires Docker Desktop for that command on this machine.
 
-## Learn More
+## Verification
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx tsc --noEmit
+npm run lint
+npm run build
+```

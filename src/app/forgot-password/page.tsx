@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function ForgotPasswordPage() {
   return (
-    <AuthShell description="Enter the email associated with your account and we will prepare a mock recovery link." eyebrow="Account recovery" title="Forgot your password?">
+    <AuthShell description="Enter the email associated with your account and we will send a recovery link." eyebrow="Account recovery" title="Forgot your password?">
       <ForgotPasswordForm />
     </AuthShell>
   );

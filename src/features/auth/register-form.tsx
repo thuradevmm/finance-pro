@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AuthField } from "@/components/auth/auth-field";
-import { saveMockSession, saveRegisteredMockAccount } from "@/lib/auth/mock-auth";
+import { createClient } from "@/lib/supabase/client";
 
 type RegisterErrors = {
   confirmPassword?: string;
@@ -13,6 +13,7 @@ type RegisterErrors = {
   fullName?: string;
   password?: string;
   terms?: string;
+  form?: string;
 };
 
 export function RegisterForm() {
@@ -23,8 +24,10 @@ export function RegisterForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState<RegisterErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
     const nextErrors: RegisterErrors = {};
@@ -43,10 +46,34 @@ export function RegisterForm() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    const account = { email: normalizedEmail, fullName: fullName.trim(), password };
-    saveRegisteredMockAccount(account);
-    saveMockSession(account);
-    router.push("/dashboard");
+    setIsSubmitting(true);
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: { full_name: fullName.trim() },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    setIsSubmitting(false);
+
+    if (error) {
+      setErrors({ form: error.message });
+      return;
+    }
+
+    if (!data.session) {
+      setConfirmationSent(true);
+      return;
+    }
+
+    router.replace("/dashboard");
+    router.refresh();
+  }
+
+  if (confirmationSent) {
+    return <p className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm leading-6 text-[#0b1c30]">Check your email and follow the confirmation link to finish creating your account.</p>;
   }
 
   return (
@@ -59,13 +86,15 @@ export function RegisterForm() {
       <div>
         <label className="flex cursor-pointer items-start gap-3 text-sm leading-5 text-[#45464d]">
           <input checked={acceptedTerms} className="mt-0.5 size-4 shrink-0 accent-[#2170e4]" onChange={(event) => setAcceptedTerms(event.target.checked)} type="checkbox" />
-          <span>I agree to the mock account terms and understand that this data stays in this browser.</span>
+          <span>I agree to the account terms and privacy policy.</span>
         </label>
         {errors.terms ? <p className="mt-1.5 text-xs font-medium text-[#ba1a1a]">{errors.terms}</p> : null}
       </div>
 
-      <button className="inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2" type="submit">
-        Create Account
+      {errors.form ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{errors.form}</div> : null}
+
+      <button className="inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSubmitting} type="submit">
+        {isSubmitting ? "Creating Account…" : "Create Account"}
       </button>
 
       <p className="text-center text-sm text-[#5f6168]">

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
+import { createClient } from "@/lib/supabase/client";
 
 type ProfileMenuProps = {
   compact?: boolean;
@@ -20,11 +21,11 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  function handleLogout() {
-    window.localStorage.removeItem("finance-pro.mock-session");
-    window.sessionStorage.removeItem("finance-pro.mock-session");
+  async function handleLogout() {
+    await createClient().auth.signOut();
     setIsOpen(false);
-    router.push("/login");
+    router.replace("/login");
+    router.refresh();
   }
 
   useEffect(() => {
