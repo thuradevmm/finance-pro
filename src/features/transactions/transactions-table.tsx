@@ -292,7 +292,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className={`text-sm font-semibold ${amountClass(transaction.type)}`}>{transaction.amount}</p>
+                  <p className={`amount-value text-sm font-semibold ${amountClass(transaction.type)}`}>{transaction.amount}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -413,7 +413,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 <TransactionTypeBadge type={viewedTransaction.type} />
                 <CategoryBadge category={viewedTransaction.category} />
               </div>
-              <p className={`text-lg font-bold ${amountClass(viewedTransaction.type)}`}>{viewedTransaction.amount}</p>
+              <p className={`amount-value text-lg font-bold ${amountClass(viewedTransaction.type)}`}>{viewedTransaction.amount}</p>
             </div>
             <DetailModalSection title="Transaction information">
               <DetailModalField label="Date" value={viewedTransaction.date} />

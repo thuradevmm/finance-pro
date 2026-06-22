@@ -10,8 +10,12 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL(next, url.origin));
+    try {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) return NextResponse.redirect(new URL(next, url.origin));
+    } catch {
+      return NextResponse.redirect(new URL("/login?error=auth_unavailable", url.origin));
+    }
   }
 
   return NextResponse.redirect(new URL("/login?error=auth_callback", url.origin));

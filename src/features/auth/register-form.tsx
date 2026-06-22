@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
+import { registerWithoutEmail } from "@/app/register/actions";
 import { AuthField } from "@/components/auth/auth-field";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { LoadingButton } from "@/components/ui/loading-state";
+import { emailServicesEnabled } from "@/lib/auth/email-services";
 import { createClient } from "@/lib/supabase/client";
 
 type RegisterErrors = {
@@ -18,6 +22,7 @@ type RegisterErrors = {
 
 export function RegisterForm() {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +31,7 @@ export function RegisterForm() {
   const [errors, setErrors] = useState<RegisterErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,6 +54,26 @@ export function RegisterForm() {
 
     setIsSubmitting(true);
     const supabase = createClient();
+
+    if (!emailServicesEnabled) {
+      const result = await registerWithoutEmail({ email: normalizedEmail, fullName, password });
+      if (result.error || !result.recoveryCode) {
+        setIsSubmitting(false);
+        setErrors({ form: result.error ?? "Unable to create the account." });
+        return;
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      setIsSubmitting(false);
+      if (signInError) {
+        setErrors({ form: signInError.message });
+        return;
+      }
+
+      setRecoveryCode(result.recoveryCode);
+      return;
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -56,24 +82,37 @@ export function RegisterForm() {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
-    setIsSubmitting(false);
-
     if (error) {
+      setIsSubmitting(false);
       setErrors({ form: error.message });
       return;
     }
 
     if (!data.session) {
+      setIsSubmitting(false);
       setConfirmationSent(true);
       return;
     }
 
+    beginLoading();
     router.replace("/dashboard");
     router.refresh();
   }
 
   if (confirmationSent) {
     return <p className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm leading-6 text-[#0b1c30]">Check your email and follow the confirmation link to finish creating your account.</p>;
+  }
+
+  if (recoveryCode) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-[#0b1c30]">Save your recovery code</h2>
+        <p className="mt-2 text-sm leading-6 text-[#5f6168]">Email recovery is temporarily disabled. Store this one-time account recovery code somewhere private.</p>
+        <code className="mt-5 block break-all rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm font-semibold text-[#0b1c30]">{recoveryCode}</code>
+        <p className="mt-3 text-xs leading-5 text-[#991b1b]">This code will not be shown again. Anyone with this code and your email can reset your password.</p>
+        <LoadingButton className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white" isLoading={isSubmitting} loadingLabel="Opening Dashboard…" onClick={() => { setIsSubmitting(true); beginLoading(); router.replace("/dashboard"); router.refresh(); }} type="button">I saved it — Continue</LoadingButton>
+      </div>
+    );
   }
 
   return (
@@ -93,9 +132,9 @@ export function RegisterForm() {
 
       {errors.form ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{errors.form}</div> : null}
 
-      <button className="inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Creating Account…" : "Create Account"}
-      </button>
+      {!emailServicesEnabled ? <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-sm font-medium text-[#1d4ed8]" role="status">Email confirmation is temporarily replaced by a private recovery code.</div> : null}
+
+      <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Creating Account…" type="submit">Create Account</LoadingButton>
 
       <p className="text-center text-sm text-[#5f6168]">
         Already have an account?{" "}

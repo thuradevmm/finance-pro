@@ -6,6 +6,8 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 import { Icon, type IconName } from "@/components/ui/icon";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatSignedAmount } from "@/features/transactions/transaction-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
@@ -110,6 +112,7 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
 
 export function AddTransactionForm() {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<TransactionType>("Expense");
   const [amount, setAmount] = useState("");
   const [transactionDate, setTransactionDate] = useState("2026-06-15");
@@ -189,6 +192,7 @@ export function AddTransactionForm() {
     }
 
     addTransactionToStorage(newTransaction, transactions);
+    beginLoading();
     router.push("/transactions");
   }
 
@@ -261,11 +265,11 @@ export function AddTransactionForm() {
               <div>
                 <FieldLabel>Amount</FieldLabel>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-[#45464d]">$</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">MMK</span>
                   <input
                     aria-invalid={amountHasError}
                     aria-describedby={amountHasError ? "amount-error" : undefined}
-                    className={`h-12 w-full rounded-lg border bg-white pl-9 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
+                    className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
                       amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"
                     }`}
                     onChange={(event) => handleAmountChange(event.target.value)}
@@ -382,7 +386,9 @@ export function AddTransactionForm() {
             <Icon className="size-10" name={selectedOption.previewIcon} />
           </div>
           <p className="text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
-          <h3 className={`mt-2 text-5xl font-bold ${selectedOption.accent}`}>{previewAmount}</h3>
+          <h3 className="mt-2">
+            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{previewAmount}</ResponsiveAmount>
+          </h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-left">
             <div className="flex items-center justify-between gap-4">

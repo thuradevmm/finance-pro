@@ -5,15 +5,19 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AuthField } from "@/components/auth/auth-field";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { createClient } from "@/lib/supabase/client";
+import { markSessionActivity } from "@/lib/auth/session-timeout";
 
-export function LoginForm() {
+export function LoginForm({ initialFormError }: { initialFormError?: string }) {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({ form: initialFormError });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,18 +30,33 @@ export function LoginForm() {
 
     setIsSubmitting(true);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-    setIsSubmitting(false);
+    let error;
+    try {
+      ({ error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      }));
+    } catch {
+      setIsSubmitting(false);
+      setErrors({ form: "Unable to reach Supabase. Check your connection and try again." });
+      return;
+    }
 
     if (error) {
+      setIsSubmitting(false);
       setErrors({ form: error.message });
       return;
     }
 
-    router.replace("/dashboard");
+    const requestedPath = new URLSearchParams(window.location.search).get("next");
+    const destination = requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+      ? requestedPath
+      : "/dashboard";
+
+    markSessionActivity();
+    setIsSubmitting(false);
+    beginLoading();
+    router.replace(destination);
     router.refresh();
   }
 
@@ -57,9 +76,7 @@ export function LoginForm() {
 
       {errors.form ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{errors.form}</div> : null}
 
-      <button className="inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Signing In…" : "Sign In"}
-      </button>
+      <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Signing In…" type="submit">Sign In</LoadingButton>
       <p className="text-center text-sm text-[#5f6168]">
         New to FinancePro?{" "}
         <Link className="font-semibold text-[#0058be] hover:underline" href="/register">Create an account</Link>

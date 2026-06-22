@@ -35,7 +35,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{billing.name}</p>
                 <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle}</p>
               </div>
-              <p className="text-lg font-semibold text-[#0b1c30]">{billing.amount}</p>
+              <p className="amount-value text-lg font-semibold text-[#0b1c30]">{billing.amount}</p>
             </div>
           </article>
         ))}

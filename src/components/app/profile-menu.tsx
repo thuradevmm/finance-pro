@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { LoadingSpinner } from "@/components/ui/loading-state";
 import { createClient } from "@/lib/supabase/client";
+import { getUserSafely } from "@/lib/supabase/auth";
 
 type ProfileMenuProps = {
   compact?: boolean;
@@ -18,15 +21,53 @@ const menuItems = [
 
 export function ProfileMenu({ compact = false }: ProfileMenuProps) {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [isOpen, setIsOpen] = useState(false);
+  const [fullName, setFullName] = useState("Profile");
+  const [email, setEmail] = useState("Account");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const initials = fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "U";
 
   async function handleLogout() {
-    await createClient().auth.signOut();
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await createClient().auth.signOut();
+    } catch {
+      setIsLoggingOut(false);
+      return;
+    }
     setIsOpen(false);
+    beginLoading();
     router.replace("/login");
     router.refresh();
   }
+
+  useEffect(() => {
+    let isMounted = true;
+    const supabase = createClient();
+
+    async function loadCurrentUser() {
+      const { user } = await getUserSafely(supabase);
+      if (!user || !isMounted) return;
+
+      const metadataName = typeof user.user_metadata.full_name === "string" ? user.user_metadata.full_name.trim() : "";
+      const { data: profile } = await supabase.from("user_profiles").select("full_name").eq("id", user.id).maybeSingle();
+      if (!isMounted) return;
+
+      setFullName(profile?.full_name?.trim() || metadataName || user.email?.split("@")[0] || "User");
+      setEmail(user.email ?? "Signed-in account");
+    }
+
+    loadCurrentUser();
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -52,7 +93,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
         onClick={() => setIsOpen((current) => !current)}
         type="button"
       >
-        <span className="grid size-8 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">AF</span>
+        <span className="grid size-8 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">{initials}</span>
         {compact ? null : (
           <>
             <span>Profile</span>
@@ -67,8 +108,8 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           role="menu"
         >
           <div className="border-b border-[#c6c6cd]/40 px-4 py-3">
-            <p className="text-sm font-semibold text-[#0b1c30]">Aung Finance</p>
-            <p className="mt-1 text-xs font-medium text-[#45464d]">Owner account</p>
+            <p className="truncate text-sm font-semibold text-[#0b1c30]">{fullName}</p>
+            <p className="mt-1 truncate text-xs font-medium text-[#45464d]">{email}</p>
           </div>
           {menuItems.map((item) => (
             <Link
@@ -85,12 +126,13 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           <div className="mt-1 border-t border-[#c6c6cd]/40 pt-1">
             <button
               className="flex h-10 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0]"
+              disabled={isLoggingOut}
               onClick={handleLogout}
               role="menuitem"
               type="button"
             >
-              <Icon className="size-4" name="logout" />
-              <span>Log Out</span>
+              {isLoggingOut ? <LoadingSpinner /> : <Icon className="size-4" name="logout" />}
+              <span>{isLoggingOut ? "Logging Out…" : "Log Out"}</span>
             </button>
           </div>
         </div>

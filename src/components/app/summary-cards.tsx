@@ -13,7 +13,7 @@ export function SummaryCards({ summaries }: SummaryCardsProps) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase text-[#45464d]">{summary.label}</p>
-              <p className={`mt-2 text-2xl font-semibold ${summary.tone}`}>{summary.value}</p>
+              <p className={`amount-value mt-2 overflow-x-auto text-2xl font-semibold ${summary.tone}`}>{summary.value}</p>
             </div>
             <span className={`grid size-10 place-items-center rounded-md ${summary.bg} ${summary.tone}`}>
               <Icon name={summary.icon} />

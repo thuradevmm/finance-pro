@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon, type IconName } from "@/components/ui/icon";
+import { LoadingSpinner } from "@/components/ui/loading-state";
 import { ModalShell } from "@/components/ui/modal-shell";
 
 type DeleteConfirmationDialogProps = {
@@ -8,9 +9,10 @@ type DeleteConfirmationDialogProps = {
   description: string;
   icon?: IconName;
   isOpen: boolean;
+  isPending?: boolean;
   itemLabel: string;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title?: string;
 };
 
@@ -19,6 +21,7 @@ export function DeleteConfirmationDialog({
   description,
   icon = "trash",
   isOpen,
+  isPending = false,
   itemLabel,
   onCancel,
   onConfirm,
@@ -37,11 +40,12 @@ export function DeleteConfirmationDialog({
           </button>
           <button
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#b42318] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#8f1d14]"
+            disabled={isPending}
             onClick={onConfirm}
             type="button"
           >
-            <Icon className="size-4" name="trash" />
-            {confirmLabel}
+            {isPending ? <LoadingSpinner /> : <Icon className="size-4" name="trash" />}
+            {isPending ? "Deleting…" : confirmLabel}
           </button>
         </>
       }

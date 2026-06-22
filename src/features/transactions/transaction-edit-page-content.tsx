@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { StatusPage } from "@/components/app/status-page";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { EditRecordPage } from "@/components/ui/edit-record-page";
 import { Icon } from "@/components/ui/icon";
 import { formatSignedAmount } from "@/features/transactions/transaction-amount";
@@ -22,6 +23,7 @@ type TransactionEditPageContentProps = {
 
 export function TransactionEditPageContent({ filterOptions, transactionId }: TransactionEditPageContentProps) {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const storedTransactions = useStoredTransactions(fallbackTransactions);
   const transaction = storedTransactions.find((item) => item.id === transactionId) ?? null;
   const [overrides, setOverrides] = useState<Partial<Transaction>>({});
@@ -37,6 +39,7 @@ export function TransactionEditPageContent({ filterOptions, transactionId }: Tra
     }
 
     updateTransactionInStorage(draft, fallbackTransactions);
+    beginLoading();
     router.push("/transactions");
   }
 
@@ -85,7 +88,7 @@ export function TransactionEditPageContent({ filterOptions, transactionId }: Tra
             <Icon className="size-10" name={transactionTypeIcon(draft.type)} />
           </div>
           <p className="text-xs font-bold uppercase text-[#45464d]">{draft.type} Preview</p>
-          <h3 className={`mt-2 text-5xl font-bold ${amountClass(draft.type)}`}>{formatSignedAmount(draft.amount, draft.type)}</h3>
+          <h3 className={`amount-value mt-2 overflow-x-auto text-5xl font-bold ${amountClass(draft.type)}`}>{formatSignedAmount(draft.amount, draft.type)}</h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-left">
             <div className="flex items-center justify-between gap-4">

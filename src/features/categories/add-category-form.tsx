@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { createCategory, updateCategory } from "@/app/categories/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryScope, CategoryType } from "@/types/finance";
 
 type CategoryIconOption = {
@@ -40,21 +46,66 @@ const categoryColors: CategoryColorOption[] = [
 ];
 const categoryScopes: CategoryScope[] = ["Transactions", "Accounts", "Budgets", "Savings Goals", "Debts", "Subscriptions", "Assets", "Reports"];
 
-export function AddCategoryForm() {
-  const [selectedType, setSelectedType] = useState<CategoryType>("Expense");
-  const [selectedIcon, setSelectedIcon] = useState<CategoryIconOption>(categoryIcons[0]);
-  const [selectedColor, setSelectedColor] = useState<CategoryColorOption>(categoryColors[0]);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [monthlyAverage, setMonthlyAverage] = useState("");
-  const [selectedScopes, setSelectedScopes] = useState<CategoryScope[]>(["Transactions"]);
+export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
+  const [selectedIcon, setSelectedIcon] = useState<CategoryIconOption>(categoryIcons.find((option) => option.icon === category?.icon) ?? categoryIcons[0]);
+  const [selectedColor, setSelectedColor] = useState<CategoryColorOption>(categoryColors.find((option) => option.label === category?.color) ?? categoryColors[0]);
+  const [name, setName] = useState(category?.name ?? "");
+  const [description, setDescription] = useState(category?.description ?? "");
+  const [monthlyAverage, setMonthlyAverage] = useState(category ? category.monthlyAverage.replace(/[^0-9.]/g, "") : "");
+  const [selectedScopes, setSelectedScopes] = useState<CategoryScope[]>(category?.scopes ?? ["Transactions"]);
+  const [status, setStatus] = useState(category?.status ?? "Active");
+  const [isDefault, setIsDefault] = useState(category?.isDefault ?? false);
   const [showErrors, setShowErrors] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const averageHasError = showErrors && monthlyAverage.trim() === "";
   const scopesHaveError = showErrors && selectedScopes.length === 0;
 
-  function handleSaveCategory() {
-    setShowErrors(name.trim() === "" || monthlyAverage.trim() === "" || selectedScopes.length === 0);
+  async function handleSaveCategory(addAnother = false) {
+    const hasErrors = name.trim() === "" || monthlyAverage.trim() === "" || selectedScopes.length === 0;
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+
+    const input: CategoryFormData = {
+      color: selectedColor.label,
+      description: description.trim(),
+      icon: selectedIcon.icon,
+      isActive: status === "Active",
+      isDefault,
+      monthlyAverage: Number(monthlyAverage),
+      name: name.trim(),
+      scopes: selectedScopes,
+      type: selectedType,
+    };
+
+    setIsSaving(true);
+    const result = category
+      ? await updateCategory(category.id, input)
+      : await createCategory(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+
+    if (addAnother && !category) {
+      setIsSaving(false);
+      setName("");
+      setDescription("");
+      setMonthlyAverage("");
+      setSelectedScopes(["Transactions"]);
+      setShowErrors(false);
+      return;
+    }
+
+    beginLoading();
+    router.push("/categories");
+    router.refresh();
   }
 
   function toggleScope(scope: CategoryScope) {
@@ -120,8 +171,13 @@ export function AddCategoryForm() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Status" options={["Active", "Hidden"]} />
-            <SelectInput label="Budget Tracking" options={["Included in budgets", "Excluded from budgets"]} />
+            <SelectInput label="Status" onChange={(value) => setStatus(value === "Hidden" ? "Hidden" : "Active")} options={["Active", "Hidden"]} value={status} />
+            <SelectInput
+              label="Category Kind"
+              onChange={(value) => setIsDefault(value === "Default")}
+              options={["Regular", "Default"]}
+              value={isDefault ? "Default" : "Regular"}
+            />
           </div>
         </FormCard>
 
@@ -208,6 +264,7 @@ export function AddCategoryForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link
             className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/categories"
@@ -216,17 +273,21 @@ export function AddCategoryForm() {
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(category)}
+            onClick={() => handleSaveCategory(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveCategory}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveCategory(false)}
             type="button"
           >
             Save Category
-          </button>
+          </LoadingButton>
         </div>
       </div>
 
@@ -244,6 +305,7 @@ export function AddCategoryForm() {
               <span className="rounded border border-[#c6c6cd]/40 bg-[#eff4ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">
                 {selectedType}
               </span>
+              {isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
             </div>
             <p className="mb-4 text-sm text-[#45464d]">{description || "Category description preview"}</p>
             <div className="mb-4 flex flex-wrap gap-1.5">
@@ -256,7 +318,7 @@ export function AddCategoryForm() {
             <div className="flex items-end justify-between gap-4 border-t border-[#c6c6cd]/40 pt-4">
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Monthly Avg</span>
-                <span className="text-2xl font-semibold text-[#0b1c30]">{monthlyAverage ? `$${monthlyAverage}` : "$0"}</span>
+                <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage ? `MMK ${monthlyAverage}` : "MMK 0"}</ResponsiveAmount>
               </div>
               <span className="text-right text-xs font-semibold text-[#45464d]">0 Transactions</span>
             </div>

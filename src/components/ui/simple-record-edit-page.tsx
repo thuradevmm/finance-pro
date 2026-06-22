@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { EditFormSection, EditRecordPage } from "@/components/ui/edit-record-page";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import { formatMmk } from "@/lib/currency";
 
 export type SimpleEditField = {
   key: string;
@@ -33,6 +35,7 @@ type SimpleRecordEditPageProps = {
 
 export function SimpleRecordEditPage({ cancelHref, fields, preview, record, saveLabel }: SimpleRecordEditPageProps) {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [draft, setDraft] = useState(record);
 
   function updateDraft(key: string, value: string) {
@@ -50,7 +53,7 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
       return "";
     }
 
-    return `$${numericValue.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+    return formatMmk(numericValue);
   }
 
   function formatPercent(value: string) {
@@ -92,7 +95,7 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
   return (
     <EditRecordPage
       cancelHref={cancelHref}
-      onSave={() => router.push(cancelHref)}
+      onSave={() => { beginLoading(); router.push(cancelHref); }}
       preview={
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
@@ -110,7 +113,7 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
               {preview.metrics.map((metric) => (
                 <div className="flex items-center justify-between gap-4" key={`${metric.label}-${metric.key}`}>
                   <dt className="text-xs font-bold uppercase text-[#45464d]">{metric.label}</dt>
-                  <dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{getMetricValue(metric)}</dd>
+                  <dd className="amount-value max-w-40 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{getMetricValue(metric)}</dd>
                 </div>
               ))}
             </dl>

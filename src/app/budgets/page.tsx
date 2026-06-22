@@ -5,11 +5,15 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { BudgetsPageContent } from "@/features/budgets/budgets-page-content";
-import { getTransactionDerivedBudgets, getTransactionDerivedBudgetSummaries } from "@/lib/transactions/derived-data";
+import { getBudgets, getBudgetSummaries } from "@/lib/budgets/supabase";
+import { getUserSafely } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
-export default function BudgetsPage() {
-  const budgets = getTransactionDerivedBudgets();
-  const summaries = getTransactionDerivedBudgetSummaries();
+export default async function BudgetsPage() {
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  const budgets = user ? await getBudgets(supabase, user.id) : [];
+  const summaries = getBudgetSummaries(budgets);
 
   return (
     <AppShell

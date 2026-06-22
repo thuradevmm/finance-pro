@@ -71,7 +71,7 @@ function DebtsTable({ debts, onDelete }: { debts: DebtRecord[]; onDelete: (id: s
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 text-right text-[#0b1c30]">{debt.totalAmount}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{debt.repaidAmount}</td>
-                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${debt.remainingBalance === "$0.00" ? "text-[#047857]" : "text-[#0b1c30]"}`}>
+                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${debt.remainingBalance === "MMK 0.00" ? "text-[#047857]" : "text-[#0b1c30]"}`}>
                   {debt.remainingBalance}
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 text-right text-[#0b1c30]">{debt.monthlyPayment}</td>

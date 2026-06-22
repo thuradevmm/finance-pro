@@ -4,10 +4,13 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { AuthField } from "@/components/auth/auth-field";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { createClient } from "@/lib/supabase/client";
 
 export function UpdatePasswordForm() {
   const router = useRouter();
+  const beginLoading = useInteractionLoading();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,12 +30,13 @@ export function UpdatePasswordForm() {
     setError("");
     setIsSubmitting(true);
     const { error: updateError } = await createClient().auth.updateUser({ password });
-    setIsSubmitting(false);
     if (updateError) {
+      setIsSubmitting(false);
       setError(updateError.message);
       return;
     }
 
+    beginLoading();
     router.replace("/dashboard");
     router.refresh();
   }
@@ -42,9 +46,7 @@ export function UpdatePasswordForm() {
       <AuthField autoComplete="new-password" icon="lock" label="New Password" name="password" onChange={setPassword} placeholder="Enter a new password" type="password" value={password} />
       <AuthField autoComplete="new-password" icon="lock" label="Confirm Password" name="confirmPassword" onChange={setConfirmPassword} placeholder="Enter the password again" type="password" value={confirmPassword} />
       {error ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
-      <button className="inline-flex h-12 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={isSubmitting} type="submit">
-        {isSubmitting ? "Updating…" : "Update Password"}
-      </button>
+      <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Updating…" type="submit">Update Password</LoadingButton>
     </form>
   );
 }

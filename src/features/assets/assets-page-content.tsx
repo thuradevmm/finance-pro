@@ -6,6 +6,7 @@ import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import { formatMmk } from "@/lib/currency";
 import { getTransactionDerivedAssets } from "@/lib/transactions/derived-data";
 import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
 import { useStoredTransactions } from "@/lib/transactions/transaction-store";
@@ -24,14 +25,14 @@ const conditionStyles: Record<AssetRecord["condition"], string> = {
   "Needs Repair": "text-[#b42318]",
 };
 
-const amountRanges = ["All amounts", "Under $500", "$500 - $1,500", "$1,500+"] as const;
+const amountRanges = ["All amounts", "Under MMK 500", "MMK 500 - 1,500", "MMK 1,500+"] as const;
 
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.]/g, "")) || 0;
 }
 
 function formatCurrency(value: number) {
-  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  return formatMmk(value);
 }
 
 function getPurchaseYear(asset: AssetRecord) {
@@ -47,15 +48,15 @@ function getPurchaseYear(asset: AssetRecord) {
 function matchesAmountRange(asset: AssetRecord, range: (typeof amountRanges)[number]) {
   const purchaseAmount = parseCurrency(asset.purchaseAmount);
 
-  if (range === "Under $500") {
+  if (range === "Under MMK 500") {
     return purchaseAmount < 500;
   }
 
-  if (range === "$500 - $1,500") {
+  if (range === "MMK 500 - 1,500") {
     return purchaseAmount >= 500 && purchaseAmount <= 1500;
   }
 
-  if (range === "$1,500+") {
+  if (range === "MMK 1,500+") {
     return purchaseAmount > 1500;
   }
 
@@ -83,11 +84,11 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: str
       <dl className="grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Purchased</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{asset.purchaseAmount}</dd>
+          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{asset.purchaseAmount}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Current</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#0058be]">{asset.currentValue}</dd>
+          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0058be]">{asset.currentValue}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Used</dt>

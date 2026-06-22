@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ProgressCircle } from "@/components/ui/progress-circle";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
 
@@ -173,18 +174,18 @@ export function AddDebtForm() {
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Repaid</dt>
-                <dd className="text-lg font-semibold text-[#047857]">{repaidAmount ? `$${repaidAmount}` : "$0"}</dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#047857]" maxSizeRem={1.125}>{repaidAmount ? `MMK ${repaidAmount}` : "MMK 0"}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Remaining</dt>
-                <dd className="text-lg font-semibold text-[#0b1c30]">${remaining.toLocaleString()}</dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>MMK {remaining.toLocaleString()}</ResponsiveAmount></dd>
               </div>
             </dl>
 
             <div className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Monthly Payment</span>
-                <span className="text-sm font-semibold text-[#0b1c30]">{monthlyPayment ? `$${monthlyPayment}` : "$0"}</span>
+                <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyPayment ? `MMK ${monthlyPayment}` : "MMK 0"}</ResponsiveAmount>
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Start</span>

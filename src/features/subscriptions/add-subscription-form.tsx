@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { accounts } from "@/lib/accounts/mock-data";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
@@ -140,8 +141,8 @@ export function AddSubscriptionForm() {
 
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{billingCycle} Cost</p>
-              <p className="mt-2 text-4xl font-bold text-[#0b1c30]">{amount ? `$${amount}` : "$0.00"}</p>
-              <p className="mt-2 text-sm font-semibold text-[#45464d]">Yearly estimate: ${yearlyAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{amount ? `MMK ${amount}` : "MMK 0"}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-semibold text-[#45464d]" maxSizeRem={0.875}>Yearly estimate: MMK {yearlyAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</ResponsiveAmount>
             </div>
 
             <dl className="mt-5 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">

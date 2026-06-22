@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
 import { calculateUsageDuration } from "@/lib/date-duration";
@@ -140,11 +141,11 @@ export function AddAssetForm() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Purchase</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{purchaseAmount ? `$${purchaseAmount}` : "$0"}</dd>
+                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{purchaseAmount ? `MMK ${purchaseAmount}` : "MMK 0"}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Current</dt>
-                <dd className="text-sm font-semibold text-[#0058be]">{currentValue ? `$${currentValue}` : "$0"}</dd>
+                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0058be]" maxSizeRem={0.875}>{currentValue ? `MMK ${currentValue}` : "MMK 0"}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Started</dt>

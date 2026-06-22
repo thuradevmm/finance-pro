@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getUserSafely } from "@/lib/supabase/auth";
 
 const publicRoutes = new Set([
   "/login",
@@ -27,7 +28,7 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const { user, error: authError } = await getUserSafely(supabase);
   const path = request.nextUrl.pathname;
   const isPublicRoute = publicRoutes.has(path) || path.startsWith("/auth/");
 
@@ -35,6 +36,7 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
+    if (authError) url.searchParams.set("error", "auth_unavailable");
     return NextResponse.redirect(url);
   }
 

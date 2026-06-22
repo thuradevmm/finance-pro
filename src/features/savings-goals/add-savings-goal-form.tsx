@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ProgressCircle } from "@/components/ui/progress-circle";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { accounts } from "@/lib/accounts/mock-data";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
@@ -148,11 +149,11 @@ export function AddSavingsGoalForm() {
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
-                <dd className="text-lg font-semibold text-[#0b1c30]">{savedAmount ? `$${savedAmount}` : "$0"}</dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{savedAmount ? `MMK ${savedAmount}` : "MMK 0"}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
-                <dd className="text-lg font-semibold text-[#0b1c30]">{targetAmount ? `$${targetAmount}` : "$0"}</dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{targetAmount ? `MMK ${targetAmount}` : "MMK 0"}</ResponsiveAmount></dd>
               </div>
             </dl>
 
@@ -160,7 +161,7 @@ export function AddSavingsGoalForm() {
               Target: {targetDate || "Not set"}
             </div>
             <div className="mt-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
-              Monthly: <span className="font-semibold text-[#0b1c30]">{monthlyContribution ? `$${monthlyContribution}` : "$0"}</span>
+              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyContribution ? `MMK ${monthlyContribution}` : "MMK 0"}</ResponsiveAmount>
               <p className="mt-2">{description || "Savings plan note will appear here."}</p>
             </div>
           </div>

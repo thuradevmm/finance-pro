@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { deleteBudget } from "@/app/budgets/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
-import { getTransactionDerivedBudgets } from "@/lib/transactions/derived-data";
-import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
+import { formatMmk } from "@/lib/currency";
+import type { BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
@@ -22,7 +23,7 @@ function parseCurrency(value: string) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", { currency: "USD", maximumFractionDigits: 0, style: "currency" }).format(value);
+  return formatMmk(value);
 }
 
 function BudgetPeriodControls({
@@ -101,7 +102,7 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
         <div className="absolute bottom-0 top-0 w-0.5 bg-[#45464d]/50" style={{ left: "80%" }} />
       </div>
       <div className="mt-2 flex justify-between text-xs font-semibold uppercase text-[#45464d]">
-        <span>$0</span>
+        <span>{formatMmk(0)}</span>
         <span>Target 80%</span>
         <span>{formatCurrency(totalBudget)}</span>
       </div>
@@ -188,22 +189,42 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
   );
 }
 
-export function BudgetsPageContent({ budgets }: { budgets: BudgetCategory[] }) {
-  const storedTransactions = useStoredTransactions(fallbackTransactions);
-  const transactionDerivedBudgets = useMemo(() => getTransactionDerivedBudgets(storedTransactions), [storedTransactions]);
+export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
-  const visibleBudgetIds = useMemo(() => new Set(visibleBudgets.map((budget) => budget.id)), [visibleBudgets]);
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
   const filteredBudgets = useMemo(
-    () => transactionDerivedBudgets.filter((budget) => budget.period === activePeriod && visibleBudgetIds.has(budget.id)),
-    [activePeriod, transactionDerivedBudgets, visibleBudgetIds],
+    () => visibleBudgets.filter((budget) => budget.period === activePeriod),
+    [activePeriod, visibleBudgets],
   );
+
+  async function handleDelete(id: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteBudget(id);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setVisibleBudgets((items) => items.filter((item) => item.id !== id));
+  }
 
   return (
     <>
       <BudgetPeriodControls activePeriod={activePeriod} onPeriodChange={setActivePeriod} />
+      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating budgets…</p> : null}
       <OverallBudgetUsage budgets={filteredBudgets} />
-      <BudgetBreakdownTable budgets={filteredBudgets} onDelete={(id) => setVisibleBudgets((items) => items.filter((item) => item.id !== id))} />
+      {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+          <Icon className="mx-auto size-8 text-[#76777d]" name="savings" />
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No {activePeriod.toLowerCase()} budgets yet</h2>
+          <p className="mt-1 text-sm text-[#45464d]">Create a budget to start tracking spending limits.</p>
+          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/budgets/add">Create Budget</Link>
+        </section>
+      )}
     </>
   );
 }

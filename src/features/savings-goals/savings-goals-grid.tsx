@@ -37,11 +37,11 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (id:
       <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
         <div>
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
-          <dd className="text-lg font-semibold text-[#0b1c30]">{goal.savedAmount}</dd>
+          <dd className="amount-value overflow-x-auto text-lg font-semibold text-[#0b1c30]">{goal.savedAmount}</dd>
         </div>
         <div>
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
-          <dd className="text-lg font-semibold text-[#0b1c30]">{goal.targetAmount}</dd>
+          <dd className="amount-value overflow-x-auto text-lg font-semibold text-[#0b1c30]">{goal.targetAmount}</dd>
         </div>
       </dl>
 

@@ -1,12 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
+import { createAccount, updateAccount } from "@/app/accounts/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { LoadingButton } from "@/components/ui/loading-state";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { categories } from "@/lib/categories/mock-data";
+import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
 import type { AccountStatus, AccountType } from "@/types/finance";
 
 type AccountTypeOption = {
@@ -61,7 +67,7 @@ const accountTypes: AccountTypeOption[] = [
   },
 ];
 
-const currencies = ["USD", "MMK", "THB", "SGD", "EUR"];
+const currencies = ["MMK"];
 const statuses: AccountStatus[] = ["Active", "Needs Review", "Archived"];
 
 function FieldLabel({ children }: { children: string }) {
@@ -134,25 +140,77 @@ function TextInput({
   );
 }
 
-export function AddAccountForm() {
-  const [selectedType, setSelectedType] = useState<AccountType>("Bank Account");
-  const [accountName, setAccountName] = useState("");
-  const [institution, setInstitution] = useState("");
-  const [openingBalance, setOpeningBalance] = useState("");
-  const [currency, setCurrency] = useState("USD");
-  const [status, setStatus] = useState<AccountStatus>("Active");
+export function AddAccountForm({ account }: { account?: AccountRecord }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const [selectedType, setSelectedType] = useState<AccountType>(account?.type ?? "Bank Account");
+  const [accountName, setAccountName] = useState(account?.name ?? "");
+  const [institution, setInstitution] = useState(account?.institution ?? "");
+  const [accountNumber, setAccountNumber] = useState(account?.accountNumber ?? "");
+  const [openingBalance, setOpeningBalance] = useState(account ? String(account.initialBalanceValue) : "");
+  const [availableBalance, setAvailableBalance] = useState(account ? String(account.availableBalanceValue) : "");
+  const [currency, setCurrency] = useState(account?.currency ?? "MMK");
+  const [status, setStatus] = useState<AccountStatus>(account?.status ?? "Active");
   const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts").map((category) => category.name), []);
-  const accountCategoryOptions = accountCategories.length > 0 ? accountCategories : ["Everyday Banking"];
-  const [selectedCategory, setSelectedCategory] = useState(accountCategoryOptions[0]);
+  const accountCategoryOptions = account?.category && !accountCategories.includes(account.category)
+    ? [account.category, ...accountCategories]
+    : accountCategories.length > 0 ? accountCategories : ["Everyday Banking"];
+  const [selectedCategory, setSelectedCategory] = useState(account?.category || accountCategoryOptions[0]);
+  const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState(account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
+  const [notes, setNotes] = useState(account?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
   const balanceHasError = showErrors && openingBalance.trim() === "";
   const availableLabel = selectedType === "Credit Card" ? "Available Credit" : "Available Balance";
 
-  function handleSaveAccount() {
-    setShowErrors(accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "");
+  async function handleSaveAccount(addAnother = false) {
+    const hasErrors = accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+
+    const input: AccountFormData = {
+      accountNumber,
+      availableBalance: availableBalance.trim() === "" ? Number(openingBalance) : Number(availableBalance),
+      category: selectedCategory,
+      currency,
+      institution,
+      monthlyBudgetLimit: monthlyBudgetLimit.trim() === "" ? null : Number(monthlyBudgetLimit),
+      name: accountName,
+      notes,
+      openingBalance: Number(openingBalance),
+      status,
+      type: selectedType,
+    };
+
+    setIsSaving(true);
+    const result = account ? await updateAccount(account.id, input) : await createAccount(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+
+    if (addAnother && !account) {
+      setIsSaving(false);
+      setAccountName("");
+      setInstitution("");
+      setAccountNumber("");
+      setOpeningBalance("");
+      setAvailableBalance("");
+      setMonthlyBudgetLimit("");
+      setNotes("");
+      setShowErrors(false);
+      return;
+    }
+
+    beginLoading();
+    router.push("/accounts");
+    router.refresh();
   }
 
   return (
@@ -200,7 +258,7 @@ export function AddAccountForm() {
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <TextInput label="Account Number Label" placeholder="...4582 or Cash" />
+              <TextInput label="Account Number Label" onChange={setAccountNumber} placeholder="...4582 or Cash" value={accountNumber} />
               <SelectInput label="Currency" onChange={setCurrency} options={currencies} value={currency} />
             </div>
 
@@ -208,9 +266,9 @@ export function AddAccountForm() {
               <div>
                 <FieldLabel>{selectedType === "Credit Card" ? "Current Used Balance" : "Opening Balance"}</FieldLabel>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-[#45464d]">$</span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">MMK</span>
                   <input
-                    className={`h-12 w-full rounded-lg border bg-white pl-9 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
+                    className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
                       balanceHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"
                     }`}
                     onChange={(event) => setOpeningBalance(event.target.value)}
@@ -221,7 +279,7 @@ export function AddAccountForm() {
                 </div>
                 {balanceHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Balance is required.</p> : null}
               </div>
-              <TextInput label={availableLabel} placeholder="0.00" type="number" />
+              <TextInput label={availableLabel} onChange={setAvailableBalance} placeholder="0.00" type="number" value={availableBalance} />
             </div>
           </FormCard>
 
@@ -232,20 +290,23 @@ export function AddAccountForm() {
             </div>
 
             <div className="mt-5">
-              <TextInput label="Monthly Budget Limit" placeholder="Optional" type="number" />
+              <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="number" value={monthlyBudgetLimit} />
             </div>
 
             <div className="mt-5">
               <FieldLabel>Notes</FieldLabel>
               <textarea
                 className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                onChange={(event) => setNotes(event.target.value)}
                 placeholder="Optional notes for this account..."
                 rows={4}
+                value={notes}
               />
             </div>
           </FormCard>
 
           <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+            {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
             <Link
               className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
               href="/accounts"
@@ -254,17 +315,21 @@ export function AddAccountForm() {
             </Link>
             <button
               className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+              disabled={isSaving || Boolean(account)}
+              onClick={() => handleSaveAccount(true)}
               type="button"
             >
               Save & Add Another
             </button>
-            <button
-              className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-              onClick={handleSaveAccount}
+            <LoadingButton
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+              isLoading={isSaving}
+              loadingLabel="Saving…"
+              onClick={() => handleSaveAccount(false)}
               type="button"
             >
               Save Account
-            </button>
+            </LoadingButton>
           </div>
         </form>
       </div>
@@ -275,8 +340,8 @@ export function AddAccountForm() {
             <Icon className="size-10" name={selectedOption.icon} />
           </div>
           <p className="text-center text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
-          <h3 className={`mt-2 text-center text-5xl font-bold ${selectedOption.accent}`}>
-            {openingBalance.trim() === "" ? "$0.00" : `$${openingBalance}`}
+          <h3 className="mt-2 text-center">
+            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{openingBalance.trim() === "" ? "MMK 0" : `MMK ${openingBalance}`}</ResponsiveAmount>
           </h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">

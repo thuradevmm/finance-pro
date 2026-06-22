@@ -48,15 +48,15 @@ function parseAmount(value: string) {
 function matchesAmountFilter(transaction: Transaction, amountFilter: string) {
   const amount = Math.abs(parseAmount(transaction.amount));
 
-  if (amountFilter === "> $100") {
+  if (amountFilter === "> MMK 100") {
     return amount > 100;
   }
 
-  if (amountFilter === "< $100") {
+  if (amountFilter === "< MMK 100") {
     return amount < 100;
   }
 
-  if (amountFilter === "$500+") {
+  if (amountFilter === "MMK 500+") {
     return amount >= 500;
   }
 

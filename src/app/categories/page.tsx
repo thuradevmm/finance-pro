@@ -5,9 +5,11 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { CategoriesPageContent } from "@/features/categories/categories-page-content";
-import { categories, categorySummaries } from "@/lib/categories/mock-data";
+import { getCategories, getCategorySummaries } from "@/lib/categories/supabase";
 
-export default function CategoriesPage() {
+export default async function CategoriesPage() {
+  const categories = await getCategories();
+  const categorySummaries = getCategorySummaries(categories);
   return (
     <AppShell
       activeNavLabel="Categories"

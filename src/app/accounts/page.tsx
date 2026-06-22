@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { deleteAccount as deleteAccountAction } from "@/app/accounts/actions";
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
-import { accountSummaries, accounts } from "@/lib/accounts/mock-data";
+import { getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
+import { createClient } from "@/lib/supabase/client";
+import { getUserSafely } from "@/lib/supabase/auth";
 import type { AccountStatus, FinancialAccount } from "@/types/finance";
 
 const statusStyles: Record<AccountStatus, string> = {
@@ -54,7 +57,7 @@ function AccountCard({
 
       <div className="mt-5">
         <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
-        <p className={`mt-2 text-3xl font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+        <p className={`amount-value mt-2 overflow-x-auto text-3xl font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
           {account.balance}
         </p>
       </div>
@@ -62,15 +65,15 @@ function AccountCard({
       <dl className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Inflow</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#047857]">{account.monthlyInflow}</dd>
+          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#047857]">{account.monthlyInflow}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Outflow</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#b42318]">{account.monthlyOutflow}</dd>
+          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#b42318]">{account.monthlyOutflow}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Available</dt>
-          <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{account.availableBalance}</dd>
+          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{account.availableBalance}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Transactions</dt>
@@ -184,13 +187,56 @@ function AccountsTable({
 }
 
 export default function AccountsPage() {
-  const [visibleAccounts, setVisibleAccounts] = useState(accounts);
+  const [visibleAccounts, setVisibleAccounts] = useState<AccountRecord[]>([]);
   const [viewedAccount, setViewedAccount] = useState<FinancialAccount | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
   const activeAccounts = visibleAccounts.filter((account) => account.status === "Active");
-  const deleteAccount = (id: string) => {
+  const accountSummaries = getAccountSummaries(visibleAccounts);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAccounts() {
+      setIsLoading(true);
+      setError("");
+      const supabase = createClient();
+      const { user, error: userError } = await getUserSafely(supabase);
+      if (userError || !user) {
+        if (isMounted) {
+          setError("You must be signed in to view accounts.");
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const accounts = await getAccounts(supabase, user.id);
+        if (isMounted) setVisibleAccounts(accounts);
+      } catch (loadError) {
+        if (isMounted) setError(loadError instanceof Error ? loadError.message : "Unable to load accounts.");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    loadAccounts();
+    return () => { isMounted = false; };
+  }, []);
+
+  async function deleteAccount(id: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteAccountAction(id);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
     setVisibleAccounts((items) => items.filter((item) => item.id !== id));
     setViewedAccount((account) => (account?.id === id ? null : account));
-  };
+  }
 
   return (
     <AppShell
@@ -227,7 +273,20 @@ export default function AccountsPage() {
 
       <SummaryCards summaries={accountSummaries} />
 
-      <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      {error ? <div className="mb-6 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {isLoading ? <div className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-8 text-center text-sm font-medium text-[#45464d]">Loading accounts…</div> : null}
+      {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating accounts…</p> : null}
+
+      {!isLoading && !error && visibleAccounts.length === 0 ? (
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+          <Icon className="mx-auto size-8 text-[#76777d]" name="account" />
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No accounts yet</h2>
+          <p className="mt-1 text-sm text-[#45464d]">Add your first account to start tracking balances.</p>
+          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/accounts/add">Add Account</Link>
+        </section>
+      ) : null}
+
+      {!isLoading && visibleAccounts.length > 0 ? <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Accounts</h2>
@@ -243,9 +302,9 @@ export default function AccountsPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      <AccountsTable items={visibleAccounts} onDelete={deleteAccount} onView={setViewedAccount} />
+      {!isLoading && visibleAccounts.length > 0 ? <AccountsTable items={visibleAccounts} onDelete={deleteAccount} onView={setViewedAccount} /> : null}
       <DetailModal
         actions={
           viewedAccount ? (
@@ -279,7 +338,7 @@ export default function AccountsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
-                <p className={`mt-1 text-2xl font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+                <p className={`amount-value mt-1 overflow-x-auto text-2xl font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
                   {viewedAccount.balance}
                 </p>
               </div>

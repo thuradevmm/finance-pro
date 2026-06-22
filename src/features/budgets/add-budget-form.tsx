@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
+import { createBudget, updateBudget } from "@/app/budgets/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
-import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
+import { LoadingButton } from "@/components/ui/loading-state";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import type { BudgetFormData, BudgetRecord } from "@/lib/budgets/supabase";
+import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { BudgetPeriod, FinancialCategory } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
@@ -49,30 +54,70 @@ function CategoryOption({
   );
 }
 
-export function AddBudgetForm() {
-  const expenseCategories = useMemo(() => getCategoriesForScope(categories, "Budgets", "Expense"), []);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(expenseCategories[0]?.id ?? "");
-  const [period, setPeriod] = useState<BudgetPeriod>("Monthly");
-  const [budgetAmount, setBudgetAmount] = useState("");
-  const [startDate, setStartDate] = useState("2026-06-01");
-  const [endDate, setEndDate] = useState("");
-  const [alertThreshold, setAlertThreshold] = useState("80%");
-  const [status, setStatus] = useState("Active");
-  const [description, setDescription] = useState("");
+export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; categories: CategoryRecord[] }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const expenseCategories = categories.filter((category) => category.type === "Expense" && category.status === "Active");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(budget?.categoryId ?? expenseCategories[0]?.id ?? "");
+  const [period, setPeriod] = useState<BudgetPeriod>(budget?.period ?? "Monthly");
+  const [budgetAmount, setBudgetAmount] = useState(budget ? String(budget.amountValue) : "");
+  const [startDate, setStartDate] = useState(budget?.startDate ?? "2026-06-01");
+  const [endDate, setEndDate] = useState(budget?.endDate ?? "");
+  const [alertThreshold, setAlertThreshold] = useState(`${budget?.alertPercentage ?? 80}%`);
+  const [status, setStatus] = useState(budget?.planStatus ?? "Active");
+  const [description, setDescription] = useState(budget?.description ?? "");
   const [showErrors, setShowErrors] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const selectedCategory = expenseCategories.find((category) => category.id === selectedCategoryId) ?? expenseCategories[0];
   const amountHasError = showErrors && budgetAmount.trim() === "";
   const startDateHasError = showErrors && startDate.trim() === "";
 
-  function handleSaveBudget() {
-    setShowErrors(budgetAmount.trim() === "" || startDate.trim() === "");
+  async function handleSaveBudget(addAnother = false) {
+    const hasErrors = !selectedCategory || budgetAmount.trim() === "" || Number(budgetAmount) <= 0 || startDate.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors || !selectedCategory) return;
+
+    const input: BudgetFormData = {
+      alertPercentage: Number(alertThreshold.replace("%", "")),
+      amount: Number(budgetAmount),
+      categoryId: selectedCategory.id,
+      categoryName: selectedCategory.name,
+      description,
+      endDate: endDate.trim() || null,
+      period,
+      startDate,
+      status: status as "Active" | "Paused",
+    };
+
+    setIsSaving(true);
+    const result = budget ? await updateBudget(budget.id, input) : await createBudget(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+
+    if (addAnother && !budget) {
+      setIsSaving(false);
+      setBudgetAmount("");
+      setEndDate("");
+      setDescription("");
+      setShowErrors(false);
+      return;
+    }
+
+    beginLoading();
+    router.push("/budgets");
+    router.refresh();
   }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="space-y-6 lg:col-span-8">
         <FormCard title="Budget Category">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {expenseCategories.length > 0 ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {expenseCategories.map((category) => (
               <CategoryOption
                 category={category}
@@ -81,7 +126,7 @@ export function AddBudgetForm() {
                 onSelect={() => setSelectedCategoryId(category.id)}
               />
             ))}
-          </div>
+          </div> : <div className="rounded-md border border-dashed border-[#c6c6cd] p-6 text-center text-sm text-[#45464d]">Create an expense category before adding a budget. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></div>}
         </FormCard>
 
         <FormCard title="Budget Details">
@@ -110,7 +155,7 @@ export function AddBudgetForm() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Alert Threshold" onChange={setAlertThreshold} options={alertThresholds} value={alertThreshold} />
-            <SelectInput label="Status" onChange={setStatus} options={["Active", "Paused"]} value={status} />
+            <SelectInput label="Status" onChange={(value) => setStatus(value as "Active" | "Paused")} options={["Active", "Paused"]} value={status} />
           </div>
         </FormCard>
 
@@ -119,6 +164,7 @@ export function AddBudgetForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link
             className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/budgets"
@@ -127,21 +173,26 @@ export function AddBudgetForm() {
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(budget) || !selectedCategory}
+            onClick={() => handleSaveBudget(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveBudget}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!selectedCategory}
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveBudget(false)}
             type="button"
           >
-            Save Budget
-          </button>
+            {budget ? "Save Changes" : "Save Budget"}
+          </LoadingButton>
         </div>
       </div>
 
-      <aside className="hidden lg:col-span-4 lg:block">
+      {selectedCategory ? <aside className="hidden lg:col-span-4 lg:block">
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <div className="mb-5 flex items-center gap-3">
@@ -156,12 +207,12 @@ export function AddBudgetForm() {
 
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{period} Limit</p>
-              <p className="mt-2 text-4xl font-bold text-[#0b1c30]">{budgetAmount.trim() === "" ? "$0" : `$${budgetAmount}`}</p>
+              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{budgetAmount.trim() === "" ? "MMK 0" : `MMK ${budgetAmount}`}</ResponsiveAmount>
               <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#dce9ff]">
                 <div className="h-full w-0 rounded-full bg-[#0058be]" />
               </div>
               <div className="mt-2 flex justify-between text-xs font-semibold text-[#45464d]">
-                <span>$0 spent</span>
+                <span>MMK 0 spent</span>
                 <span>0%</span>
               </div>
             </div>
@@ -189,7 +240,7 @@ export function AddBudgetForm() {
             </p>
           </div>
         </div>
-      </aside>
+      </aside> : null}
     </div>
   );
 }

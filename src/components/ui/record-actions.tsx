@@ -12,7 +12,7 @@ type RecordActionsProps = {
   editHref: string;
   itemId: string;
   itemLabel: string;
-  onDelete?: (itemId: string) => void;
+  onDelete?: (itemId: string) => void | Promise<void>;
 };
 
 export function RecordActions({
@@ -24,6 +24,7 @@ export function RecordActions({
   onDelete,
 }: RecordActionsProps) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   return (
     <>
@@ -47,11 +48,18 @@ export function RecordActions({
       <DeleteConfirmationDialog
         description={deleteDescription ?? `Deleting ${itemLabel} will remove it from the current mock list.`}
         isOpen={isDeleteOpen}
+        isPending={isDeleting}
         itemLabel={itemLabel}
         onCancel={() => setIsDeleteOpen(false)}
-        onConfirm={() => {
-          onDelete?.(itemId);
-          setIsDeleteOpen(false);
+        onConfirm={async () => {
+          if (isDeleting) return;
+          setIsDeleting(true);
+          try {
+            await onDelete?.(itemId);
+            setIsDeleteOpen(false);
+          } finally {
+            setIsDeleting(false);
+          }
         }}
         title={deleteTitle}
       />

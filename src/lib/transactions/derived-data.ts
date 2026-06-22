@@ -4,6 +4,7 @@ import { debts, debtSummaries } from "@/lib/debts/mock-data";
 import { savingsGoalSummaries, savingsGoals } from "@/lib/savings-goals/mock-data";
 import { subscriptionSummaries, subscriptions, upcomingSubscriptionBillings } from "@/lib/subscriptions/mock-data";
 import { transactions } from "@/lib/transactions/mock-data";
+import { formatMmk } from "@/lib/currency";
 import type { AssetRecord, BudgetCategory, BudgetStatus, DebtRecord, SavingsGoal, SavingsGoalStatus, SummaryMetric, SubscriptionRecord, Transaction } from "@/types/finance";
 
 function parseCurrency(value: string) {
@@ -11,12 +12,7 @@ function parseCurrency(value: string) {
 }
 
 function formatCurrency(value: number, fractionDigits = 2) {
-  return new Intl.NumberFormat("en-US", {
-    currency: "USD",
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: fractionDigits,
-    style: "currency",
-  }).format(value);
+  return formatMmk(value, fractionDigits === 0 ? 0 : 0);
 }
 
 function linkedAmount(items: Transaction[], key: keyof Pick<Transaction, "linkedAssetId" | "linkedBudgetId" | "linkedDebtId" | "linkedSavingsGoalId" | "linkedSubscriptionId">, id: string) {
