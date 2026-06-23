@@ -20,15 +20,16 @@ function categoryPayload(input: CategoryFormData, extraMetadata: Record<string, 
     color: input.color,
     icon: input.icon,
     is_active: input.isActive,
-    is_default: input.isDefault,
+    is_default: false,
     metadata: {
+      category_type: input.type,
       description: input.description,
       monthly_average: input.monthlyAverage,
       scopes: input.scopes,
       ...extraMetadata,
     },
     name: input.name.trim(),
-    type: input.type.toLowerCase(),
+    type: input.type === "Income" ? "income" : "expense",
   };
 }
 
@@ -38,7 +39,7 @@ export async function createCategory(input: CategoryFormData): Promise<ActionRes
 
   const { error } = await supabase.from("categories").insert({
     ...categoryPayload(input),
-    is_default: input.isDefault,
+    is_default: false,
     user_id: user.id,
   });
   if (error) return { error: error.code === "23505" ? "A category with this name and type already exists." : error.message };
@@ -53,21 +54,12 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
 
   const { data: target, error: targetError } = await supabase
     .from("categories")
-    .select("id,user_id,is_default")
+    .select("id,user_id")
     .eq("id", categoryId)
+    .eq("user_id", user.id)
     .maybeSingle();
   if (targetError) return { error: targetError.message };
   if (!target) return { error: "Category not found." };
-
-  if (target.user_id === null && target.is_default) {
-    const { error } = await supabase.from("categories").insert({
-      ...categoryPayload(input, { source_default_id: categoryId }),
-      user_id: user.id,
-    });
-    if (error) return { error: error.code === "23505" ? "A category with this name and type already exists." : error.message };
-    revalidatePath("/categories");
-    return {};
-  }
 
   const { data, error } = await supabase
     .from("categories")
@@ -90,25 +82,12 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
 
   const { data: target, error: targetError } = await supabase
     .from("categories")
-    .select("id,user_id,is_default,type")
+    .select("id,user_id")
     .eq("id", categoryId)
+    .eq("user_id", user.id)
     .maybeSingle();
   if (targetError) return { error: targetError.message };
   if (!target) return { error: "Category not found." };
-
-  if (target.user_id === null && target.is_default) {
-    const { error } = await supabase.from("categories").insert({
-      is_active: false,
-      is_default: false,
-      metadata: { hidden_default_id: categoryId },
-      name: `__hidden_default_${categoryId}`,
-      type: target.type,
-      user_id: user.id,
-    });
-    if (error) return { error: error.message };
-    revalidatePath("/categories");
-    return {};
-  }
 
   const { data, error } = await supabase
     .from("categories")

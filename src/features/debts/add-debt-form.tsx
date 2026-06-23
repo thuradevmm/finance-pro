@@ -40,7 +40,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const [interestRate, setInterestRate] = useState(debt ? String(debt.interestRateValue) : "");
   const [startDate, setStartDate] = useState(debt?.startDate ?? "2026-06-01");
   const [nextPaymentDate, setNextPaymentDate] = useState(debt?.nextPaymentDateValue ?? "2026-11-15");
-  const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts"), [categories]);
+  const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts", "Debt"), [categories]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? debtCategories[0]?.id ?? "");
   const [status, setStatus] = useState<DebtStatus>(debt?.status ?? "Active");
   const activeAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);

@@ -26,7 +26,7 @@ const fallbackStyle = {
   id: "",
   name: "Savings Goal",
   tone: "text-[#0058be]",
-  type: "Expense",
+  type: "Savings Goal",
 };
 
 export function AddSavingsGoalForm({
@@ -44,7 +44,7 @@ export function AddSavingsGoalForm({
     () => accounts.filter((account) => account.status === "Active" && account.type !== "Credit Card"),
     [accounts],
   );
-  const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals"), [categories]);
+  const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals", "Savings Goal"), [categories]);
   const [selectedStyleId, setSelectedStyleId] = useState(goal?.categoryId ?? goalStyleCategories[0]?.id ?? "");
   const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
   const [name, setName] = useState(goal?.name ?? "");
@@ -178,7 +178,7 @@ export function AddSavingsGoalForm({
             })}
           </div>
           {goalStyleCategories.length === 0 ? (
-            <p className="text-sm font-medium text-[#45464d]">No savings goal categories found. Add a category with the Savings Goals scope first.</p>
+            <p className="text-sm font-medium text-[#45464d]">No savings goal categories found. Add a Savings Goal category first.</p>
           ) : null}
         </FormCard>
 

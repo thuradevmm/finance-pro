@@ -10,8 +10,9 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { getScopesForCategoryType, isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
-import type { CategoryScope, CategoryType } from "@/types/finance";
+import type { CategoryType } from "@/types/finance";
 
 type CategoryIconOption = {
   label: string;
@@ -25,7 +26,7 @@ type CategoryColorOption = {
   tone: string;
 };
 
-const categoryTypes: CategoryType[] = ["Expense", "Income"];
+const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
 const categoryIcons: CategoryIconOption[] = [
   { label: "Food", icon: "food" },
   { label: "Travel", icon: "travel" },
@@ -44,8 +45,6 @@ const categoryColors: CategoryColorOption[] = [
   { label: "Red", marker: "bg-[#b42318]", bg: "bg-[#fff1f0]", tone: "text-[#b42318]" },
   { label: "Gray", marker: "bg-[#76777d]", bg: "bg-[#f8f9ff]", tone: "text-[#45464d]" },
 ];
-const categoryScopes: CategoryScope[] = ["Transactions", "Accounts", "Budgets", "Savings Goals", "Debts", "Subscriptions", "Assets", "Reports"];
-
 export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
@@ -55,18 +54,16 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
   const [monthlyAverage, setMonthlyAverage] = useState(category ? category.monthlyAverage.replace(/[^0-9.]/g, "") : "");
-  const [selectedScopes, setSelectedScopes] = useState<CategoryScope[]>(category?.scopes ?? ["Transactions"]);
   const [status, setStatus] = useState(category?.status ?? "Active");
-  const [isDefault, setIsDefault] = useState(category?.isDefault ?? false);
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
-  const averageHasError = showErrors && monthlyAverage.trim() === "";
-  const scopesHaveError = showErrors && selectedScopes.length === 0;
+  const selectedScopes = getScopesForCategoryType(selectedType);
+  const averageHasError = showErrors && isTransactionCategoryType(selectedType) && monthlyAverage.trim() === "";
 
   async function handleSaveCategory(addAnother = false) {
-    const hasErrors = name.trim() === "" || monthlyAverage.trim() === "" || selectedScopes.length === 0;
+    const hasErrors = name.trim() === "" || (isTransactionCategoryType(selectedType) && monthlyAverage.trim() === "");
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -76,7 +73,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       description: description.trim(),
       icon: selectedIcon.icon,
       isActive: status === "Active",
-      isDefault,
+      isDefault: false,
       monthlyAverage: Number(monthlyAverage),
       name: name.trim(),
       scopes: selectedScopes,
@@ -98,7 +95,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       setName("");
       setDescription("");
       setMonthlyAverage("");
-      setSelectedScopes(["Transactions"]);
+      setSelectedType("Expense");
       setShowErrors(false);
       return;
     }
@@ -108,17 +105,11 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
     router.refresh();
   }
 
-  function toggleScope(scope: CategoryScope) {
-    setSelectedScopes((currentScopes) =>
-      currentScopes.includes(scope) ? currentScopes.filter((currentScope) => currentScope !== scope) : [...currentScopes, scope],
-    );
-  }
-
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <div className="space-y-6 lg:col-span-8">
         <FormCard title="Category Type">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {categoryTypes.map((type) => {
               const isActive = selectedType === type;
 
@@ -135,11 +126,15 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
                   type="button"
                 >
                   <span className="mb-2 flex items-center gap-2 text-sm font-bold">
-                    <Icon className="size-5" name={type === "Expense" ? "trendingDown" : "trendingUp"} />
+                    <Icon className="size-5" name={type === "Expense" ? "trendingDown" : type === "Income" ? "trendingUp" : "category"} />
                     {type}
                   </span>
                   <span className="block text-xs font-medium leading-5">
-                    {type === "Expense" ? "Classify money spent from accounts." : "Classify money received into accounts."}
+                    {type === "Expense"
+                      ? "Classify money spent in transactions."
+                      : type === "Income"
+                        ? "Classify money received in transactions."
+                        : `Create categories only for ${getScopesForCategoryType(type)[0].toLowerCase()}.`}
                   </span>
                 </button>
               );
@@ -156,13 +151,13 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             <div>
               <TextInput
                 error={averageHasError}
-                label="Monthly Average"
+                label={isTransactionCategoryType(selectedType) ? "Monthly Average" : "Reference Amount"}
                 onChange={setMonthlyAverage}
-                placeholder="850"
+                placeholder={isTransactionCategoryType(selectedType) ? "850" : "0"}
                 type="number"
                 value={monthlyAverage}
               />
-              {averageHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly average is required.</p> : null}
+              {averageHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly average is required for income and expense categories.</p> : null}
             </div>
           </div>
 
@@ -172,39 +167,24 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Status" onChange={(value) => setStatus(value === "Hidden" ? "Hidden" : "Active")} options={["Active", "Hidden"]} value={status} />
-            <SelectInput
-              label="Category Kind"
-              onChange={(value) => setIsDefault(value === "Default")}
-              options={["Regular", "Default"]}
-              value={isDefault ? "Default" : "Regular"}
-            />
+            <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
+              <span className="block text-xs font-bold uppercase text-[#45464d]">Used By</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{selectedScopes.join(", ")}</span>
+            </div>
           </div>
         </FormCard>
 
         <FormCard title="Category Usage">
-          <FieldLabel>Create this category for</FieldLabel>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {categoryScopes.map((scope) => {
-              const isActive = selectedScopes.includes(scope);
-
-              return (
-                <button
-                  aria-pressed={isActive}
-                  className={
-                    isActive
-                      ? "rounded-lg border border-[#2170e4] bg-[#eff6ff] p-4 text-left text-[#0058be] shadow-sm"
-                      : "rounded-lg border border-[#c6c6cd]/70 bg-white p-4 text-left text-[#45464d] transition hover:bg-[#eff4ff]"
-                  }
-                  key={scope}
-                  onClick={() => toggleScope(scope)}
-                  type="button"
-                >
-                  <span className="text-sm font-bold">{scope}</span>
-                </button>
-              );
-            })}
+          <p className="text-sm leading-6 text-[#45464d]">
+            Category usage is now controlled by category type. Income and expense categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate from transaction income/expense categories.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {selectedScopes.map((scope) => (
+              <span className="rounded bg-[#eff6ff] px-3 py-1 text-xs font-semibold text-[#0058be]" key={scope}>
+                {scope}
+              </span>
+            ))}
           </div>
-          {scopesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select at least one usage.</p> : null}
         </FormCard>
 
         <FormCard title="Icon and Color">
@@ -305,7 +285,6 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
               <span className="rounded border border-[#c6c6cd]/40 bg-[#eff4ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">
                 {selectedType}
               </span>
-              {isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
             </div>
             <p className="mb-4 text-sm text-[#45464d]">{description || "Category description preview"}</p>
             <div className="mb-4 flex flex-wrap gap-1.5">

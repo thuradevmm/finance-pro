@@ -11,6 +11,7 @@ import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import type { BudgetFormData, BudgetRecord } from "@/lib/budgets/supabase";
+import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { BudgetPeriod, FinancialCategory } from "@/types/finance";
 
@@ -57,7 +58,7 @@ function CategoryOption({
 export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; categories: CategoryRecord[] }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
-  const expenseCategories = categories.filter((category) => category.type === "Expense" && category.status === "Active");
+  const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
   const [selectedCategoryId, setSelectedCategoryId] = useState(budget?.categoryId ?? expenseCategories[0]?.id ?? "");
   const [period, setPeriod] = useState<BudgetPeriod>(budget?.period ?? "Monthly");
   const [budgetAmount, setBudgetAmount] = useState(budget ? String(budget.amountValue) : "");

@@ -56,6 +56,28 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
+function normalizeCategoryType(rowType: string, scopes: CategoryScope[], metadata: Record<string, unknown>): CategoryType {
+  const metadataType = typeof metadata.category_type === "string" ? metadata.category_type : "";
+  const normalizedType = (metadataType || rowType).toLowerCase().replace(/[_-]/g, " ");
+
+  if (normalizedType === "account" || normalizedType === "accounts") return "Account";
+  if (normalizedType === "asset" || normalizedType === "assets") return "Asset";
+  if (normalizedType === "debt" || normalizedType === "debts") return "Debt";
+  if (normalizedType === "savings goal" || normalizedType === "savings goals") return "Savings Goal";
+  if (normalizedType === "subscription" || normalizedType === "subscriptions") return "Subscription";
+  if (normalizedType === "income") return "Income";
+
+  if (!scopes.includes("Transactions")) {
+    if (scopes.includes("Accounts")) return "Account";
+    if (scopes.includes("Assets")) return "Asset";
+    if (scopes.includes("Debts")) return "Debt";
+    if (scopes.includes("Savings Goals")) return "Savings Goal";
+    if (scopes.includes("Subscriptions")) return "Subscription";
+  }
+
+  return "Expense";
+}
+
 function mapCategory(row: CategoryRow): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
   const scopes = Array.isArray(metadata.scopes)
@@ -78,7 +100,7 @@ function mapCategory(row: CategoryRow): CategoryRecord {
     scopes,
     status: row.is_active ? "Active" : "Hidden",
     transactionCount,
-    type: row.type.toLowerCase() === "income" ? "Income" : "Expense",
+    type: normalizeCategoryType(row.type, scopes, metadata),
   };
 }
 
@@ -98,22 +120,7 @@ export async function getCategories() {
 
   if (error) throw new Error(error.message);
 
-  const rows = data as CategoryRow[];
-  const suppressedDefaults = new Set<string>();
-  for (const row of rows) {
-    if (row.user_id !== user.id) continue;
-    const metadata = metadataRecord(row.metadata);
-    if (typeof metadata.hidden_default_id === "string") suppressedDefaults.add(metadata.hidden_default_id);
-    if (typeof metadata.source_default_id === "string") suppressedDefaults.add(metadata.source_default_id);
-  }
-
-  return rows
-    .filter((row) => {
-      const metadata = metadataRecord(row.metadata);
-      if (typeof metadata.hidden_default_id === "string") return false;
-      return !(row.user_id === null && suppressedDefaults.has(row.id));
-    })
-    .map(mapCategory);
+  return (data as CategoryRow[]).map(mapCategory);
 }
 
 export async function getCategory(categoryId: string) {
@@ -123,15 +130,11 @@ export async function getCategory(categoryId: string) {
 
 export function getCategorySummaries(categories: CategoryRecord[]): SummaryMetric[] {
   const activeCategories = categories.filter((category) => category.status === "Active");
-  const monthlyTracked = activeCategories.reduce(
-    (total, category) => total + Number(category.monthlyAverage.replace(/[^0-9.-]+/g, "")),
-    0,
-  );
 
   return [
     { label: "Expense Categories", value: String(categories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
     { label: "Income Categories", value: String(categories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Monthly Tracked", value: formatMmk(monthlyTracked), icon: "chart", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Page Categories", value: String(categories.filter((category) => category.type !== "Expense" && category.type !== "Income").length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Categories", value: String(activeCategories.length), icon: "category", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
 }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatMmk } from "@/lib/currency";
 import type { AccountRecord } from "@/lib/accounts/supabase";
+import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
@@ -138,7 +139,7 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
   return {
     account: ["Account", ...accounts.map((account) => account.name)],
     amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
-    category: ["Category", "Transfer", ...categories.filter((category) => category.scopes.includes("Transactions")).map((category) => category.name)],
+    category: ["Category", "Transfer", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     type: ["Type", "Income", "Expense", "Transfer"],
   };
 }

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { AppTopBar } from "@/components/app/app-top-bar";
 import { MobileHeader } from "@/components/app/mobile-header";
+import { useSidebarState } from "@/components/app/sidebar-state-provider";
 import type { IconName } from "@/components/ui/icon";
 
 type AppShellProps = {
@@ -34,12 +35,8 @@ export function AppShell({
   mobileSearchPlaceholder,
   mobileAction,
 }: AppShellProps) {
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isSidebarCollapsed, toggleSidebar } = useSidebarState();
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
-
-  function toggleSidebar() {
-    setIsSidebarCollapsed((current) => !current);
-  }
 
   return (
     <div className="min-h-screen bg-[#f8f9ff] text-[#0b1c30]">

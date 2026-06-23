@@ -8,12 +8,12 @@ import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryType } from "@/types/finance";
 
-type CategoryTab = "Expense Categories" | "Income Categories";
-
-const tabs: CategoryTab[] = ["Expense Categories", "Income Categories"];
+const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
+const tabs = categoryTypes.map((type) => `${type} Categories`);
 
 function CategoryBadge({ type }: { type: CategoryType }) {
   return (
@@ -62,7 +62,7 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
           itemId={category.id}
           itemLabel={category.name}
           onDelete={onDelete}
-          viewHref={`/transactions?category=${encodeURIComponent(category.name)}`}
+          viewHref={isTransactionCategoryType(category.type) ? `/transactions?category=${encodeURIComponent(category.name)}` : undefined}
           viewLabel="View transactions"
         />
       </div>
@@ -71,11 +71,11 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
 }
 
 export function CategoriesPageContent({ categories }: { categories: CategoryRecord[] }) {
-  const [activeTab, setActiveTab] = useState<CategoryTab>("Expense Categories");
+  const [activeTab, setActiveTab] = useState("Expense Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const activeType: CategoryType = activeTab === "Expense Categories" ? "Expense" : "Income";
+  const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
   const filteredCategories = useMemo(() => visibleCategories.filter((category) => category.type === activeType), [activeType, visibleCategories]);
 
   async function handleDelete(categoryId: string) {
@@ -92,7 +92,7 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
 
   return (
     <>
-      <SegmentedTabs activeTab={activeTab} onTabChange={(tab) => setActiveTab(tab as CategoryTab)} tabs={tabs} />
+      <SegmentedTabs activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
       {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating categories…</p> : null}

@@ -30,7 +30,7 @@ export function AppSidebar({
       }
     >
       <div className={`${isMobile ? "px-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-screen flex-col overflow-y-auto py-6`}>
-        <div className={`${isCompact ? "mb-6 items-center" : "mb-8"} flex justify-between gap-3`}>
+        <div className={isCompact ? "mb-6 flex flex-col items-center gap-3" : "mb-8 flex justify-between gap-3"}>
           <div className={isCompact ? "min-w-0 text-center" : "min-w-0"}>
             <p className="truncate text-xl font-semibold text-[#0b1c30]">{isCompact ? "FP" : "FinancePro"}</p>
             {!isCompact ? <p className="mt-1 truncate text-xs font-semibold uppercase text-[#45464d]">Wealth Management</p> : null}

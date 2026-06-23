@@ -4,7 +4,7 @@ export type TransactionType = "Income" | "Expense" | "Transfer";
 
 export type TransactionCategoryName = string;
 
-export type CategoryType = "Expense" | "Income";
+export type CategoryType = "Account" | "Asset" | "Debt" | "Expense" | "Income" | "Savings Goal" | "Subscription";
 
 export type CategoryScope = "Transactions" | "Accounts" | "Budgets" | "Savings Goals" | "Debts" | "Subscriptions" | "Assets" | "Reports";
 

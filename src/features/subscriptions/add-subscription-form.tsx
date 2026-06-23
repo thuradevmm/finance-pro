@@ -25,7 +25,7 @@ function parseAmount(value: string) {
 export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
-  const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Expense"), [categories]);
+  const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Subscription"), [categories]);
   const paymentAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
   const [serviceName, setServiceName] = useState(subscription?.name ?? "");
   const [amount, setAmount] = useState(subscription ? String(subscription.amountValue) : "");

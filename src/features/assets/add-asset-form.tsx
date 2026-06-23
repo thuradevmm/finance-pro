@@ -22,7 +22,7 @@ const statuses: AssetStatus[] = ["Active", "Sold", "Archived"];
 export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithValues; categories: CategoryRecord[] }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
-  const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Expense"), [categories]);
+  const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Asset"), [categories]);
   const [name, setName] = useState(asset?.name ?? "");
   const [categoryId, setCategoryId] = useState(asset?.categoryId ?? assetCategories[0]?.id ?? "");
   const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDate ?? "2026-06-15");
