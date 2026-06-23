@@ -64,10 +64,8 @@ export function AppShell({
             subtitle={mobileSubtitle}
           />
           <AppTopBar
-            onToggleSidebar={toggleSidebar}
             searchLabel={topSearchLabel}
             searchPlaceholder={topSearchPlaceholder}
-            sidebarCollapsed={isSidebarCollapsed}
           />
 
           <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
