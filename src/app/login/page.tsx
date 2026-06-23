@@ -16,7 +16,7 @@ export default async function LoginPage({
   const initialFormError = error === "session_expired"
     ? "Your session expired due to inactivity. Sign in again to continue."
     : error === "auth_unavailable"
-      ? "Unable to verify your session because Supabase could not be reached."
+      ? "We could not check your sign-in status right now. Please check your connection and try again."
       : undefined;
 
   return (
