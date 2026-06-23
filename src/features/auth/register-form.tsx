@@ -53,7 +53,14 @@ export function RegisterForm() {
     if (Object.keys(nextErrors).length > 0) return;
 
     setIsSubmitting(true);
-    const supabase = createClient();
+    let supabase;
+    try {
+      supabase = createClient();
+    } catch {
+      setIsSubmitting(false);
+      setErrors({ form: "Unable to connect to Supabase. Check the environment variables." });
+      return;
+    }
 
     if (!emailServicesEnabled) {
       const result = await registerWithoutEmail({ email: normalizedEmail, fullName, password });

@@ -61,7 +61,7 @@ export function DeleteConfirmationDialog({
         <div className="rounded-md border border-[#fecaca] bg-[#fff7f5] px-4 py-3">
           <p className="text-sm font-medium text-[#7f1d1d]">{description}</p>
         </div>
-        <p className="text-sm text-[#45464d]">This action updates the current list immediately in the mock UI.</p>
+        <p className="text-sm text-[#45464d]">This action updates your saved records immediately.</p>
       </div>
     </ModalShell>
   );

@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 type TransactionTab = "All" | TransactionType;
@@ -22,19 +21,26 @@ type TransactionFiltersState = {
 type TransactionsPageContentProps = {
   filterOptions: TransactionFilterOptions;
   initialAccountFilter?: string;
+  initialCategoryFilter?: string;
   transactions: Transaction[];
 };
 
 const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
 
-function getInitialFilters(filterOptions: TransactionFilterOptions, initialAccountFilter?: string): TransactionFiltersState {
+function getInitialFilters(
+  filterOptions: TransactionFilterOptions,
+  initialAccountFilter?: string,
+  initialCategoryFilter?: string,
+): TransactionFiltersState {
   const accountFilter =
     initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
+  const categoryFilter =
+    initialCategoryFilter && filterOptions.category.includes(initialCategoryFilter) ? initialCategoryFilter : filterOptions.category[0];
 
   return {
     amount: filterOptions.amount[0],
     account: accountFilter,
-    category: filterOptions.category[0],
+    category: categoryFilter,
     dateFrom: "",
     dateTo: "",
     type: filterOptions.type[0],
@@ -87,14 +93,22 @@ function filterTransactions(transactions: Transaction[], filters: TransactionFil
   });
 }
 
-export function TransactionsPageContent({ filterOptions, initialAccountFilter, transactions }: TransactionsPageContentProps) {
-  const storedTransactions = useStoredTransactions(transactions);
-  const initialFilters = useMemo(() => getInitialFilters(filterOptions, initialAccountFilter), [filterOptions, initialAccountFilter]);
+export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
+  const effectiveFilterOptions = useMemo(() => ({
+    ...filterOptions,
+    category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
+      ? [filterOptions.category[0], initialCategoryFilter, ...filterOptions.category.slice(1)]
+      : filterOptions.category,
+  }), [filterOptions, initialCategoryFilter]);
+  const initialFilters = useMemo(
+    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter),
+    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter],
+  );
   const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>("All");
 
-  const filteredTransactions = useMemo(() => filterTransactions(storedTransactions, appliedFilters), [appliedFilters, storedTransactions]);
+  const filteredTransactions = useMemo(() => filterTransactions(transactions, appliedFilters), [appliedFilters, transactions]);
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
@@ -109,7 +123,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, t
   }
 
   function clearFilters() {
-    const clearedFilters = getInitialFilters(filterOptions);
+    const clearedFilters = getInitialFilters(effectiveFilterOptions);
 
     setDraftFilters(clearedFilters);
     setAppliedFilters(clearedFilters);
@@ -130,7 +144,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, t
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={transactionTabs} />
       <TransactionsFilters
-        filterOptions={filterOptions}
+        filterOptions={effectiveFilterOptions}
         filters={draftFilters}
         onApply={applyFilters}
         onClear={clearFilters}

@@ -26,14 +26,14 @@ function CategoryBadge({ type }: { type: CategoryType }) {
 function CategoryListItem({ category, onDelete }: { category: CategoryRecord; onDelete: (id: string) => void }) {
   return (
     <article className="grid min-w-0 gap-4 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] md:grid-cols-[minmax(16rem,1.5fr)_minmax(11rem,1fr)_minmax(11rem,0.7fr)_auto] md:items-center sm:p-5">
-      <div className="flex min-w-0 items-start gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <span className={`relative grid size-11 shrink-0 place-items-center rounded-full ${category.bg} ${category.tone}`}>
           <Icon name={category.icon} />
           <span className={`absolute -right-0.5 -top-0.5 size-3 rounded-full ring-2 ring-white ${category.marker}`} title={`${category.name} color`} />
         </span>
         <div className="min-w-0">
           <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
-            <h2 className="min-w-0 break-words text-lg font-semibold text-[#0b1c30]">{category.name}</h2>
+            <h2 className="min-w-0 break-words text-lg font-semibold leading-tight text-[#0b1c30]">{category.name}</h2>
             <CategoryBadge type={category.type} />
             {category.isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
           </div>
@@ -62,6 +62,8 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
           itemId={category.id}
           itemLabel={category.name}
           onDelete={onDelete}
+          viewHref={`/transactions?category=${encodeURIComponent(category.name)}`}
+          viewLabel="View transactions"
         />
       </div>
     </article>

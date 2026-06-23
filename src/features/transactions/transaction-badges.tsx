@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { categoryStyles, transactionTypeBadgeClass, transactionTypeIcon } from "@/features/transactions/transaction-styles";
-import type { TransactionCategoryName, TransactionType } from "@/types/finance";
+import type { TransactionType } from "@/types/finance";
 
 export function TransactionTypeBadge({ type }: { type: TransactionType }) {
   return (
@@ -11,9 +11,9 @@ export function TransactionTypeBadge({ type }: { type: TransactionType }) {
   );
 }
 
-export function CategoryBadge({ category }: { category: TransactionCategoryName }) {
+export function CategoryBadge({ category }: { category: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${categoryStyles[category]}`}>
+    <span className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${categoryStyles[category] ?? "border-[#d4d4d8] bg-[#f4f4f5] text-[#3f3f46]"}`}>
       <span className="size-1.5 rounded-full bg-current" />
       {category}
     </span>

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getUserSafely } from "@/lib/supabase/auth";
+import { getSupabasePublicEnv } from "@/lib/supabase/env";
 
 const publicRoutes = new Set([
   "/login",
@@ -11,9 +12,23 @@ const publicRoutes = new Set([
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
+  let env;
+  try {
+    env = getSupabasePublicEnv();
+  } catch {
+    const path = request.nextUrl.pathname;
+    const isPublicRoute = publicRoutes.has(path) || path.startsWith("/auth/");
+    if (isPublicRoute) return response;
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", path);
+    url.searchParams.set("error", "auth_unavailable");
+    return NextResponse.redirect(url);
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    env.url,
+    env.publishableKey,
     {
       cookies: {
         getAll: () => request.cookies.getAll(),

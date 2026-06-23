@@ -58,10 +58,15 @@ export function ForgotPasswordForm() {
 
     setError("");
     setIsSubmitting(true);
-    const supabase = createClient();
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/update-password`,
-    });
+    let resetError;
+    try {
+      const supabase = createClient();
+      ({ error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/update-password`,
+      }));
+    } catch {
+      resetError = { message: "Unable to connect to Supabase. Check the environment variables and network connection." };
+    }
     setIsSubmitting(false);
     if (resetError) {
       setError(resetError.message);

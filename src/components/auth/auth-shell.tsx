@@ -46,7 +46,7 @@ export function AuthShell({ children, description, eyebrow, title }: AuthShellPr
           </ul>
         </div>
 
-        <p className="text-xs text-[#8fa2b8]">Frontend preview environment</p>
+        <p className="text-xs text-[#8fa2b8]">Secure personal finance workspace</p>
       </section>
 
       <section className="flex min-h-screen items-center justify-center bg-[#f8f9ff] px-4 py-8 sm:px-8 lg:px-12">
@@ -63,7 +63,7 @@ export function AuthShell({ children, description, eyebrow, title }: AuthShellPr
             <div className="mt-8">{children}</div>
           </div>
 
-          <p className="mt-6 text-center text-xs leading-5 text-[#76777d]">FinancePro mock authentication. No credentials are sent or stored remotely.</p>
+          <p className="mt-6 text-center text-xs leading-5 text-[#76777d]">Protected by Supabase Auth and row-level security.</p>
         </div>
       </section>
     </main>

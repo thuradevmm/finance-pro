@@ -1,15 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { createSubscription, updateSubscription } from "@/app/subscriptions/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
-import { accounts } from "@/lib/accounts/mock-data";
+import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
-import type { BillingCycle } from "@/types/finance";
+import type { CategoryRecord } from "@/lib/categories/supabase";
+import type { SubscriptionFormData, SubscriptionRecordWithValues } from "@/lib/subscriptions/supabase";
+import type { BillingCycle, SubscriptionStatus } from "@/types/finance";
 
 const billingCycles: BillingCycle[] = ["Monthly", "Yearly", "Weekly"];
 
@@ -17,28 +22,61 @@ function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
 }
 
-export function AddSubscriptionForm() {
-  const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Expense"), []);
-  const categoryOptions = subscriptionCategories.length > 0 ? subscriptionCategories.map((category) => category.name) : ["Software Tools"];
-  const paymentAccounts = useMemo(() => accounts.filter((account) => account.status === "Active").map((account) => account.name), []);
-  const paymentOptions = paymentAccounts.length > 0 ? paymentAccounts : ["Main Checking"];
-  const [serviceName, setServiceName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("Monthly");
-  const [firstBillingDate, setFirstBillingDate] = useState("2026-11-15");
-  const [category, setCategory] = useState(categoryOptions[0]);
-  const [paymentAccount, setPaymentAccount] = useState(paymentOptions[0]);
-  const [reminderEnabled, setReminderEnabled] = useState(true);
+export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Expense"), [categories]);
+  const paymentAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
+  const [serviceName, setServiceName] = useState(subscription?.name ?? "");
+  const [amount, setAmount] = useState(subscription ? String(subscription.amountValue) : "");
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(subscription?.billingCycle ?? "Monthly");
+  const [firstBillingDate, setFirstBillingDate] = useState(subscription?.nextBillingDateValue ?? "2026-11-15");
+  const [categoryId, setCategoryId] = useState(subscription?.categoryId ?? subscriptionCategories[0]?.id ?? "");
+  const [paymentAccountId, setPaymentAccountId] = useState(subscription?.accountId ?? paymentAccounts[0]?.id ?? "");
+  const [status, setStatus] = useState<SubscriptionStatus>(subscription?.status ?? "Active");
+  const [reminderEnabled, setReminderEnabled] = useState(subscription?.reminderEnabled ?? true);
   const [showErrors, setShowErrors] = useState(false);
-  const selectedCategory = subscriptionCategories.find((item) => item.name === category) ?? subscriptionCategories[0];
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const selectedCategory = subscriptionCategories.find((item) => item.id === categoryId) ?? subscriptionCategories[0];
+  const selectedAccount = paymentAccounts.find((item) => item.id === paymentAccountId);
   const nameHasError = showErrors && serviceName.trim() === "";
   const amountHasError = showErrors && amount.trim() === "";
   const billingDateHasError = showErrors && firstBillingDate.trim() === "";
   const parsedAmount = parseAmount(amount);
   const yearlyAmount = billingCycle === "Yearly" ? parsedAmount : billingCycle === "Weekly" ? parsedAmount * 52 : parsedAmount * 12;
 
-  function handleSaveSubscription() {
-    setShowErrors(serviceName.trim() === "" || amount.trim() === "" || firstBillingDate.trim() === "");
+  async function handleSaveSubscription(addAnother = false) {
+    const hasErrors = serviceName.trim() === "" || amount.trim() === "" || firstBillingDate.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+    const input: SubscriptionFormData = {
+      accountId: paymentAccountId,
+      amount: Number(amount),
+      billingCycle,
+      categoryId,
+      name: serviceName,
+      nextBillingDate: firstBillingDate,
+      reminderEnabled,
+      status,
+    };
+    setIsSaving(true);
+    const result = subscription ? await updateSubscription(subscription.id, input) : await createSubscription(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+    if (addAnother && !subscription) {
+      setIsSaving(false);
+      setServiceName("");
+      setAmount("");
+      return;
+    }
+    beginLoading();
+    router.push("/subscriptions");
+    router.refresh();
   }
 
   return (
@@ -71,8 +109,11 @@ export function AddSubscriptionForm() {
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Subscription Category" onChange={setCategory} options={categoryOptions} value={category} />
-            <SelectInput label="Payment Account" onChange={setPaymentAccount} options={paymentOptions} value={paymentAccount} />
+            <SelectInput label="Subscription Category" onChange={(name) => setCategoryId(subscriptionCategories.find((category) => category.name === name)?.id ?? "")} options={subscriptionCategories.length > 0 ? subscriptionCategories.map((category) => category.name) : ["No subscription categories"]} value={selectedCategory?.name ?? "No subscription categories"} />
+            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(paymentAccounts.find((account) => account.name === name)?.id ?? "")} options={paymentAccounts.length > 0 ? paymentAccounts.map((account) => account.name) : ["No accounts"]} value={selectedAccount?.name ?? "No accounts"} />
+          </div>
+          <div className="mt-5">
+            <SelectInput label="Status" onChange={(value) => setStatus(value as SubscriptionStatus)} options={["Active", "Paused", "Expiring"]} value={status} />
           </div>
         </FormCard>
 
@@ -104,6 +145,7 @@ export function AddSubscriptionForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link
             className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/subscriptions"
@@ -112,17 +154,21 @@ export function AddSubscriptionForm() {
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(subscription)}
+            onClick={() => handleSaveSubscription(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveSubscription}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveSubscription(false)}
             type="button"
           >
             Save Subscription
-          </button>
+          </LoadingButton>
         </div>
       </div>
 
@@ -148,11 +194,11 @@ export function AddSubscriptionForm() {
             <dl className="mt-5 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Category</dt>
-                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{category}</dd>
+                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory?.name ?? "No category"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Account</dt>
-                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{paymentAccount}</dd>
+                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount?.name ?? "No account"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>

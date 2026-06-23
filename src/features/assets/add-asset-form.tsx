@@ -1,41 +1,81 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { createAsset, updateAsset } from "@/app/assets/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
+import type { CategoryRecord } from "@/lib/categories/supabase";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import type { AssetFormData, AssetRecordWithValues } from "@/lib/assets/supabase";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
 const conditions: AssetRecord["condition"][] = ["Excellent", "Good", "Fair", "Needs Repair"];
 const statuses: AssetStatus[] = ["Active", "Sold", "Archived"];
 
-export function AddAssetForm() {
-  const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Expense"), []);
-  const categoryOptions = assetCategories.length > 0 ? assetCategories.map((category) => category.name) : ["Electronics"];
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState(categoryOptions[0]);
-  const [purchaseDate, setPurchaseDate] = useState("2026-06-15");
-  const [startUsingDate, setStartUsingDate] = useState("2026-06-15");
-  const [purchaseAmount, setPurchaseAmount] = useState("");
-  const [currentValue, setCurrentValue] = useState("");
-  const [condition, setCondition] = useState<AssetRecord["condition"]>("Good");
-  const [status, setStatus] = useState<AssetStatus>("Active");
-  const [note, setNote] = useState("");
+export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithValues; categories: CategoryRecord[] }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Expense"), [categories]);
+  const [name, setName] = useState(asset?.name ?? "");
+  const [categoryId, setCategoryId] = useState(asset?.categoryId ?? assetCategories[0]?.id ?? "");
+  const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDate ?? "2026-06-15");
+  const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDate ?? "2026-06-15");
+  const [purchaseAmount, setPurchaseAmount] = useState(asset ? String(asset.purchaseAmountValue) : "");
+  const [currentValue, setCurrentValue] = useState(asset ? String(asset.currentValueValue) : "");
+  const [condition, setCondition] = useState<AssetRecord["condition"]>(asset?.condition ?? "Good");
+  const [status, setStatus] = useState<AssetStatus>(asset?.status ?? "Active");
+  const [note, setNote] = useState(asset?.note ?? "");
   const [showErrors, setShowErrors] = useState(false);
-  const selectedCategory = assetCategories.find((item) => item.name === category) ?? assetCategories[0];
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const selectedCategory = assetCategories.find((item) => item.id === categoryId) ?? assetCategories[0];
   const nameHasError = showErrors && name.trim() === "";
   const amountHasError = showErrors && purchaseAmount.trim() === "";
   const dateHasError = showErrors && purchaseDate.trim() === "";
   const startUsingDateHasError = showErrors && startUsingDate.trim() === "";
   const usageDuration = calculateUsageDuration(startUsingDate);
 
-  function handleSaveAsset() {
-    setShowErrors(name.trim() === "" || purchaseAmount.trim() === "" || purchaseDate.trim() === "" || startUsingDate.trim() === "");
+  async function handleSaveAsset(addAnother = false) {
+    const hasErrors = name.trim() === "" || purchaseAmount.trim() === "" || purchaseDate.trim() === "" || startUsingDate.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+    const input: AssetFormData = {
+      categoryId,
+      condition,
+      currentValue: currentValue.trim() ? Number(currentValue) : Number(purchaseAmount),
+      name,
+      note,
+      purchaseAmount: Number(purchaseAmount),
+      purchaseDate,
+      startUsingDate,
+      status,
+    };
+    setIsSaving(true);
+    const result = asset ? await updateAsset(asset.id, input) : await createAsset(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+    if (addAnother && !asset) {
+      setIsSaving(false);
+      setName("");
+      setPurchaseAmount("");
+      setCurrentValue("");
+      setNote("");
+      return;
+    }
+    beginLoading();
+    router.push("/assets");
+    router.refresh();
   }
 
   return (
@@ -47,7 +87,7 @@ export function AddAssetForm() {
               <TextInput error={nameHasError} label="Asset Name" onChange={setName} placeholder="MacBook Pro 14" value={name} />
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Asset name is required.</p> : null}
             </div>
-            <SelectInput label="Asset Category" onChange={setCategory} options={categoryOptions} value={category} />
+            <SelectInput label="Asset Category" onChange={(name) => setCategoryId(assetCategories.find((category) => category.name === name)?.id ?? "")} options={assetCategories.length > 0 ? assetCategories.map((category) => category.name) : ["No asset categories"]} value={selectedCategory?.name ?? "No asset categories"} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -102,22 +142,27 @@ export function AddAssetForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]" href="/assets">
             Cancel
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(asset)}
+            onClick={() => handleSaveAsset(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveAsset}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveAsset(false)}
             type="button"
           >
             Save Asset
-          </button>
+          </LoadingButton>
         </div>
       </div>
 
@@ -137,7 +182,7 @@ export function AddAssetForm() {
             <dl className="space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Category</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{category}</dd>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{selectedCategory?.name ?? "No category"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Purchase</dt>

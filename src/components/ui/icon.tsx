@@ -24,6 +24,7 @@ export type IconName =
   | "mail"
   | "lock"
   | "logout"
+  | "menu"
   | "moreVertical"
   | "plus"
   | "receipt"
@@ -114,6 +115,7 @@ const iconPaths: Record<IconName, string[]> = {
   mail: ["M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "m3 7 9 6 9-6"],
   lock: ["M5 10h14a2 2 0 0 1 2 2v8H3v-8a2 2 0 0 1 2-2z", "M8 10V7a4 4 0 0 1 8 0v3", "M12 14v2"],
   logout: ["M10 17l5-5-5-5", "M15 12H3", "M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"],
+  menu: ["M4 6h16", "M4 12h16", "M4 18h16"],
   moreVertical: ["M12 8h.01", "M12 12h.01", "M12 16h.01"],
   plus: ["M12 5v14", "M5 12h14"],
   receipt: [

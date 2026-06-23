@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { deleteTransaction } from "@/app/transactions/actions";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
-import { getImpactTarget, getImpactValue, transactionImpactOptions } from "@/lib/transactions/impact-options";
 import type { Transaction } from "@/types/finance";
 
 type TransactionsTableProps = {
@@ -55,11 +55,12 @@ function getAttachmentLabel(attachment?: Transaction["attachment"]) {
 }
 
 function getImpactLabel(transaction: Transaction) {
-  const impactTarget = getImpactTarget(transaction);
-  const impactValue = getImpactValue(transaction, impactTarget);
-  const impactRecord = transactionImpactOptions[impactTarget].find((option) => option.value === impactValue);
-
-  return impactTarget === "None" ? "No linked page" : `${impactTarget}: ${impactRecord?.label ?? "Unknown record"}`;
+  if (transaction.linkedBudgetId) return "Linked budget";
+  if (transaction.linkedSavingsGoalId) return "Linked savings goal";
+  if (transaction.linkedDebtId) return "Linked debt";
+  if (transaction.linkedSubscriptionId) return "Linked subscription";
+  if (transaction.linkedAssetId) return "Linked asset";
+  return "No linked record";
 }
 
 type TransactionAction = "view" | "edit" | "delete";
@@ -76,16 +77,14 @@ const transactionActions: {
 ];
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
+  const [visibleTransactions, setVisibleTransactions] = useState(transactions);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
-  const [deletedTransactionIds, setDeletedTransactionIds] = useState<string[]>([]);
-  const visibleTransactions = useMemo(
-    () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
-    [deletedTransactionIds, transactions],
-  );
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const resultStart = visibleTransactions.length > 0 ? 1 : 0;
-  const visibleTotalResults = Math.max(0, totalResults - transactions.filter((transaction) => deletedTransactionIds.includes(transaction.id)).length);
+  const visibleTotalResults = Math.min(totalResults, visibleTransactions.length);
   const visibleTransactionIds = useMemo(() => visibleTransactions.map((transaction) => transaction.id), [visibleTransactions]);
   const selectedVisibleCount = selectedTransactionIds.filter((id) => visibleTransactionIds.includes(id)).length;
   const hasSelectedTransactions = selectedVisibleCount > 0;
@@ -103,12 +102,21 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     }
   }
 
-  function confirmDeleteTransaction() {
+  async function confirmDeleteTransaction() {
     if (!deletingTransaction) {
       return;
     }
 
-    setDeletedTransactionIds((currentIds) => [...currentIds, deletingTransaction.id]);
+    setIsDeleting(true);
+    setDeleteError("");
+    const result = await deleteTransaction(deletingTransaction.id);
+    setIsDeleting(false);
+    if (result.error) {
+      setDeleteError(result.error);
+      return;
+    }
+
+    setVisibleTransactions((items) => items.filter((transaction) => transaction.id !== deletingTransaction.id));
     setSelectedTransactionIds((currentIds) => currentIds.filter((id) => id !== deletingTransaction.id));
     setViewedTransaction((currentTransaction) => (currentTransaction?.id === deletingTransaction.id ? null : currentTransaction));
     setDeletingTransaction(null);
@@ -138,6 +146,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
 
   return (
     <section className="space-y-3 lg:overflow-hidden lg:rounded-lg lg:border lg:border-[#c6c6cd]/70 lg:bg-white lg:shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      {deleteError ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{deleteError}</div> : null}
       <div
         className={`flex min-h-14 flex-col gap-3 rounded-lg border px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-t-0 ${
           hasSelectedTransactions
@@ -433,6 +442,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       <DeleteConfirmationDialog
         description="Deleting this transaction will remove it from the transaction list and clear any selected state for this record."
         isOpen={deletingTransaction !== null}
+        isPending={isDeleting}
         itemLabel={deletingTransaction ? `${deletingTransaction.id} · ${deletingTransaction.note}` : "Transaction"}
         onCancel={() => setDeletingTransaction(null)}
         onConfirm={confirmDeleteTransaction}

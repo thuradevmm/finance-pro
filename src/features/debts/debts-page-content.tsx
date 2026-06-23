@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 
+import { deleteDebt } from "@/app/debts/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
-import { getTransactionDerivedDebts } from "@/lib/transactions/derived-data";
-import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
 const statusStyles: Record<DebtStatus, string> = {
@@ -31,7 +29,7 @@ function DebtProgress({ debt }: { debt: DebtRecord }) {
   );
 }
 
-function DebtsTable({ debts, onDelete }: { debts: DebtRecord[]; onDelete: (id: string) => void }) {
+function DebtsTable({ debts, onDelete }: { debts: DebtRecord[]; onDelete: (id: string) => void | Promise<void> }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/60 px-4 py-4">
@@ -80,7 +78,7 @@ function DebtsTable({ debts, onDelete }: { debts: DebtRecord[]; onDelete: (id: s
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <RecordActions editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                    <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
                   </div>
                 </td>
               </tr>
@@ -119,15 +117,34 @@ function UpcomingPayments({ payments }: { payments: UpcomingDebtPayment[] }) {
 }
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecord[]; payments: UpcomingDebtPayment[] }) {
-  const storedTransactions = useStoredTransactions(fallbackTransactions);
-  const transactionDerivedDebts = getTransactionDerivedDebts(storedTransactions);
   const [visibleDebts, setVisibleDebts] = useState(debts);
-  const visibleDebtIds = new Set(visibleDebts.map((debt) => debt.id));
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+
+  async function handleDelete(debtId: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteDebt(debtId);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setVisibleDebts((items) => items.filter((item) => item.id !== debtId));
+  }
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="xl:col-span-9">
-        <DebtsTable debts={transactionDerivedDebts.filter((debt) => visibleDebtIds.has(debt.id))} onDelete={(id) => setVisibleDebts((items) => items.filter((item) => item.id !== id))} />
+        {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+        {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
+        {visibleDebts.length > 0 ? <DebtsTable debts={visibleDebts} onDelete={handleDelete} /> : (
+          <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+            <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
+            <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No debts yet</h2>
+            <p className="mt-1 text-sm text-[#45464d]">Add a debt to track repayment progress.</p>
+          </section>
+        )}
       </div>
       <div className="xl:col-span-3">
         <UpcomingPayments payments={payments} />

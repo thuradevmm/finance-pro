@@ -29,16 +29,16 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
     if (Object.keys(nextErrors).length > 0) return;
 
     setIsSubmitting(true);
-    const supabase = createClient();
     let error;
     try {
+      const supabase = createClient();
       ({ error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       }));
     } catch {
       setIsSubmitting(false);
-      setErrors({ form: "Unable to reach Supabase. Check your connection and try again." });
+      setErrors({ form: "Unable to connect to Supabase. Check the environment variables and network connection." });
       return;
     }
 

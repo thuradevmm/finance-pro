@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddAccountForm } from "@/features/accounts/add-account-form";
 import { getAccount } from "@/lib/accounts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 
@@ -12,7 +13,10 @@ export default async function EditAccountPage({ params }: { params: Promise<{ ac
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   if (!user) notFound();
-  const account = await getAccount(supabase, user.id, accountId);
+  const [account, categories] = await Promise.all([
+    getAccount(supabase, user.id, accountId),
+    getCategories(),
+  ]);
 
   if (!account) {
     notFound();
@@ -28,7 +32,7 @@ export default async function EditAccountPage({ params }: { params: Promise<{ ac
       topSearchPlaceholder="Search accounts..."
     >
       <PageHeader description={`Update account details for ${account.name}.`} title="Edit Account" />
-      <AddAccountForm account={account} />
+      <AddAccountForm account={account} categories={categories} />
     </AppShell>
   );
 }

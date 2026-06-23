@@ -2,26 +2,25 @@ import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
-import { SimpleRecordEditPage } from "@/components/ui/simple-record-edit-page";
-import { accounts } from "@/lib/accounts/mock-data";
-import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
-import { subscriptions } from "@/lib/subscriptions/mock-data";
-import type { BillingCycle, SubscriptionStatus } from "@/types/finance";
-
-const billingCycles: BillingCycle[] = ["Weekly", "Monthly", "Yearly"];
-const statuses: SubscriptionStatus[] = ["Active", "Paused", "Expiring"];
+import { AddSubscriptionForm } from "@/features/subscriptions/add-subscription-form";
+import { getAccounts } from "@/lib/accounts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { getSubscription } from "@/lib/subscriptions/supabase";
+import { getUserSafely } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function EditSubscriptionPage({ params }: { params: Promise<{ subscriptionId: string }> }) {
   const { subscriptionId } = await params;
-  const subscription = subscriptions.find((item) => item.id === subscriptionId);
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  if (!user) notFound();
+  const accounts = await getAccounts(supabase, user.id);
+  const categories = await getCategories();
+  const subscription = await getSubscription(supabase, user.id, subscriptionId, accounts, categories);
 
   if (!subscription) {
     notFound();
   }
-  const categoryOptions = getCategoriesForScope(categories, "Subscriptions", "Expense").map((category) => category.name);
-  const paymentAccountOptions = accounts.filter((account) => account.status === "Active").map((account) => account.name);
-
   return (
     <AppShell
       activeNavLabel="Subscriptions"
@@ -32,32 +31,7 @@ export default async function EditSubscriptionPage({ params }: { params: Promise
       topSearchPlaceholder="Search subscriptions..."
     >
       <PageHeader description={`Update recurring payment for ${subscription.name}.`} title="Edit Subscription" />
-      <SimpleRecordEditPage
-        cancelHref="/subscriptions"
-        fields={[
-          { key: "name", label: "Service Name" },
-          { key: "amount", label: "Amount", type: "currency" },
-          { key: "billingCycle", label: "Billing Cycle", options: billingCycles },
-          { key: "category", label: "Category", options: categoryOptions.length > 0 ? categoryOptions : ["Software Tools"] },
-          { key: "paymentAccount", label: "Payment Account", options: paymentAccountOptions.length > 0 ? paymentAccountOptions : ["Main Checking"] },
-          { key: "nextBillingDate", label: "Next Billing Date", type: "date" },
-          { key: "status", label: "Status", options: statuses },
-        ]}
-        preview={{
-          icon: subscription.icon,
-          iconClassName: `${subscription.bg} ${subscription.tone}`,
-          label: "Subscription Preview",
-          metrics: [
-            { label: "Amount", key: "amount" },
-            { label: "Cycle", key: "billingCycle" },
-            { label: "Status", key: "status" },
-          ],
-          primaryKey: "name",
-          secondaryKey: "paymentAccount",
-        }}
-        record={subscription as unknown as Record<string, string>}
-        saveLabel="Save Subscription"
-      />
+      <AddSubscriptionForm accounts={accounts} categories={categories} subscription={subscription} />
     </AppShell>
   );
 }

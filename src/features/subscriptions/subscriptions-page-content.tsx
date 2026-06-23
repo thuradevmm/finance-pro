@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 
+import { deleteSubscription } from "@/app/subscriptions/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
-import { getTransactionDerivedSubscriptionBillings, getTransactionDerivedSubscriptions } from "@/lib/transactions/derived-data";
-import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
@@ -44,7 +42,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
   );
 }
 
-function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void; subscriptions: SubscriptionRecord[] }) {
+function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void | Promise<void>; subscriptions: SubscriptionRecord[] }) {
   return (
     <section>
       <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">All Subscriptions</h2>
@@ -91,6 +89,7 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                         itemId={subscription.id}
                         itemLabel={subscription.name}
                         onDelete={onDelete}
+                        deleteDescription={`Deleting ${subscription.name} will remove this subscription from your list.`}
                       />
                     </div>
                   </td>
@@ -111,18 +110,30 @@ export function SubscriptionsPageContent({
   billings: UpcomingSubscriptionBilling[];
   subscriptions: SubscriptionRecord[];
 }) {
-  const storedTransactions = useStoredTransactions(fallbackTransactions);
-  const transactionDerivedSubscriptions = getTransactionDerivedSubscriptions(storedTransactions);
-  const transactionDerivedBillings = getTransactionDerivedSubscriptionBillings(storedTransactions);
   const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
-  const visibleSubscriptionIds = new Set(visibleSubscriptions.map((subscription) => subscription.id));
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+
+  async function handleDelete(subscriptionId: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteSubscription(subscriptionId);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setVisibleSubscriptions((items) => items.filter((item) => item.id !== subscriptionId));
+  }
 
   return (
     <>
-      <BillingTimeline billings={transactionDerivedBillings.length > 0 ? transactionDerivedBillings : billings} />
+      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating subscriptions…</p> : null}
+      <BillingTimeline billings={billings} />
       <SubscriptionsTable
-        onDelete={(id) => setVisibleSubscriptions((items) => items.filter((item) => item.id !== id))}
-        subscriptions={transactionDerivedSubscriptions.filter((subscription) => visibleSubscriptionIds.has(subscription.id))}
+        onDelete={handleDelete}
+        subscriptions={visibleSubscriptions}
       />
     </>
   );

@@ -1,7 +1,7 @@
 import type { IconName } from "@/components/ui/icon";
 import type { TransactionCategoryName, TransactionType } from "@/types/finance";
 
-export const categoryStyles: Record<TransactionCategoryName, string> = {
+export const categoryStyles: Partial<Record<TransactionCategoryName | string, string>> = {
   Food: "border-[#bae6fd] bg-[#e0f2fe] text-[#0369a1]",
   Housing: "border-[#fecaca] bg-[#fee2e2] text-[#991b1b]",
   Income: "border-[#bbf7d0] bg-[#dcfce7] text-[#166534]",

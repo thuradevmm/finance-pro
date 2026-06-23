@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 
+import { deleteSavingsGoal } from "@/app/savings-goals/actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { RecordActions } from "@/components/ui/record-actions";
-import { getTransactionDerivedSavingsGoals } from "@/lib/transactions/derived-data";
-import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
-import type { SavingsGoal, SavingsGoalStatus } from "@/types/finance";
+import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
+import type { SavingsGoalStatus } from "@/types/finance";
 
 const statusStyles: Record<SavingsGoalStatus, string> = {
   "On Track": "bg-[#ecfdf5] text-[#166534]",
@@ -16,7 +15,7 @@ const statusStyles: Record<SavingsGoalStatus, string> = {
   Completed: "bg-[#eff6ff] text-[#0058be]",
 };
 
-function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (id: string) => void }) {
+function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void> }) {
   return (
     <article className="flex flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4">
@@ -51,24 +50,54 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (id:
           Target: {goal.targetDate}
         </div>
         <div className="mt-4 flex items-center justify-end gap-1">
-          <RecordActions editHref={`/savings-goals/${goal.id}/edit`} itemId={goal.id} itemLabel={goal.name} onDelete={onDelete} />
+          <RecordActions
+            deleteDescription={`Deleting ${goal.name} will remove this savings goal from your list.`}
+            editHref={`/savings-goals/${goal.id}/edit`}
+            itemId={goal.id}
+            itemLabel={goal.name}
+            onDelete={onDelete}
+          />
         </div>
       </div>
     </article>
   );
 }
 
-export function SavingsGoalsGrid({ goals }: { goals: SavingsGoal[] }) {
-  const storedTransactions = useStoredTransactions(fallbackTransactions);
-  const transactionDerivedGoals = getTransactionDerivedSavingsGoals(storedTransactions);
+export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
   const [visibleGoals, setVisibleGoals] = useState(goals);
-  const visibleGoalIds = new Set(visibleGoals.map((goal) => goal.id));
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+
+  async function handleDelete(goalId: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteSavingsGoal(goalId);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setVisibleGoals((items) => items.filter((item) => item.id !== goalId));
+  }
 
   return (
-    <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-      {transactionDerivedGoals.filter((goal) => visibleGoalIds.has(goal.id)).map((goal) => (
-        <SavingsGoalCard goal={goal} key={goal.id} onDelete={(id) => setVisibleGoals((items) => items.filter((item) => item.id !== id))} />
-      ))}
-    </section>
+    <>
+      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating savings goals…</p> : null}
+
+      {visibleGoals.length === 0 ? (
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+          <Icon className="mx-auto size-8 text-[#76777d]" name="target" />
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No savings goals yet</h2>
+          <p className="mt-1 text-sm text-[#45464d]">Create your first goal to track target amount, saved amount, and remaining progress.</p>
+        </section>
+      ) : (
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+          {visibleGoals.map((goal) => (
+            <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} />
+          ))}
+        </section>
+      )}
+    </>
   );
 }

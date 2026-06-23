@@ -5,16 +5,20 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { SubscriptionsPageContent } from "@/features/subscriptions/subscriptions-page-content";
-import {
-  getTransactionDerivedSubscriptionBillings,
-  getTransactionDerivedSubscriptions,
-  getTransactionDerivedSubscriptionSummaries,
-} from "@/lib/transactions/derived-data";
+import { getAccounts } from "@/lib/accounts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { getSubscriptions, getSubscriptionSummaries, getUpcomingSubscriptionBillings } from "@/lib/subscriptions/supabase";
+import { getUserSafely } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
-export default function SubscriptionsPage() {
-  const derivedSubscriptions = getTransactionDerivedSubscriptions();
-  const derivedBillings = getTransactionDerivedSubscriptionBillings();
-  const summaries = getTransactionDerivedSubscriptionSummaries();
+export default async function SubscriptionsPage() {
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  const accounts = user ? await getAccounts(supabase, user.id) : [];
+  const categories = user ? await getCategories() : [];
+  const subscriptions = user ? await getSubscriptions(supabase, user.id, accounts, categories) : [];
+  const billings = getUpcomingSubscriptionBillings(subscriptions);
+  const summaries = getSubscriptionSummaries(subscriptions);
 
   return (
     <AppShell
@@ -41,7 +45,7 @@ export default function SubscriptionsPage() {
       />
 
       <SummaryCards summaries={summaries} />
-      <SubscriptionsPageContent billings={derivedBillings} subscriptions={derivedSubscriptions} />
+      <SubscriptionsPageContent billings={billings} subscriptions={subscriptions} />
     </AppShell>
   );
 }

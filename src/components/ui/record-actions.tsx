@@ -13,6 +13,8 @@ type RecordActionsProps = {
   itemId: string;
   itemLabel: string;
   onDelete?: (itemId: string) => void | Promise<void>;
+  viewHref?: string;
+  viewLabel?: string;
 };
 
 export function RecordActions({
@@ -22,12 +24,24 @@ export function RecordActions({
   itemId,
   itemLabel,
   onDelete,
+  viewHref,
+  viewLabel = "View related records",
 }: RecordActionsProps) {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   return (
     <>
+      {viewHref ? (
+        <Link
+          aria-label={`${viewLabel} for ${itemLabel}`}
+          className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+          href={viewHref}
+          title={`${viewLabel} for ${itemLabel}`}
+        >
+          <Icon className="size-4" name="eye" />
+        </Link>
+      ) : null}
       <Link
         aria-label={`Edit ${itemLabel}`}
         className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
@@ -46,7 +60,7 @@ export function RecordActions({
         <Icon className="size-4" name="trash" />
       </button>
       <DeleteConfirmationDialog
-        description={deleteDescription ?? `Deleting ${itemLabel} will remove it from the current mock list.`}
+        description={deleteDescription ?? `Deleting ${itemLabel} will remove it from your saved records.`}
         isOpen={isDeleteOpen}
         isPending={isDeleting}
         itemLabel={itemLabel}

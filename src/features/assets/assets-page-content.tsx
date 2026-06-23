@@ -2,14 +2,12 @@
 
 import { useMemo, useState } from "react";
 
+import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { calculateUsageDuration } from "@/lib/date-duration";
 import { formatMmk } from "@/lib/currency";
-import { getTransactionDerivedAssets } from "@/lib/transactions/derived-data";
-import { transactions as fallbackTransactions } from "@/lib/transactions/mock-data";
-import { useStoredTransactions } from "@/lib/transactions/transaction-store";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
 const statusStyles: Record<AssetStatus, string> = {
@@ -63,7 +61,7 @@ function matchesAmountRange(asset: AssetRecord, range: (typeof amountRanges)[num
   return true;
 }
 
-function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: string) => void }) {
+function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: string) => void | Promise<void> }) {
   const usageDuration = calculateUsageDuration(asset.startUsingDate);
 
   return (
@@ -103,14 +101,14 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: str
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-4">
         <p className="truncate text-sm font-medium text-[#45464d]">{asset.note}</p>
         <div className="flex shrink-0 gap-1">
-          <RecordActions editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
+          <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your list.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
         </div>
       </div>
     </article>
   );
 }
 
-function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (id: string) => void }) {
+function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (id: string) => void | Promise<void> }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -150,7 +148,7 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (i
                 <td className={`whitespace-nowrap px-4 py-4 font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <RecordActions editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
+                    <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your list.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
                   </div>
                 </td>
               </tr>
@@ -275,13 +273,21 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
 }
 
 export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
-  const storedTransactions = useStoredTransactions(fallbackTransactions);
-  const transactionDerivedAssets = useMemo(() => getTransactionDerivedAssets(storedTransactions), [storedTransactions]);
   const [visibleAssets, setVisibleAssets] = useState(assets);
-  const visibleAssetIds = useMemo(() => new Set(visibleAssets.map((asset) => asset.id)), [visibleAssets]);
-  const syncedAssets = useMemo(() => transactionDerivedAssets.filter((asset) => visibleAssetIds.has(asset.id)), [transactionDerivedAssets, visibleAssetIds]);
-  const activeAssets = syncedAssets.filter((asset) => asset.status === "Active");
-  const deleteAsset = (id: string) => setVisibleAssets((items) => items.filter((item) => item.id !== id));
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const activeAssets = visibleAssets.filter((asset) => asset.status === "Active");
+  async function deleteAsset(id: string) {
+    setError("");
+    setIsPending(true);
+    const result = await deleteAssetAction(id);
+    setIsPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setVisibleAssets((items) => items.filter((item) => item.id !== id));
+  }
 
   return (
     <>
@@ -306,8 +312,10 @@ export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
           </div>
         </div>
       </section>
-      <AssetsTable assets={syncedAssets} onDelete={deleteAsset} />
-      <AssetHistorySection assets={syncedAssets} />
+      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating assets…</p> : null}
+      <AssetsTable assets={visibleAssets} onDelete={deleteAsset} />
+      <AssetHistorySection assets={visibleAssets} />
     </>
   );
 }

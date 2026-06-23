@@ -51,7 +51,12 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
 
   useEffect(() => {
     let isMounted = true;
-    const supabase = createClient();
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch {
+      return () => { isMounted = false; };
+    }
 
     async function loadCurrentUser() {
       const { user } = await getUserSafely(supabase);

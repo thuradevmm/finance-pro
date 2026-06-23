@@ -1,42 +1,112 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { createSavingsGoal, updateSavingsGoal } from "@/app/savings-goals/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
-import { accounts } from "@/lib/accounts/mock-data";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
+import type { AccountRecord } from "@/lib/accounts/supabase";
+import type { CategoryRecord } from "@/lib/categories/supabase";
+import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
 }
 
-export function AddSavingsGoalForm() {
-  const accountOptions = useMemo(() => accounts.filter((account) => account.status === "Active").map((account) => account.name), []);
-  const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals"), []);
-  const [selectedStyleId, setSelectedStyleId] = useState(goalStyleCategories[0]?.id ?? "");
-  const [account, setAccount] = useState(accountOptions[0] ?? "High-Yield Savings");
-  const [name, setName] = useState("");
-  const [targetAmount, setTargetAmount] = useState("");
-  const [savedAmount, setSavedAmount] = useState("");
-  const [targetDate, setTargetDate] = useState("2026-12-31");
-  const [monthlyContribution, setMonthlyContribution] = useState("");
-  const [description, setDescription] = useState("");
+const fallbackStyle = {
+  bg: "bg-[#eff6ff]",
+  icon: "target" as const,
+  id: "",
+  name: "Savings Goal",
+  tone: "text-[#0058be]",
+  type: "Expense",
+};
+
+export function AddSavingsGoalForm({
+  accounts,
+  categories,
+  goal,
+}: {
+  accounts: AccountRecord[];
+  categories: CategoryRecord[];
+  goal?: SavingsGoalRecord;
+}) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const accountOptions = useMemo(
+    () => accounts.filter((account) => account.status === "Active" && account.type !== "Credit Card"),
+    [accounts],
+  );
+  const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals"), [categories]);
+  const [selectedStyleId, setSelectedStyleId] = useState(goal?.categoryId ?? goalStyleCategories[0]?.id ?? "");
+  const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
+  const [name, setName] = useState(goal?.name ?? "");
+  const [targetAmount, setTargetAmount] = useState(goal ? String(goal.targetAmountValue) : "");
+  const [savedAmount, setSavedAmount] = useState(goal ? String(goal.savedAmountValue) : "");
+  const [targetDate, setTargetDate] = useState(goal?.targetDateValue ?? "2026-12-31");
+  const [monthlyContribution, setMonthlyContribution] = useState(goal ? String(goal.monthlyContributionValue) : "");
+  const [description, setDescription] = useState(goal?.description ?? "");
   const [showErrors, setShowErrors] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const targetHasError = showErrors && targetAmount.trim() === "";
   const dateHasError = showErrors && targetDate.trim() === "";
   const target = parseAmount(targetAmount);
   const saved = parseAmount(savedAmount);
   const progressPercent = target > 0 ? Math.round((saved / target) * 100) : 0;
-  const selectedStyle = goalStyleCategories.find((category) => category.id === selectedStyleId) ?? goalStyleCategories[0];
+  const effectiveStyleId = selectedStyleId || goalStyleCategories[0]?.id || "";
+  const effectiveAccountId = accountId || accountOptions[0]?.id || "";
+  const selectedStyle = goalStyleCategories.find((category) => category.id === effectiveStyleId) ?? goalStyleCategories[0] ?? fallbackStyle;
+  const selectedAccount = accountOptions.find((account) => account.id === effectiveAccountId);
+  const selectedAccountName = selectedAccount?.name ?? "";
 
-  function handleSaveGoal() {
-    setShowErrors(name.trim() === "" || targetAmount.trim() === "" || targetDate.trim() === "");
+  async function handleSaveGoal(addAnother = false) {
+    const hasErrors = name.trim() === "" || targetAmount.trim() === "" || targetDate.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+
+    const input: SavingsGoalFormData = {
+      accountId: effectiveAccountId,
+      categoryId: effectiveStyleId,
+      description,
+      monthlyContribution: monthlyContribution.trim() === "" ? 0 : Number(monthlyContribution),
+      name,
+      savedAmount: savedAmount.trim() === "" ? 0 : Number(savedAmount),
+      targetAmount: Number(targetAmount),
+      targetDate,
+    };
+
+    setIsSaving(true);
+    const result = goal ? await updateSavingsGoal(goal.id, input) : await createSavingsGoal(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+
+    if (addAnother && !goal) {
+      setIsSaving(false);
+      setName("");
+      setTargetAmount("");
+      setSavedAmount("");
+      setMonthlyContribution("");
+      setDescription("");
+      setShowErrors(false);
+      return;
+    }
+
+    beginLoading();
+    router.push("/savings-goals");
+    router.refresh();
   }
 
   return (
@@ -48,7 +118,13 @@ export function AddSavingsGoalForm() {
               <TextInput error={nameHasError} label="Goal Name" onChange={setName} placeholder="Emergency Fund" value={name} />
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Goal name is required.</p> : null}
             </div>
-            <SelectInput label="Savings Account" onChange={setAccount} options={accountOptions.length > 0 ? accountOptions : ["High-Yield Savings"]} value={account} />
+            <SelectInput
+              label="Savings Account"
+              onChange={(accountName) => setAccountId(accountOptions.find((account) => account.name === accountName)?.id ?? "")}
+              options={accountOptions.length > 0 ? accountOptions.map((account) => account.name) : ["No accounts available"]}
+              value={selectedAccountName || "No accounts available"}
+            />
+            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount?.name ?? "Create an account before linking a savings goal."}</p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -101,6 +177,9 @@ export function AddSavingsGoalForm() {
               );
             })}
           </div>
+          {goalStyleCategories.length === 0 ? (
+            <p className="text-sm font-medium text-[#45464d]">No savings goal categories found. Add a category with the Savings Goals scope first.</p>
+          ) : null}
         </FormCard>
 
         <FormCard title="Notes">
@@ -108,6 +187,7 @@ export function AddSavingsGoalForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link
             className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/savings-goals"
@@ -116,17 +196,21 @@ export function AddSavingsGoalForm() {
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(goal)}
+            onClick={() => handleSaveGoal(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveGoal}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveGoal(false)}
             type="button"
           >
             Save Goal
-          </button>
+          </LoadingButton>
         </div>
       </div>
 
@@ -140,7 +224,7 @@ export function AddSavingsGoalForm() {
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">Goal Preview</p>
                 <h3 className="text-xl font-semibold text-[#0b1c30]">{name || "New Savings Goal"}</h3>
-                <p className="mt-1 text-xs font-semibold text-[#45464d]">{account}</p>
+                <p className="mt-1 text-xs font-semibold text-[#45464d]">{selectedAccount?.name ?? "No account selected"}</p>
               </div>
             </div>
 

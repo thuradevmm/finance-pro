@@ -5,11 +5,19 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { SavingsGoalsGrid } from "@/features/savings-goals/savings-goals-grid";
-import { getTransactionDerivedSavingsGoals, getTransactionDerivedSavingsGoalSummaries } from "@/lib/transactions/derived-data";
+import { getAccounts } from "@/lib/accounts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { getSavingsGoals, getSavingsGoalSummaries } from "@/lib/savings-goals/supabase";
+import { createClient } from "@/lib/supabase/server";
+import { getUserSafely } from "@/lib/supabase/auth";
 
-export default function SavingsGoalsPage() {
-  const goals = getTransactionDerivedSavingsGoals();
-  const summaries = getTransactionDerivedSavingsGoalSummaries();
+export default async function SavingsGoalsPage() {
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  const accounts = user ? await getAccounts(supabase, user.id) : [];
+  const categories = user ? await getCategories() : [];
+  const goals = user ? await getSavingsGoals(supabase, user.id, accounts, categories) : [];
+  const summaries = getSavingsGoalSummaries(goals);
 
   return (
     <AppShell

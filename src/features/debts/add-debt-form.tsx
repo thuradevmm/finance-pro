@@ -1,14 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { createDebt, updateDebt } from "@/app/debts/actions";
+import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
+import type { CategoryRecord } from "@/lib/categories/supabase";
+import type { DebtFormData, DebtRecordWithValues } from "@/lib/debts/supabase";
+import type { DebtStatus } from "@/types/finance";
 
 const debtTypes: { label: string; icon: IconName; bg: string; tone: string }[] = [
   { label: "Mortgage", icon: "home", bg: "bg-[#eff6ff]", tone: "text-[#0058be]" },
@@ -21,21 +28,27 @@ function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
 }
 
-export function AddDebtForm() {
-  const [selectedType, setSelectedType] = useState(debtTypes[0]);
-  const [name, setName] = useState("");
-  const [lender, setLender] = useState("");
-  const [totalAmount, setTotalAmount] = useState("");
-  const [repaidAmount, setRepaidAmount] = useState("");
-  const [monthlyPayment, setMonthlyPayment] = useState("");
-  const [startDate, setStartDate] = useState("2026-06-01");
-  const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts").map((category) => category.name), []);
-  const debtCategoryOptions = debtCategories.length > 0 ? debtCategories : ["Loan Repayment"];
-  const [selectedCategory, setSelectedCategory] = useState(debtCategoryOptions[0]);
-  const [status, setStatus] = useState("Active");
-  const [paymentAccount, setPaymentAccount] = useState("Main Checking");
-  const [notes, setNotes] = useState("");
+export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountRecord[]; categories: CategoryRecord[]; debt?: DebtRecordWithValues }) {
+  const router = useRouter();
+  const beginLoading = useInteractionLoading();
+  const [selectedType, setSelectedType] = useState(debtTypes.find((type) => type.label === debt?.type) ?? debtTypes[0]);
+  const [name, setName] = useState(debt?.name ?? "");
+  const [lender, setLender] = useState(debt?.lender ?? "");
+  const [totalAmount, setTotalAmount] = useState(debt ? String(debt.totalAmountValue) : "");
+  const [repaidAmount, setRepaidAmount] = useState(debt ? String(debt.repaidAmountValue) : "");
+  const [monthlyPayment, setMonthlyPayment] = useState(debt ? String(debt.monthlyPaymentValue) : "");
+  const [interestRate, setInterestRate] = useState(debt ? String(debt.interestRateValue) : "");
+  const [startDate, setStartDate] = useState(debt?.startDate ?? "2026-06-01");
+  const [nextPaymentDate, setNextPaymentDate] = useState(debt?.nextPaymentDateValue ?? "2026-11-15");
+  const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts"), [categories]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? debtCategories[0]?.id ?? "");
+  const [status, setStatus] = useState<DebtStatus>(debt?.status ?? "Active");
+  const activeAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
+  const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? activeAccounts[0]?.id ?? "");
+  const [notes, setNotes] = useState(debt?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const lenderHasError = showErrors && lender.trim() === "";
   const totalHasError = showErrors && totalAmount.trim() === "";
@@ -45,8 +58,46 @@ export function AddDebtForm() {
   const progressPercent = total > 0 ? Math.round((repaid / total) * 100) : 0;
   const remaining = Math.max(total - repaid, 0);
 
-  function handleSaveDebt() {
-    setShowErrors(name.trim() === "" || lender.trim() === "" || totalAmount.trim() === "" || monthlyPayment.trim() === "");
+  async function handleSaveDebt(addAnother = false) {
+    const hasErrors = name.trim() === "" || lender.trim() === "" || totalAmount.trim() === "" || monthlyPayment.trim() === "";
+    setShowErrors(hasErrors);
+    setFormError("");
+    if (hasErrors) return;
+    const input: DebtFormData = {
+      categoryId: selectedCategoryId,
+      interestRate: interestRate.trim() ? Number(interestRate) : 0,
+      lender,
+      monthlyPayment: Number(monthlyPayment),
+      name,
+      nextPaymentDate,
+      notes,
+      paymentAccountId,
+      repaidAmount: repaidAmount.trim() ? Number(repaidAmount) : 0,
+      startDate,
+      status,
+      totalAmount: Number(totalAmount),
+      type: selectedType.label,
+    };
+    setIsSaving(true);
+    const result = debt ? await updateDebt(debt.id, input) : await createDebt(input);
+    if (result.error) {
+      setIsSaving(false);
+      setFormError(result.error);
+      return;
+    }
+    if (addAnother && !debt) {
+      setIsSaving(false);
+      setName("");
+      setLender("");
+      setTotalAmount("");
+      setRepaidAmount("");
+      setMonthlyPayment("");
+      setNotes("");
+      return;
+    }
+    beginLoading();
+    router.push("/debts");
+    router.refresh();
   }
 
   return (
@@ -111,22 +162,22 @@ export function AddDebtForm() {
               />
               {paymentHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly payment is required.</p> : null}
             </div>
-            <TextInput label="Interest Rate" placeholder="5.85" type="number" />
+            <TextInput label="Interest Rate" onChange={setInterestRate} placeholder="5.85" type="number" value={interestRate} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <TextInput label="Start Date" onChange={setStartDate} placeholder="2026-06-01" value={startDate} />
-            <TextInput label="Next Payment Date" placeholder="2026-11-15" />
+            <TextInput label="Next Payment Date" onChange={setNextPaymentDate} placeholder="2026-11-15" value={nextPaymentDate} />
           </div>
         </FormCard>
 
         <FormCard title="Repayment Settings">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Status" onChange={setStatus} options={["Active", "Overdue", "Paid"]} value={status} />
-            <SelectInput label="Debt Category" onChange={setSelectedCategory} options={debtCategoryOptions} value={selectedCategory} />
+            <SelectInput label="Status" onChange={(value) => setStatus(value as DebtStatus)} options={["Active", "Overdue", "Paid"]} value={status} />
+            <SelectInput label="Debt Category" onChange={(name) => setSelectedCategoryId(debtCategories.find((category) => category.name === name)?.id ?? "")} options={debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["No debt categories"]} value={debtCategories.find((category) => category.id === selectedCategoryId)?.name ?? "No debt categories"} />
           </div>
           <div className="mt-5">
-            <SelectInput label="Payment Account" onChange={setPaymentAccount} options={["Main Checking", "High-Yield Savings", "Cash Wallet"]} value={paymentAccount} />
+            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(activeAccounts.find((account) => account.name === name)?.id ?? "")} options={activeAccounts.length > 0 ? activeAccounts.map((account) => account.name) : ["No accounts"]} value={activeAccounts.find((account) => account.id === paymentAccountId)?.name ?? "No accounts"} />
           </div>
           <div className="mt-5">
             <TextAreaInput label="Notes" onChange={setNotes} placeholder="Optional repayment notes..." value={notes} />
@@ -134,6 +185,7 @@ export function AddDebtForm() {
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+          {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <Link
             className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/debts"
@@ -142,17 +194,21 @@ export function AddDebtForm() {
           </Link>
           <button
             className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+            disabled={isSaving || Boolean(debt)}
+            onClick={() => handleSaveDebt(true)}
             type="button"
           >
             Save & Add Another
           </button>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            onClick={handleSaveDebt}
+          <LoadingButton
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            isLoading={isSaving}
+            loadingLabel="Saving…"
+            onClick={() => handleSaveDebt(false)}
             type="button"
           >
             Save Debt
-          </button>
+          </LoadingButton>
         </div>
       </div>
 
@@ -193,7 +249,7 @@ export function AddDebtForm() {
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
-                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory}</span>
+                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{debtCategories.find((category) => category.id === selectedCategoryId)?.name ?? "No category"}</span>
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
@@ -201,7 +257,7 @@ export function AddDebtForm() {
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Account</span>
-                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{paymentAccount}</span>
+                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{activeAccounts.find((account) => account.id === paymentAccountId)?.name ?? "No account"}</span>
               </div>
             </div>
             <p className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-sm font-medium text-[#45464d]">

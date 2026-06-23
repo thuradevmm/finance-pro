@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
 
 import { StatusPage } from "@/components/app/status-page";
 import { Icon } from "@/components/ui/icon";
@@ -13,10 +12,6 @@ export default function Error({
   error: Error & { digest?: string };
   unstable_retry: () => void;
 }) {
-  useEffect(() => {
-    console.error(error);
-  }, [error]);
-
   return (
     <StatusPage
       actions={

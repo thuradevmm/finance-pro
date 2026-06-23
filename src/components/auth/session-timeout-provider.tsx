@@ -63,7 +63,12 @@ export function SessionTimeoutProvider({ children }: { children: ReactNode }) {
   }, [scheduleExpiration]);
 
   useEffect(() => {
-    const supabase = createClient();
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch {
+      return;
+    }
 
     function startAuthenticatedSession() {
       isAuthenticatedRef.current = true;

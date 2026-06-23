@@ -5,15 +5,27 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { TransactionsPageContent } from "@/features/transactions/transactions-page-content";
-import { transactionFilterOptions, transactions, transactionSummaries } from "@/lib/transactions/mock-data";
+import { getAccounts } from "@/lib/accounts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { getUserSafely } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
+import { getTransactionFilterOptions, getTransactions, getTransactionSummaries } from "@/lib/transactions/supabase";
 
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string | string[] }>;
+  searchParams: Promise<{ account?: string | string[]; category?: string | string[] }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const requestedAccount = Array.isArray(resolvedSearchParams.account) ? resolvedSearchParams.account[0] : resolvedSearchParams.account;
+  const requestedCategory = Array.isArray(resolvedSearchParams.category) ? resolvedSearchParams.category[0] : resolvedSearchParams.category;
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  const accounts = user ? await getAccounts(supabase, user.id) : [];
+  const categories = user ? await getCategories() : [];
+  const transactions = user ? await getTransactions(supabase, user.id, accounts, categories) : [];
+  const transactionFilterOptions = getTransactionFilterOptions(transactions, accounts, categories);
+  const transactionSummaries = getTransactionSummaries(transactions);
 
   return (
     <AppShell
@@ -49,7 +61,12 @@ export default async function TransactionsPage({
       />
 
       <SummaryCards summaries={transactionSummaries} />
-      <TransactionsPageContent filterOptions={transactionFilterOptions} initialAccountFilter={requestedAccount} transactions={transactions} />
+      <TransactionsPageContent
+        filterOptions={transactionFilterOptions}
+        initialAccountFilter={requestedAccount}
+        initialCategoryFilter={requestedCategory}
+        transactions={transactions}
+      />
     </AppShell>
   );
 }

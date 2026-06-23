@@ -11,9 +11,9 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { categories } from "@/lib/categories/mock-data";
 import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
-import type { AccountStatus, AccountType } from "@/types/finance";
+import type { CategoryRecord } from "@/lib/categories/supabase";
+import type { AccountStatus, AccountType, FinancialCategory } from "@/types/finance";
 
 type AccountTypeOption = {
   type: AccountType;
@@ -69,6 +69,14 @@ const accountTypes: AccountTypeOption[] = [
 
 const currencies = ["MMK"];
 const statuses: AccountStatus[] = ["Active", "Needs Review", "Archived"];
+
+const accountCategoryKeywords: Record<AccountType, string[]> = {
+  "Bank Account": ["bank", "checking", "current", "everyday", "account"],
+  "Cash Wallet": ["cash"],
+  "Credit Card": ["credit", "card"],
+  "Digital Wallet": ["digital", "mobile", "wallet"],
+  Savings: ["saving", "savings", "emergency", "goal"],
+};
 
 function FieldLabel({ children }: { children: string }) {
   return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{children}</label>;
@@ -140,7 +148,13 @@ function TextInput({
   );
 }
 
-export function AddAccountForm({ account }: { account?: AccountRecord }) {
+function categoryMatchesAccountType(category: FinancialCategory, accountType: AccountType) {
+  const keywords = accountCategoryKeywords[accountType];
+  const searchable = `${category.name} ${category.description} ${category.icon}`.toLowerCase();
+  return keywords.some((keyword) => searchable.includes(keyword));
+}
+
+export function AddAccountForm({ account, categories }: { account?: AccountRecord; categories: CategoryRecord[] }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<AccountType>(account?.type ?? "Bank Account");
@@ -151,11 +165,14 @@ export function AddAccountForm({ account }: { account?: AccountRecord }) {
   const [availableBalance, setAvailableBalance] = useState(account ? String(account.availableBalanceValue) : "");
   const [currency, setCurrency] = useState(account?.currency ?? "MMK");
   const [status, setStatus] = useState<AccountStatus>(account?.status ?? "Active");
-  const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts").map((category) => category.name), []);
-  const accountCategoryOptions = account?.category && !accountCategories.includes(account.category)
-    ? [account.category, ...accountCategories]
-    : accountCategories.length > 0 ? accountCategories : ["Everyday Banking"];
-  const [selectedCategory, setSelectedCategory] = useState(account?.category || accountCategoryOptions[0]);
+  const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts"), [categories]);
+  const matchedCategories = accountCategories.filter((category) => categoryMatchesAccountType(category, selectedType));
+  const scopedCategories = matchedCategories.length > 0 ? matchedCategories : accountCategories;
+  const baseCategoryOptions = scopedCategories.map((category) => category.name);
+  const accountCategoryOptions = account?.category && !baseCategoryOptions.includes(account.category)
+    ? [account.category, ...baseCategoryOptions]
+    : baseCategoryOptions;
+  const [selectedCategory, setSelectedCategory] = useState(account?.category ?? accountCategoryOptions[0] ?? "");
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState(account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
   const [notes, setNotes] = useState(account?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
@@ -166,6 +183,7 @@ export function AddAccountForm({ account }: { account?: AccountRecord }) {
   const institutionHasError = showErrors && institution.trim() === "";
   const balanceHasError = showErrors && openingBalance.trim() === "";
   const availableLabel = selectedType === "Credit Card" ? "Available Credit" : "Available Balance";
+  const effectiveSelectedCategory = accountCategoryOptions.includes(selectedCategory) ? selectedCategory : accountCategoryOptions[0] ?? "";
 
   async function handleSaveAccount(addAnother = false) {
     const hasErrors = accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "";
@@ -176,7 +194,7 @@ export function AddAccountForm({ account }: { account?: AccountRecord }) {
     const input: AccountFormData = {
       accountNumber,
       availableBalance: availableBalance.trim() === "" ? Number(openingBalance) : Number(availableBalance),
-      category: selectedCategory,
+      category: effectiveSelectedCategory,
       currency,
       institution,
       monthlyBudgetLimit: monthlyBudgetLimit.trim() === "" ? null : Number(monthlyBudgetLimit),
@@ -286,7 +304,7 @@ export function AddAccountForm({ account }: { account?: AccountRecord }) {
           <FormCard title="Account Settings">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Status" onChange={(value) => setStatus(value as AccountStatus)} options={statuses} value={status} />
-              <SelectInput label="Account Category" onChange={setSelectedCategory} options={accountCategoryOptions} value={selectedCategory} />
+              <SelectInput label="Account Category" onChange={setSelectedCategory} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory || "No account categories"} />
             </div>
 
             <div className="mt-5">
@@ -363,7 +381,7 @@ export function AddAccountForm({ account }: { account?: AccountRecord }) {
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
-              <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory}</span>
+              <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveSelectedCategory}</span>
             </div>
           </div>
         </div>

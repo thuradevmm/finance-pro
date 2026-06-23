@@ -1,8 +1,11 @@
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddAccountForm } from "@/features/accounts/add-account-form";
+import { getCategories } from "@/lib/categories/supabase";
 
-export default function AddAccountPage() {
+export default async function AddAccountPage() {
+  const categories = await getCategories();
+
   return (
     <AppShell
       activeNavLabel="Accounts"
@@ -13,7 +16,7 @@ export default function AddAccountPage() {
       topSearchPlaceholder="Search accounts..."
     >
       <PageHeader description="Create a bank account, wallet, credit card, or cash account." title="Add Account" />
-      <AddAccountForm />
+      <AddAccountForm categories={categories} />
     </AppShell>
   );
 }

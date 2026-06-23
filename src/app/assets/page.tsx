@@ -5,11 +5,17 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { AssetsPageContent } from "@/features/assets/assets-page-content";
-import { assetSummaries } from "@/lib/assets/mock-data";
-import { getTransactionDerivedAssets } from "@/lib/transactions/derived-data";
+import { getAssetSummaries, getAssets } from "@/lib/assets/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { getUserSafely } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
 
-export default function AssetsPage() {
-  const derivedAssets = getTransactionDerivedAssets();
+export default async function AssetsPage() {
+  const supabase = await createClient();
+  const { user } = await getUserSafely(supabase);
+  const categories = user ? await getCategories() : [];
+  const assets = user ? await getAssets(supabase, user.id, categories) : [];
+  const summaries = getAssetSummaries(assets);
 
   return (
     <AppShell
@@ -35,8 +41,8 @@ export default function AssetsPage() {
         title="Assets"
       />
 
-      <SummaryCards summaries={assetSummaries} />
-      <AssetsPageContent assets={derivedAssets} />
+      <SummaryCards summaries={summaries} />
+      <AssetsPageContent assets={assets} />
     </AppShell>
   );
 }

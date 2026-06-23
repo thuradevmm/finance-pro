@@ -201,7 +201,16 @@ export default function AccountsPage() {
     async function loadAccounts() {
       setIsLoading(true);
       setError("");
-      const supabase = createClient();
+      let supabase;
+      try {
+        supabase = createClient();
+      } catch {
+        if (isMounted) {
+          setError("Supabase is not configured. Check the environment variables.");
+          setIsLoading(false);
+        }
+        return;
+      }
       const { user, error: userError } = await getUserSafely(supabase);
       if (userError || !user) {
         if (isMounted) {

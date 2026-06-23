@@ -17,6 +17,7 @@ type MobileHeaderProps = {
   searchLabel?: string;
   searchPlaceholder?: string;
   action?: MobileHeaderAction;
+  onOpenNavigation?: () => void;
 };
 
 export function MobileHeader({
@@ -25,15 +26,28 @@ export function MobileHeader({
   searchLabel = "Search on mobile",
   searchPlaceholder = "Search...",
   action,
+  onOpenNavigation,
 }: MobileHeaderProps) {
   const actionClassName = "grid size-10 place-items-center rounded-md bg-[#0b1c30] text-white shadow-sm";
 
   return (
     <header className="sticky top-0 z-20 border-b border-[#c6c6cd]/70 bg-white/95 px-4 py-4 backdrop-blur md:hidden">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-lg font-semibold text-[#0b1c30]">{title}</p>
-          <p className="text-xs font-semibold uppercase text-[#45464d]">{subtitle}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          {onOpenNavigation ? (
+            <button
+              aria-label="Open navigation"
+              className="grid size-10 shrink-0 place-items-center rounded-md border border-[#c6c6cd]/70 text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+              onClick={onOpenNavigation}
+              type="button"
+            >
+              <Icon name="menu" />
+            </button>
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-lg font-semibold text-[#0b1c30]">{title}</p>
+            <p className="truncate text-xs font-semibold uppercase text-[#45464d]">{subtitle}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {action?.href ? (

@@ -2,14 +2,7 @@ import type { IconName } from "@/components/ui/icon";
 
 export type TransactionType = "Income" | "Expense" | "Transfer";
 
-export type TransactionCategoryName =
-  | "Food"
-  | "Housing"
-  | "Income"
-  | "Subscriptions"
-  | "Transfer"
-  | "Travel"
-  | "Utilities";
+export type TransactionCategoryName = string;
 
 export type CategoryType = "Expense" | "Income";
 
