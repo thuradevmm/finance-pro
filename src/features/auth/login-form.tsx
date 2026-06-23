@@ -8,7 +8,7 @@ import { AuthField } from "@/components/auth/auth-field";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { createClient } from "@/lib/supabase/client";
-import { markSessionActivity } from "@/lib/auth/session-timeout";
+import { setSessionPersistence } from "@/lib/auth/session-timeout";
 
 export function LoginForm({ initialFormError }: { initialFormError?: string }) {
   const router = useRouter();
@@ -53,7 +53,7 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
       ? requestedPath
       : "/dashboard";
 
-    markSessionActivity();
+    setSessionPersistence(rememberMe);
     setIsSubmitting(false);
     beginLoading();
     router.replace(destination);
@@ -67,7 +67,7 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
         <AuthField autoComplete="current-password" error={errors.password} icon="lock" label="Password" name="password" onChange={setPassword} placeholder="Enter your password" type="password" value={password} />
         <div className="mt-3 flex items-center justify-between gap-4">
           <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-[#45464d]">
-            <input checked={rememberMe} className="size-4 accent-[#2170e4]" onChange={(event) => setRememberMe(event.target.checked)} type="checkbox" />
+            <input checked={rememberMe} className="size-4 accent-[#2170e4]" disabled={isSubmitting} onChange={(event) => setRememberMe(event.target.checked)} type="checkbox" />
             Remember me
           </label>
           <Link className="text-sm font-semibold text-[#0058be] hover:underline" href="/forgot-password">Forgot password?</Link>

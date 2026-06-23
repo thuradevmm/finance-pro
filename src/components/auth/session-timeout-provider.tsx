@@ -6,6 +6,8 @@ import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import {
   clearSessionActivity,
   getLastSessionActivity,
+  getSessionRememberPreference,
+  hasActiveBrowserSession,
   markSessionActivity,
   SESSION_ACTIVITY_STORAGE_KEY,
   SESSION_IDLE_TIMEOUT_MS,
@@ -71,6 +73,11 @@ export function SessionTimeoutProvider({ children }: { children: ReactNode }) {
     }
 
     function startAuthenticatedSession() {
+      if (!getSessionRememberPreference() && !hasActiveBrowserSession()) {
+        void expireSession();
+        return;
+      }
+
       isAuthenticatedRef.current = true;
       isExpiringRef.current = false;
       const lastActivity = getLastSessionActivity();

@@ -9,6 +9,7 @@ import { AuthField } from "@/components/auth/auth-field";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { emailServicesEnabled } from "@/lib/auth/email-services";
+import { setSessionPersistence } from "@/lib/auth/session-timeout";
 import { createClient } from "@/lib/supabase/client";
 
 type RegisterErrors = {
@@ -77,6 +78,7 @@ export function RegisterForm() {
         return;
       }
 
+      setSessionPersistence(true);
       setRecoveryCode(result.recoveryCode);
       return;
     }
@@ -101,6 +103,7 @@ export function RegisterForm() {
       return;
     }
 
+    setSessionPersistence(true);
     beginLoading();
     router.replace("/dashboard");
     router.refresh();
