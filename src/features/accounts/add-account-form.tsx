@@ -18,7 +18,6 @@ import type { AccountStatus, AccountType, FinancialCategory } from "@/types/fina
 
 type AmountTypeDraft = {
   id: string;
-  amount: string;
   type: string;
 };
 
@@ -163,28 +162,8 @@ function categoryMatchesAccountType(category: FinancialCategory, accountType: Ac
   return keywords.some((keyword) => searchable.includes(keyword));
 }
 
-function createAmountTypeDraft(type = defaultAmountTypeName, amount = ""): AmountTypeDraft {
-  return { amount, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type };
-}
-
-function decimalScale(values: string[]) {
-  return Math.max(
-    0,
-    ...values.map((value) => {
-      const [, fraction = ""] = value.trim().split(".");
-      return fraction.length;
-    }),
-  );
-}
-
-function decimalToScaledBigInt(value: string, scale: number) {
-  const trimmedValue = value.trim();
-  if (!/^-?\d+(\.\d+)?$/.test(trimmedValue)) return null;
-  const isNegative = trimmedValue.startsWith("-");
-  const [wholePart, fractionPart = ""] = trimmedValue.replace("-", "").split(".");
-  const scaledText = `${wholePart}${fractionPart.padEnd(scale, "0")}`;
-  const scaledValue = BigInt(scaledText || "0");
-  return isNegative ? -scaledValue : scaledValue;
+function createAmountTypeDraft(type = defaultAmountTypeName): AmountTypeDraft {
+  return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type };
 }
 
 export function AddAccountForm({ account, categories, returnTo = "/accounts" }: { account?: AccountRecord; categories: CategoryRecord[]; returnTo?: string }) {
@@ -199,12 +178,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const [cardNumber, setCardNumber] = useState(account?.cardNumber ?? "");
   const [cardSecurityCode, setCardSecurityCode] = useState(account?.cardSecurityCode ?? "");
   const [cardExpiryCode, setCardExpiryCode] = useState(account?.cardExpiryCode ?? "");
-  const [openingBalance, setOpeningBalance] = useState(account ? String(account.initialBalanceValue) : "");
-  const [availableBalance, setAvailableBalance] = useState(account ? String(account.availableBalanceValue) : "");
   const [amountTypes, setAmountTypes] = useState<AmountTypeDraft[]>(
     account?.amountTypeValues.length
-      ? account.amountTypeValues.map((item) => createAmountTypeDraft(item.type, String(item.amountValue)))
-      : [createAmountTypeDraft(defaultAmountTypeName, "")],
+      ? account.amountTypeValues.map((item) => createAmountTypeDraft(item.type))
+      : [createAmountTypeDraft(defaultAmountTypeName)],
   );
   const [currency, setCurrency] = useState(account?.currency ?? "MMK");
   const [status, setStatus] = useState<AccountStatus>(account?.status ?? "Active");
@@ -224,34 +201,18 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
-  const balanceHasError = showErrors && openingBalance.trim() === "";
-  const availableBalanceHasError = showErrors && availableBalance.trim() !== "" && !Number.isFinite(Number(availableBalance));
-  const amountTypesHaveError = showErrors && amountTypes.some((item) => item.type.trim() === "" || item.amount.trim() === "" || !Number.isFinite(Number(item.amount)));
+  const amountTypesHaveError = showErrors && amountTypes.some((item) => item.type.trim() === "");
   const hasCard = cardType !== "No Card";
   const cardHasError = showErrors && hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
-  const availableLabel = selectedType === "Credit Card" ? "Available Credit" : "Available Balance";
   const effectiveSelectedCategory = accountCategoryOptions.includes(selectedCategory) ? selectedCategory : accountCategoryOptions[0] ?? "";
-  const openingBalanceValue = Number(openingBalance);
-  const effectiveAvailableBalanceValue = availableBalance.trim() === "" ? openingBalanceValue : Number(availableBalance);
-  const amountTypesTotal = amountTypes.reduce((total, item) => total + (Number.isFinite(Number(item.amount)) ? Number(item.amount) : 0), 0);
-  const amountComparisonScale = decimalScale([openingBalance, ...amountTypes.map((item) => item.amount)]);
-  const openingBalanceScaled = decimalToScaledBigInt(openingBalance, amountComparisonScale);
-  const amountTypesTotalScaled = amountTypes.reduce<bigint | null>((total, item) => {
-    const amount = decimalToScaledBigInt(item.amount, amountComparisonScale);
-    return total == null || amount == null ? null : total + amount;
-  }, BigInt(0));
-  const balancesMatchAmountTypes =
-    openingBalanceScaled != null &&
-    amountTypesTotalScaled != null &&
-    amountTypesTotalScaled === openingBalanceScaled;
-  const amountTotalHasError = showErrors && !balancesMatchAmountTypes;
+  const transactionTotal = account?.balanceValue ?? 0;
 
-  function updateAmountType(id: string, field: "amount" | "type", value: string) {
-    setAmountTypes((items) => items.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  function updateAmountType(id: string, value: string) {
+    setAmountTypes((items) => items.map((item) => (item.id === id ? { ...item, type: value } : item)));
   }
 
   function addAmountType() {
-    setAmountTypes((items) => [...items, createAmountTypeDraft(`Amount Type ${items.length + 1}`, "0")]);
+    setAmountTypes((items) => [...items, createAmountTypeDraft(`Amount Type ${items.length + 1}`)]);
   }
 
   function removeAmountType(id: string) {
@@ -264,11 +225,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   }
 
   async function handleSaveAccount(addAnother = false) {
-    const normalizedAmountTypes = amountTypes.map((item) => ({ amount: Number(item.amount), type: item.type.trim() }));
-    const hasInvalidAmountTypes = normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === "" || !Number.isFinite(item.amount));
-    const hasInvalidAvailableBalance = availableBalance.trim() !== "" && !Number.isFinite(Number(availableBalance));
+    const normalizedAmountTypes = amountTypes.map((item) => ({ type: item.type.trim() }));
+    const hasInvalidAmountTypes = normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === "");
     const hasInvalidCard = hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
-    const hasErrors = accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "" || hasInvalidAvailableBalance || hasInvalidAmountTypes || !balancesMatchAmountTypes || hasInvalidCard;
+    const hasErrors = accountName.trim() === "" || institution.trim() === "" || hasInvalidAmountTypes || hasInvalidCard;
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -281,7 +241,6 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       cardSecurityCode,
       cardExpiryCode,
       cardType,
-      availableBalance: effectiveAvailableBalanceValue,
       category: effectiveSelectedCategory,
       currency,
       institution,
@@ -289,7 +248,6 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       mobileBankingAccountNumber: accountIdentifier,
       name: accountName,
       notes,
-      openingBalance: Number(openingBalance),
       phoneNumber,
       status,
       type: selectedType,
@@ -313,9 +271,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       setCardNumber("");
       setCardSecurityCode("");
       setCardExpiryCode("");
-      setOpeningBalance("");
-      setAvailableBalance("");
-      setAmountTypes([createAmountTypeDraft(defaultAmountTypeName, "")]);
+      setAmountTypes([createAmountTypeDraft(defaultAmountTypeName)]);
       setMonthlyBudgetLimit("");
       setNotes("");
       setShowErrors(false);
@@ -378,24 +334,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <FieldLabel>{selectedType === "Credit Card" ? "Current Used Balance" : "Opening Balance"}</FieldLabel>
-                <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">MMK</span>
-                  <input
-                    className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
-                      balanceHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"
-                    }`}
-                    onChange={(event) => setOpeningBalance(event.target.value)}
-                    placeholder="0.00"
-                    type="number"
-                    value={openingBalance}
-                  />
+                <FieldLabel>Total Amount</FieldLabel>
+                <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-xl font-semibold text-[#0b1c30]">
+                  <ResponsiveAmount maxSizeRem={1.25}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
                 </div>
-                {balanceHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Balance is required.</p> : null}
-              </div>
-              <div>
-                <TextInput label={availableLabel} onChange={setAvailableBalance} placeholder="0.00" type="number" value={availableBalance} />
-                {availableBalanceHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{availableLabel} must be a valid number.</p> : null}
               </div>
               <SelectInput label="Currency" onChange={setCurrency} options={currencies} value={currency} />
             </div>
@@ -413,10 +355,9 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
           <FormCard title="Amount Types">
             <div className="space-y-3">
-              {amountTypes.map((amountType, index) => (
-                <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={amountType.id}>
-                  <TextInput label="Type Name" onChange={(value) => updateAmountType(amountType.id, "type", value)} placeholder="Operation, Saving, Emergency..." value={amountType.type} />
-                  <TextInput label="Amount" onChange={(value) => updateAmountType(amountType.id, "amount", value)} placeholder={index === 0 ? openingBalance || "0.00" : "0.00"} type="number" value={amountType.amount} />
+              {amountTypes.map((amountType) => (
+                <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 md:grid-cols-[minmax(0,1fr)_auto]" key={amountType.id}>
+                  <TextInput label="Type Name" onChange={(value) => updateAmountType(amountType.id, value)} placeholder="Operation, Saving, Emergency..." value={amountType.type} />
                   <div className="flex items-end">
                     <button
                       aria-label={`Remove ${amountType.type || "amount type"}`}
@@ -431,9 +372,9 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                 </div>
               ))}
             </div>
-            {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name and valid amount.</p> : null}
-            <div className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${amountTotalHasError ? "border-[#fecaca] bg-[#fff1f0] text-[#991b1b]" : "border-[#c6c6cd]/60 bg-white text-[#45464d]"}`}>
-              Amount type total: {formatMmkPreview(amountTypesTotal)}. This must exactly match opening balance.
+            {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name.</p> : null}
+            <div className="mt-4 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 text-sm font-semibold text-[#45464d]">
+              Amount values are calculated from transaction activity.
             </div>
             <button
               className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
@@ -503,7 +444,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
           </div>
           <p className="text-center text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
           <h3 className="mt-2 text-center">
-            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{openingBalance.trim() === "" ? formatMmkPreview(0) : formatMmkPreview(openingBalance)}</ResponsiveAmount>
+            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
           </h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
@@ -534,7 +475,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
             {amountTypes.map((amountType) => (
               <div className="flex items-center justify-between gap-4" key={`preview-${amountType.id}`}>
                 <span className="max-w-32 truncate text-xs font-bold uppercase text-[#45464d]">{amountType.type || "Amount Type"}</span>
-                <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{amountType.amount.trim() === "" ? formatMmkPreview(0) : formatMmkPreview(amountType.amount)}</ResponsiveAmount>
+                <span className="text-right text-sm font-semibold text-[#0b1c30]">Transaction based</span>
               </div>
             ))}
             <div className="flex items-center justify-between gap-4">

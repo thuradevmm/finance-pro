@@ -22,15 +22,13 @@ export type AccountFormData = {
   cardType: string;
   mobileBankingAccountNumber: string;
   phoneNumber: string;
-  availableBalance: number;
-  amountTypes: { amount: number; type: string }[];
+  amountTypes: { type: string }[];
   category: string;
   currency: string;
   institution: string;
   monthlyBudgetLimit: number | null;
   name: string;
   notes: string;
-  openingBalance: number;
   status: AccountStatus;
   type: AccountType;
 };
@@ -86,11 +84,6 @@ type AccountRow = {
   updated_at: string;
 };
 
-type BalanceRow = {
-  account_id: string;
-  current_balance: number | string | null;
-};
-
 type AccountTransactionRow = {
   account_id: string | null;
   amount: number | string;
@@ -135,8 +128,12 @@ function numericValue(value: unknown, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function roundCurrencyValue(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
-  const amountValue = numericValue(value);
+  const amountValue = roundCurrencyValue(numericValue(value));
   return {
     amount: formatMmk(amountValue),
     amountValue,
@@ -149,19 +146,23 @@ function emptyActivity(): AccountActivity {
 }
 
 function normalizeAmountType(value: unknown): AccountAmountType {
-  return typeof value === "string" && value.trim() ? value.trim() : "Operation";
+  return typeof value === "string" && value.trim() ? value.trim() : "General";
 }
 
 function addActivityDelta(activity: AccountActivity, amountType: AccountAmountType, delta: number) {
-  activity.deltas.set(amountType, (activity.deltas.get(amountType) ?? 0) + delta);
+  activity.deltas.set(amountType, roundCurrencyValue((activity.deltas.get(amountType) ?? 0) + delta));
 }
 
-function normalizeAmountTypeValues(metadata: Record<string, unknown>, initialBalanceValue: number) {
+function isCreditCardType(type: string | null | undefined) {
+  return String(type ?? "").toLowerCase() === "credit_card";
+}
+
+function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
   if (Array.isArray(metadata.amount_types)) {
     const amountTypes = metadata.amount_types
       .map((item) => metadataRecord(item))
       .map((item) => ({
-        amountValue: numericValue(item.amount),
+        amountValue: 0,
         type: normalizeAmountType(item.type),
       }))
       .filter((item) => item.type.trim() !== "");
@@ -172,15 +173,16 @@ function normalizeAmountTypeValues(metadata: Record<string, unknown>, initialBal
   const hasLegacySplit = metadata.operation_amount != null || metadata.saving_amount != null;
   return [
     {
-      amountValue: numericValue(hasLegacySplit ? metadata.operation_amount : initialBalanceValue),
+      amountValue: 0,
       type: "Operation",
     },
-    ...(hasLegacySplit ? [{ amountValue: numericValue(metadata.saving_amount), type: "Saving" }] : []),
+    ...(hasLegacySplit ? [{ amountValue: 0, type: "Saving" }] : []),
   ];
 }
 
-function buildAccountActivity(transactions: AccountTransactionRow[]) {
+function buildAccountActivity(transactions: AccountTransactionRow[], accounts: AccountRow[]) {
   const activityByAccount = new Map<string, AccountActivity>();
+  const accountTypes = new Map(accounts.map((account) => [account.id, account.type]));
 
   function getActivity(accountId: string) {
     const existingActivity = activityByAccount.get(accountId);
@@ -198,37 +200,37 @@ function buildAccountActivity(transactions: AccountTransactionRow[]) {
 
     if (transaction.account_id) {
       const activity = getActivity(transaction.account_id);
+      const isCreditCard = isCreditCardType(accountTypes.get(transaction.account_id));
       activity.transactionCount += 1;
       if (type === "income") {
         activity.inflow += amount;
-        addActivityDelta(activity, amountType, amount);
+        addActivityDelta(activity, amountType, isCreditCard ? -amount : amount);
       } else if (type === "expense") {
         activity.outflow += amount;
-        addActivityDelta(activity, amountType, -amount);
+        addActivityDelta(activity, amountType, isCreditCard ? amount : -amount);
       } else if (type === "transfer") {
         activity.outflow += amount;
-        addActivityDelta(activity, amountType, -amount);
+        addActivityDelta(activity, amountType, isCreditCard ? amount : -amount);
       }
     }
 
     if (type === "transfer" && transaction.transfer_account_id) {
       const transferActivity = getActivity(transaction.transfer_account_id);
+      const isCreditCard = isCreditCardType(accountTypes.get(transaction.transfer_account_id));
       transferActivity.transactionCount += 1;
       transferActivity.inflow += amount;
-      addActivityDelta(transferActivity, amountType, amount);
+      addActivityDelta(transferActivity, amountType, isCreditCard ? -amount : amount);
     }
   }
 
   return activityByAccount;
 }
 
-function mapAccount(row: AccountRow, balance?: BalanceRow, activity: AccountActivity = emptyActivity()): AccountRecord {
+function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()): AccountRecord {
   const metadata = metadataRecord(row.metadata);
   const type = typeMap[row.type.toLowerCase()] ?? "Bank Account";
   const appearance = appearances[type];
-  const balanceValue = numericValue(balance?.current_balance, numericValue(row.initial_balance));
   const initialBalanceValue = numericValue(row.initial_balance);
-  const availableBalanceValue = numericValue(metadata.available_balance, balanceValue);
   const bankBookAccountNumber = typeof metadata.bank_book_account_number === "string" ? metadata.bank_book_account_number : "";
   const cardNumber = typeof metadata.card_number === "string" ? metadata.card_number : "";
   const cardSecurityCode = typeof metadata.card_security_code === "string" ? metadata.card_security_code : "";
@@ -238,11 +240,14 @@ function mapAccount(row: AccountRow, balance?: BalanceRow, activity: AccountActi
   const phoneNumber = typeof metadata.phone_number === "string" ? metadata.phone_number : "";
   const legacyAccountNumber = typeof metadata.account_number === "string" ? metadata.account_number : "";
   const accountIdentifier = bankBookAccountNumber || mobileBankingAccountNumber || legacyAccountNumber;
-  const amountTypeValues = normalizeAmountTypeValues(metadata, initialBalanceValue);
-  const displayAmountTypes = new Map(amountTypeValues.map((item) => [item.type, item.amountValue]));
+  const amountTypeValues = normalizeAmountTypeValues(metadata);
+  const displayAmountTypes = new Map(amountTypeValues.map((item) => [item.type, 0]));
   for (const [amountType, delta] of activity.deltas) {
     displayAmountTypes.set(amountType, (displayAmountTypes.get(amountType) ?? 0) + delta);
   }
+  const balanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
+  const availableBalanceValue = balanceValue;
+  const balanceBreakdowns = Array.from(displayAmountTypes, ([amountType, amountValue]) => amountTypeBreakdown(amountType, amountValue));
   const metadataStatus = metadata.status;
   const status: AccountStatus = !row.is_active
     ? "Archived"
@@ -255,9 +260,10 @@ function mapAccount(row: AccountRow, balance?: BalanceRow, activity: AccountActi
     accountNumber: [accountIdentifier, phoneNumber, cardNumber].filter(Boolean).join(" / "),
     amountTypeValues,
     availableBalance: formatMmk(availableBalanceValue),
+    availableBreakdowns: balanceBreakdowns,
     availableBalanceValue,
     balance: formatMmk(balanceValue),
-    balanceBreakdowns: Array.from(displayAmountTypes, ([amountType, amountValue]) => amountTypeBreakdown(amountType, amountValue)),
+    balanceBreakdowns,
     balanceValue,
     bankBookAccountNumber: accountIdentifier,
     bg: appearance.bg,
@@ -287,7 +293,7 @@ function mapAccount(row: AccountRow, balance?: BalanceRow, activity: AccountActi
 }
 
 export async function getAccounts(supabase: SupabaseClient, userId: string) {
-  const [accountsResult, balancesResult, transactionsResult] = await Promise.all([
+  const [accountsResult, transactionsResult] = await Promise.all([
     supabase
       .from("accounts")
       .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
@@ -295,7 +301,6 @@ export async function getAccounts(supabase: SupabaseClient, userId: string) {
       .is("deleted_at", null)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
-    supabase.from("v_account_balances").select("account_id,current_balance").eq("user_id", userId),
     supabase
       .from("transactions")
       .select("account_id,transfer_account_id,amount,type,metadata")
@@ -304,12 +309,11 @@ export async function getAccounts(supabase: SupabaseClient, userId: string) {
   ]);
 
   if (accountsResult.error) throw new Error(accountsResult.error.message);
-  if (balancesResult.error) throw new Error(balancesResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
-  const balances = new Map((balancesResult.data as BalanceRow[]).map((balance) => [balance.account_id, balance]));
-  const activities = buildAccountActivity(transactionsResult.data as AccountTransactionRow[]);
-  return (accountsResult.data as AccountRow[]).map((account) => mapAccount(account, balances.get(account.id), activities.get(account.id)));
+  const accountRows = accountsResult.data as AccountRow[];
+  const activities = buildAccountActivity(transactionsResult.data as AccountTransactionRow[], accountRows);
+  return accountRows.map((account) => mapAccount(account, activities.get(account.id)));
 }
 
 export async function getAccount(supabase: SupabaseClient, userId: string, accountId: string) {
@@ -319,18 +323,27 @@ export async function getAccount(supabase: SupabaseClient, userId: string, accou
 
 export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] {
   const activeAccounts = accounts.filter((account) => account.status === "Active");
-  const totalBalance = activeAccounts.reduce((total, account) => total + account.balanceValue, 0);
-  const cashAvailable = activeAccounts
-    .filter((account) => account.type !== "Credit Card")
-    .reduce((total, account) => total + account.availableBalanceValue, 0);
-  const creditUsed = activeAccounts
-    .filter((account) => account.type === "Credit Card")
-    .reduce((total, account) => total + Math.abs(Math.min(account.balanceValue, 0)), 0);
+  const amountTypeTotals = new Map<string, number>();
+  for (const account of activeAccounts) {
+    for (const breakdown of account.balanceBreakdowns) {
+      amountTypeTotals.set(breakdown.type, roundCurrencyValue((amountTypeTotals.get(breakdown.type) ?? 0) + breakdown.amountValue));
+    }
+  }
 
-  return [
-    { label: "Total Balance", value: formatMmk(totalBalance), icon: "account", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
-    { label: "Cash Available", value: formatMmk(cashAvailable), icon: "savings", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Credit Used", value: formatMmk(creditUsed), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Active Accounts", value: String(activeAccounts.length), icon: "dashboard", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+  const summaryStyles: Array<Pick<SummaryMetric, "bg" | "icon" | "tone">> = [
+    { icon: "account", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { icon: "savings", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
+
+  const summaries = Array.from(amountTypeTotals, ([amountType, amountValue], index) => ({
+    label: amountType,
+    value: formatMmk(amountValue),
+    ...summaryStyles[index % summaryStyles.length],
+  }));
+
+  return summaries.length > 0
+    ? summaries
+    : [{ label: "No Amount Types", value: formatMmk(0), icon: "account", tone: "text-[#45464d]", bg: "bg-[#f8f9ff]" }];
 }

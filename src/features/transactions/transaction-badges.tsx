@@ -13,9 +13,9 @@ export function TransactionTypeBadge({ type }: { type: TransactionType }) {
 
 export function CategoryBadge({ category }: { category: string }) {
   return (
-    <span className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${categoryStyles[category] ?? "border-[#d4d4d8] bg-[#f4f4f5] text-[#3f3f46]"}`}>
-      <span className="size-1.5 rounded-full bg-current" />
-      {category}
+    <span className={`inline-flex min-w-0 max-w-full items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-semibold ${categoryStyles[category] ?? "border-[#d4d4d8] bg-[#f4f4f5] text-[#3f3f46]"}`}>
+      <span className="size-1.5 shrink-0 rounded-full bg-current" />
+      <span className="truncate">{category}</span>
     </span>
   );
 }

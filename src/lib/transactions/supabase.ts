@@ -66,7 +66,7 @@ function metadataRecord(metadata: unknown) {
 }
 
 function normalizeAccountAmountType(value: unknown): AccountAmountType {
-  return value === "Saving" ? "Saving" : "Operation";
+  return typeof value === "string" && value.trim() ? value.trim() : "General";
 }
 
 function normalizeType(value: string): TransactionType {

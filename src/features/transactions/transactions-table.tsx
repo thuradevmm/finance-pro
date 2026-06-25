@@ -16,6 +16,8 @@ type TransactionsTableProps = {
   totalResults: number;
 };
 
+const transactionsPerPage = 10;
+
 function AttachmentIcon({ attachment }: { attachment?: Transaction["attachment"] }) {
   if (!attachment) {
     return (
@@ -77,6 +79,7 @@ const transactionActions: {
 ];
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
+  const [currentPage, setCurrentPage] = useState(1);
   const [deletedTransactionIds, setDeletedTransactionIds] = useState<string[]>([]);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
@@ -87,12 +90,34 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
     [deletedTransactionIds, transactions],
   );
-  const resultStart = visibleTransactions.length > 0 ? 1 : 0;
+  const pageCount = Math.max(Math.ceil(visibleTransactions.length / transactionsPerPage), 1);
+  const effectiveCurrentPage = Math.min(currentPage, pageCount);
+  const pageStartIndex = (effectiveCurrentPage - 1) * transactionsPerPage;
+  const paginatedTransactions = visibleTransactions.slice(pageStartIndex, pageStartIndex + transactionsPerPage);
+  const resultStart = visibleTransactions.length > 0 ? pageStartIndex + 1 : 0;
+  const resultEnd = Math.min(pageStartIndex + paginatedTransactions.length, visibleTransactions.length);
   const visibleTotalResults = Math.min(totalResults, visibleTransactions.length);
-  const visibleTransactionIds = useMemo(() => visibleTransactions.map((transaction) => transaction.id), [visibleTransactions]);
-  const selectedVisibleCount = selectedTransactionIds.filter((id) => visibleTransactionIds.includes(id)).length;
+  const pageTransactionIds = useMemo(() => paginatedTransactions.map((transaction) => transaction.id), [paginatedTransactions]);
+  const selectedVisibleTransactions = useMemo(
+    () => visibleTransactions.filter((transaction) => selectedTransactionIds.includes(transaction.id)),
+    [selectedTransactionIds, visibleTransactions],
+  );
+  const selectedVisibleCount = selectedVisibleTransactions.length;
+  const selectedPageCount = selectedTransactionIds.filter((id) => pageTransactionIds.includes(id)).length;
   const hasSelectedTransactions = selectedVisibleCount > 0;
-  const allVisibleSelected = visibleTransactions.length > 0 && selectedVisibleCount === visibleTransactions.length;
+  const allVisibleSelected = paginatedTransactions.length > 0 && selectedPageCount === paginatedTransactions.length;
+  const paginationItems = useMemo(() => {
+    if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1);
+
+    const pages = new Set([1, pageCount, effectiveCurrentPage - 1, effectiveCurrentPage, effectiveCurrentPage + 1]);
+    return Array.from(pages)
+      .filter((page) => page >= 1 && page <= pageCount)
+      .sort((first, second) => first - second)
+      .flatMap((page, index, pagesList) => {
+        const previousPage = pagesList[index - 1];
+        return previousPage && page - previousPage > 1 ? [`ellipsis-${previousPage}-${page}`, page] : [page];
+      });
+  }, [effectiveCurrentPage, pageCount]);
 
   function handleAction(action: TransactionAction, transaction: Transaction) {
     if (action === "view") {
@@ -126,8 +151,56 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     setDeletingTransaction(null);
   }
 
-  function handleBulkAction() {
-    setSelectedTransactionIds([]);
+  function csvCell(value: string) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+
+  function exportSelectedTransactions() {
+    if (selectedVisibleTransactions.length === 0) return;
+
+    const headers = ["Date", "Type", "Category", "Account", "Amount Type", "Amount", "Note", "Reflects"];
+    const rows = selectedVisibleTransactions.map((transaction) => [
+      transaction.date,
+      transaction.type,
+      transaction.category,
+      transaction.account,
+      transaction.accountAmountType,
+      transaction.amount,
+      transaction.note,
+      getImpactLabel(transaction),
+    ]);
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function deleteSelectedTransactions() {
+    if (selectedVisibleTransactions.length === 0) return;
+
+    setIsDeleting(true);
+    setDeleteError("");
+    const deletedIds: string[] = [];
+    for (const transaction of selectedVisibleTransactions) {
+      const result = await deleteTransaction(transaction.id);
+      if (result.error) {
+        setDeleteError(result.error);
+        break;
+      }
+      deletedIds.push(transaction.id);
+    }
+    setIsDeleting(false);
+    if (deletedIds.length === 0) return;
+
+    setDeletedTransactionIds((ids) => [...ids, ...deletedIds]);
+    setSelectedTransactionIds((currentIds) => currentIds.filter((id) => !deletedIds.includes(id)));
+    setViewedTransaction((currentTransaction) => (currentTransaction && deletedIds.includes(currentTransaction.id) ? null : currentTransaction));
   }
 
   function toggleTransactionSelection(transactionId: string) {
@@ -138,14 +211,18 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
 
   function toggleAllVisibleTransactions() {
     setSelectedTransactionIds((currentIds) => {
-      const hiddenSelectedIds = currentIds.filter((id) => !visibleTransactionIds.includes(id));
+      const hiddenSelectedIds = currentIds.filter((id) => !pageTransactionIds.includes(id));
 
       if (allVisibleSelected) {
         return hiddenSelectedIds;
       }
 
-      return [...hiddenSelectedIds, ...visibleTransactionIds];
+      return [...hiddenSelectedIds, ...pageTransactionIds];
     });
+  }
+
+  function goToPage(page: number) {
+    setCurrentPage(Math.min(Math.max(page, 1), pageCount));
   }
 
   return (
@@ -165,7 +242,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           <button
             className="inline-flex h-9 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedTransactions}
-            onClick={handleBulkAction}
+            onClick={exportSelectedTransactions}
             type="button"
           >
             <Icon className="size-4" name="download" />
@@ -173,12 +250,12 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           </button>
           <button
             className="inline-flex h-9 items-center gap-2 rounded-md border border-[#fecaca] bg-white px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!hasSelectedTransactions}
-            onClick={handleBulkAction}
+            disabled={!hasSelectedTransactions || isDeleting}
+            onClick={deleteSelectedTransactions}
             type="button"
           >
             <Icon className="size-4" name="trash" />
-            Delete selected
+            {isDeleting ? "Deleting..." : "Delete selected"}
           </button>
         </div>
       </div>
@@ -198,7 +275,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               </th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Date</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
+              <th className="w-40 px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Amount Type</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Amount</th>
@@ -215,8 +292,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {visibleTransactions.length > 0 ? (
-              visibleTransactions.map((transaction) => (
+            {paginatedTransactions.length > 0 ? (
+              paginatedTransactions.map((transaction) => (
                 <tr className="group transition hover:bg-[#f8f9ff]" key={transaction.id}>
                   <td className="px-4 py-4 text-center">
                     <input
@@ -231,8 +308,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <td className="px-4 py-4">
                     <TransactionTypeBadge type={transaction.type} />
                   </td>
-                  <td className="px-4 py-4">
-                    <CategoryBadge category={transaction.category} />
+                  <td className="w-40 px-4 py-4 align-middle">
+                    <div className="flex max-w-36 items-center">
+                      <CategoryBadge category={transaction.category} />
+                    </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.account}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.accountAmountType}</td>
@@ -287,8 +366,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       </div>
 
       <div className="grid gap-3 lg:hidden">
-        {visibleTransactions.length > 0 ? (
-          visibleTransactions.map((transaction) => (
+        {paginatedTransactions.length > 0 ? (
+          paginatedTransactions.map((transaction) => (
             <article className="rounded-md border border-[#c6c6cd]/60 bg-white p-4" key={transaction.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 gap-3">
@@ -356,35 +435,43 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       <div className="flex flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-[#f8f9ff]">
         <p className="text-sm text-[#45464d]">
           Showing <span className="font-semibold text-[#0b1c30]">{resultStart}</span> to{" "}
-          <span className="font-semibold text-[#0b1c30]">{visibleTransactions.length}</span> of{" "}
+          <span className="font-semibold text-[#0b1c30]">{resultEnd}</span> of{" "}
           <span className="font-semibold text-[#0b1c30]">{visibleTotalResults}</span> results
         </p>
         <nav aria-label="Pagination" className="inline-flex w-fit overflow-hidden rounded-md border border-[#c6c6cd] bg-white shadow-sm">
           <button
             aria-label="Previous page"
-            className="grid size-10 place-items-center border-r border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff]"
+            className="grid size-10 place-items-center border-r border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={effectiveCurrentPage === 1}
+            onClick={() => goToPage(effectiveCurrentPage - 1)}
             type="button"
           >
             <Icon className="size-4" name="chevronLeft" />
           </button>
-          {[1, 2, 3].map((page) => (
-            <button
-              aria-current={page === 1 ? "page" : undefined}
-              className={
-                page === 1
-                  ? "h-10 min-w-10 border-r border-[#c6c6cd] bg-[#d8e2ff] px-3 text-sm font-semibold text-[#0058be]"
-                  : "h-10 min-w-10 border-r border-[#c6c6cd] px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
-              }
-              key={page}
-              type="button"
-            >
-              {page}
-            </button>
+          {paginationItems.map((item) => (
+            typeof item === "number" ? (
+              <button
+                aria-current={item === effectiveCurrentPage ? "page" : undefined}
+                className={
+                  item === effectiveCurrentPage
+                    ? "h-10 min-w-10 border-r border-[#c6c6cd] bg-[#d8e2ff] px-3 text-sm font-semibold text-[#0058be]"
+                    : "h-10 min-w-10 border-r border-[#c6c6cd] px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+                }
+                key={item}
+                onClick={() => goToPage(item)}
+                type="button"
+              >
+                {item}
+              </button>
+            ) : (
+              <span className="grid h-10 min-w-10 place-items-center border-r border-[#c6c6cd] px-3 text-sm text-[#45464d]" key={item}>...</span>
+            )
           ))}
-          <span className="grid h-10 min-w-10 place-items-center border-r border-[#c6c6cd] px-3 text-sm text-[#45464d]">...</span>
           <button
             aria-label="Next page"
-            className="grid size-10 place-items-center text-[#45464d] transition hover:bg-[#eff4ff]"
+            className="grid size-10 place-items-center text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={effectiveCurrentPage === pageCount}
+            onClick={() => goToPage(effectiveCurrentPage + 1)}
             type="button"
           >
             <Icon className="size-4" name="chevronRight" />

@@ -28,7 +28,7 @@ type AccountViewMode = "Card" | "List" | "Lookup";
 
 function decimalScaleFromNumber(value: number) {
   if (!Number.isFinite(value)) return 0;
-  const textValue = String(value);
+  const textValue = value.toFixed(2);
   if (!textValue.includes("e")) return textValue.split(".")[1]?.length ?? 0;
 
   const [, exponentText = "0"] = textValue.split("e-");
@@ -37,7 +37,8 @@ function decimalScaleFromNumber(value: number) {
 }
 
 function toScaledBigInt(value: number, scale: number) {
-  const textValue = String(value);
+  if (!Number.isFinite(value)) return BigInt(0);
+  const textValue = value.toFixed(Math.min(Math.max(scale, 0), 2));
   const isNegative = textValue.startsWith("-");
   const [wholePart, fractionPart = ""] = textValue.replace("-", "").split(".");
   const scaledText = `${wholePart}${fractionPart.padEnd(scale, "0")}`.replace(/^0+(?=\d)/, "");
@@ -46,7 +47,7 @@ function toScaledBigInt(value: number, scale: number) {
 }
 
 function sumScaledAmounts(values: number[]) {
-  const scale = Math.max(0, ...values.map(decimalScaleFromNumber));
+  const scale = Math.min(Math.max(0, ...values.map(decimalScaleFromNumber)), 2);
   const value = values.reduce((total, amount) => total + toScaledBigInt(amount, scale), BigInt(0));
   return { scale, value };
 }
@@ -57,7 +58,7 @@ function formatScaledAuditAmount(value: bigint, scale: number) {
   const wholeText = scale > 0 ? absoluteText.slice(0, -scale) : absoluteText;
   const fractionText = scale > 0 ? absoluteText.slice(-scale) : "";
   const groupedWholeText = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0, useGrouping: true }).format(Number(wholeText));
-  const displayScale = Math.max(2, scale);
+  const displayScale = Math.min(Math.max(2, scale), 2);
   const displayFraction = fractionText.padEnd(displayScale, "0");
 
   return `${isNegative ? "-" : ""}${groupedWholeText}.${displayFraction}`;
@@ -108,7 +109,7 @@ function AccountCard({
       </div>
 
       <div className="mt-5">
-        <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
+        <p className="text-xs font-bold uppercase text-[#45464d]">Total Amount</p>
         <ResponsiveAmount className={`mt-2 font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
           {account.balance}
         </ResponsiveAmount>
@@ -124,7 +125,7 @@ function AccountCard({
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.monthlyOutflow}</ResponsiveAmount></dd>
         </div>
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">Available</dt>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">Net Amount</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{account.availableBalance}</ResponsiveAmount></dd>
         </div>
         <div>
@@ -135,7 +136,7 @@ function AccountCard({
       <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
         {account.balanceBreakdowns.map((breakdown) => (
           <div key={breakdown.type}>
-            <dt className="text-xs font-bold uppercase text-[#45464d]">{breakdown.type}</dt>
+            <dt className="text-xs font-bold uppercase text-[#45464d]">{breakdown.type} Total</dt>
             <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{breakdown.amount}</ResponsiveAmount></dd>
           </div>
         ))}
@@ -204,8 +205,8 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
                 <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-3">
-                      <span className={`grid size-9 place-items-center rounded-md ${account.bg} ${account.tone}`}>
-                        <Icon className="size-4" name={account.icon} />
+                      <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                        <Icon className="size-5" name={account.icon} />
                       </span>
                       <div>
                         <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
@@ -259,16 +260,13 @@ function AccountsTable({
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Account Register</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px] border-collapse text-left">
+        <table className="w-full min-w-[760px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Balance</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Updated</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Amount</th>
               <th className="w-32 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
           </thead>
@@ -277,8 +275,8 @@ function AccountsTable({
               <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">
-                    <span className={`grid size-9 place-items-center rounded-md ${account.bg} ${account.tone}`}>
-                      <Icon className="size-4" name={account.icon} />
+                    <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                      <Icon className="size-5" name={account.icon} />
                     </span>
                     <div>
                       <p className="font-semibold text-[#0b1c30]">{account.name}</p>
@@ -289,15 +287,12 @@ function AccountsTable({
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.type}</td>
-                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.category || "Uncategorized"}</td>
                 <td className="px-4 py-4">
                   <StatusBadge status={account.status} />
                 </td>
                 <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
                   {account.balance}
                 </td>
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.availableBalance}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{account.lastUpdated}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     <button
@@ -552,7 +547,7 @@ export default function AccountsPage() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div>
-                <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
+                <p className="text-xs font-bold uppercase text-[#45464d]">Total Amount</p>
                 <ResponsiveAmount className={`mt-1 font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
                   {viewedAccount.balance}
                 </ResponsiveAmount>
@@ -570,10 +565,10 @@ export default function AccountsPage() {
               <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode || "-"} />
               <DetailModalField label="Expired code" value={viewedAccount.cardExpiryCode || "-"} />
               <DetailModalField label="Currency" value={viewedAccount.currency} />
-              <DetailModalField label="Available balance" value={viewedAccount.availableBalance} />
+              <DetailModalField label="Net amount" value={viewedAccount.availableBalance} />
               <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
             </DetailModalSection>
-            <DetailModalSection title="Amount type split">
+            <DetailModalSection title="Amount type totals">
               {viewedAccount.balanceBreakdowns.map((breakdown) => (
                 <DetailModalField key={breakdown.type} label={breakdown.type} value={breakdown.amount} />
               ))}

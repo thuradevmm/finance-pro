@@ -116,18 +116,30 @@ export function AddTransactionForm({
     const optionNames = selectedAccount?.balanceBreakdowns.map((breakdown) => breakdown.type) ?? [];
     return accountAmountType && !optionNames.includes(accountAmountType) ? [accountAmountType, ...optionNames] : optionNames;
   }, [accountAmountType, selectedAccount]);
-  const effectiveAccountAmountType = accountAmountTypeOptions[0] ?? "General";
+  const effectiveAccountAmountType = accountAmountTypeOptions.includes(accountAmountType) ? accountAmountType : accountAmountTypeOptions[0] ?? "General";
   const transferAccountOptions = useMemo(() => accounts.filter((account) => account.id !== accountId), [accountId, accounts]);
   const selectedTransferAccount = transferAccountOptions.find((account) => account.id === transferToAccountId) ?? transferAccountOptions[0];
   const effectiveTransferToAccountId = selectedTransferAccount?.id ?? "";
   const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
+  const isCreditCardCharge = selectedAccount?.type === "Credit Card" && (selectedType === "Expense" || selectedType === "Transfer");
+  const isCreditCardPayment = isTransfer && selectedTransferAccount?.type === "Credit Card";
+  const requiresDebtLink = isCreditCardCharge || isCreditCardPayment;
+  const debtRelatedOptions = useMemo(() => relatedOptions.filter((option) => option.type === "debt"), [relatedOptions]);
+  const effectiveRelatedOption = requiresDebtLink && selectedRelatedOption?.type !== "debt"
+    ? debtRelatedOptions[0] ?? selectedRelatedOption
+    : selectedRelatedOption;
   const amountNumber = Number(amount);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;
   const accountHasError = showErrors && !accountId;
   const categoryHasError = showErrors && !isTransfer && !categoryId;
+  const debtLinkHasError = showErrors && requiresDebtLink && effectiveRelatedOption?.type !== "debt";
+  const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
+  const availableAmountValue = selectedAvailableBreakdown?.amountValue ?? 0;
+  const shouldValidateAvailableAmount = selectedAccount?.type !== "Credit Card" && (selectedType === "Expense" || selectedType === "Transfer");
+  const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
 
   function handleTypeChange(type: TransactionType) {
     setSelectedType(type);
@@ -147,7 +159,9 @@ export function AddTransactionForm({
   }
 
   async function handleSaveTransaction(addAnother = false) {
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
+    const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
+    const hasMissingDebtLink = requiresDebtLink && effectiveRelatedOption?.type !== "debt";
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasMissingDebtLink || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -159,8 +173,8 @@ export function AddTransactionForm({
       categoryId,
       date: transactionDate,
       note,
-      relatedEntityId: selectedRelatedOption?.value ?? "",
-      relatedEntityType: selectedRelatedOption?.type ?? "none",
+      relatedEntityId: effectiveRelatedOption?.value ?? "",
+      relatedEntityType: effectiveRelatedOption?.type ?? "none",
       status,
       title: note.trim() || `${selectedType} transaction`,
       transferAccountId: isTransfer ? effectiveTransferToAccountId : "",
@@ -256,6 +270,7 @@ export function AddTransactionForm({
               <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
               <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
             </div>
+            {availableAmountHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">This {effectiveAccountAmountType} transaction exceeds the available amount for the selected account.</p> : null}
           </FormCard>
 
           <FormCard title="Additional Information">
@@ -265,14 +280,12 @@ export function AddTransactionForm({
 
           <FormCard title="Transaction Impact">
             <SelectInput
-              label="Reflect To Page"
+              label={requiresDebtLink ? "Credit Card Debt" : "Reflect To Page"}
               onChange={handleRelatedOptionChange}
-              options={relatedOptions.map((option) => option.label)}
-              value={selectedRelatedOption?.label ?? "No linked record"}
+              options={(requiresDebtLink && debtRelatedOptions.length > 0 ? debtRelatedOptions : relatedOptions).map((option) => option.label)}
+              value={effectiveRelatedOption?.label ?? "No linked record"}
             />
-            <p className="mt-2 text-xs font-medium leading-5 text-[#6b7280]">
-              Link the transaction to a budget, savings goal, debt, subscription, or asset when this payment should appear in that page&apos;s related summary.
-            </p>
+            {debtLinkHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Credit card charges and payments must be linked to a debt record.</p> : null}
           </FormCard>
 
           <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
@@ -296,7 +309,7 @@ export function AddTransactionForm({
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Account</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accounts) : "No account"}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveAccountAmountType}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : "No account" : selectedCategory?.name ?? "No category"}</span></div>
-            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedRelatedOption?.label ?? "No linked record"}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveRelatedOption?.label ?? "No linked record"}</span></div>
             <div className="border-t border-[#c6c6cd]/40 pt-4"><span className="text-xs font-bold uppercase text-[#45464d]">Note</span><p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">{note.trim() || "Add transaction note"}</p></div>
           </div>
         </div>

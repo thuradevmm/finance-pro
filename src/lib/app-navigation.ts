@@ -27,4 +27,8 @@ export const navGroups: NavItem[][] = [
     { label: "Reports", icon: "chart", href: "/reports" },
     { label: "Documents", icon: "document", href: "/documents" },
   ],
+  [
+    { label: "Profile", icon: "account", href: "/profile" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
 ];

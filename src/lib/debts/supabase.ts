@@ -61,8 +61,16 @@ type DebtRow = {
 };
 
 type LinkedTransactionRow = {
+  account_id: string | null;
   amount: number | string | null;
+  transfer_account_id: string | null;
+  type: string | null;
   related_entity_id: string | null;
+};
+
+type AccountRow = {
+  id: string;
+  type: string | null;
 };
 
 const debtAppearances: Record<string, { bg: string; icon: IconName; tone: string }> = {
@@ -108,13 +116,18 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
-function mapDebt(row: DebtRow, categories: Map<string, CategoryRecord>, linkedRepaymentsByDebtId: Map<string, number>): DebtRecordWithValues {
+function mapDebt(
+  row: DebtRow,
+  categories: Map<string, CategoryRecord>,
+  linkedChargesByDebtId: Map<string, number>,
+  linkedRepaymentsByDebtId: Map<string, number>,
+): DebtRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
   const type = category?.name ?? String(row.type ?? metadata.type ?? "Debt");
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
-  const totalAmountValue = numericValue(row.total_amount) || numericValue(metadata.total_amount);
+  const totalAmountValue = (numericValue(row.total_amount) || numericValue(metadata.total_amount)) + (linkedChargesByDebtId.get(row.id) ?? 0);
   const repaidAmountValue = (numericValue(row.repaid_amount) || numericValue(metadata.repaid_amount)) + (linkedRepaymentsByDebtId.get(row.id) ?? 0);
   const monthlyPaymentValue = numericValue(row.monthly_payment) || numericValue(metadata.monthly_payment);
   const interestRatePeriod = normalizeInterestRatePeriod(metadata.interest_rate_period);
@@ -155,22 +168,31 @@ function mapDebt(row: DebtRow, categories: Map<string, CategoryRecord>, linkedRe
 }
 
 export async function getDebts(supabase: SupabaseClient, userId: string, categories: CategoryRecord[]) {
-  const [debtsResult, transactionsResult] = await Promise.all([
+  const [debtsResult, transactionsResult, accountsResult] = await Promise.all([
     supabase.from("debts").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
-    supabase.from("transactions").select("related_entity_id,amount").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
+    supabase.from("transactions").select("related_entity_id,account_id,transfer_account_id,type,amount").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
+    supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
   ]);
-  if (debtsResult.error) throw new Error(debtsResult.error.message);
-  if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+  const error = debtsResult.error ?? transactionsResult.error ?? accountsResult.error;
+  if (error) throw new Error(error.message);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const creditCardAccountIds = new Set((accountsResult.data as AccountRow[])
+    .filter((account) => String(account.type ?? "").toLowerCase() === "credit_card")
+    .map((account) => account.id));
+  const linkedChargesByDebtId = new Map<string, number>();
   const linkedRepaymentsByDebtId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
-    linkedRepaymentsByDebtId.set(
-      transaction.related_entity_id,
-      (linkedRepaymentsByDebtId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),
-    );
+    const amount = Math.abs(numericValue(transaction.amount));
+    const type = String(transaction.type ?? "").toLowerCase();
+    const usesCreditCardAccount = transaction.account_id ? creditCardAccountIds.has(transaction.account_id) : false;
+    const paysCreditCardAccount = transaction.transfer_account_id ? creditCardAccountIds.has(transaction.transfer_account_id) : false;
+    const isCreditCardCharge = usesCreditCardAccount && (type === "expense" || type === "transfer");
+    const isCreditCardPayment = paysCreditCardAccount || (usesCreditCardAccount && type === "income");
+    const targetMap = isCreditCardCharge && !isCreditCardPayment ? linkedChargesByDebtId : linkedRepaymentsByDebtId;
+    targetMap.set(transaction.related_entity_id, (targetMap.get(transaction.related_entity_id) ?? 0) + amount);
   }
-  return (debtsResult.data as DebtRow[]).map((row) => mapDebt(row, categoriesById, linkedRepaymentsByDebtId));
+  return (debtsResult.data as DebtRow[]).map((row) => mapDebt(row, categoriesById, linkedChargesByDebtId, linkedRepaymentsByDebtId));
 }
 
 export async function getDebt(supabase: SupabaseClient, userId: string, debtId: string, categories: CategoryRecord[]) {

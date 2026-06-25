@@ -177,6 +177,7 @@ export type FinancialAccount = {
   institution: string;
   balance: string;
   availableBalance: string;
+  availableBreakdowns: AccountBalanceBreakdown[];
   accountNumber: string;
   bankBookAccountNumber: string;
   cardNumber: string;
