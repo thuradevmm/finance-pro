@@ -77,12 +77,16 @@ const transactionActions: {
 ];
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
-  const [visibleTransactions, setVisibleTransactions] = useState(transactions);
+  const [deletedTransactionIds, setDeletedTransactionIds] = useState<string[]>([]);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const visibleTransactions = useMemo(
+    () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
+    [deletedTransactionIds, transactions],
+  );
   const resultStart = visibleTransactions.length > 0 ? 1 : 0;
   const visibleTotalResults = Math.min(totalResults, visibleTransactions.length);
   const visibleTransactionIds = useMemo(() => visibleTransactions.map((transaction) => transaction.id), [visibleTransactions]);
@@ -116,7 +120,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       return;
     }
 
-    setVisibleTransactions((items) => items.filter((transaction) => transaction.id !== deletingTransaction.id));
+    setDeletedTransactionIds((ids) => [...ids, deletingTransaction.id]);
     setSelectedTransactionIds((currentIds) => currentIds.filter((id) => id !== deletingTransaction.id));
     setViewedTransaction((currentTransaction) => (currentTransaction?.id === deletingTransaction.id ? null : currentTransaction));
     setDeletingTransaction(null);
@@ -196,6 +200,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Amount Type</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Payment Method</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Amount</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Note</th>
@@ -231,6 +236,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <CategoryBadge category={transaction.category} />
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.account}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.accountAmountType}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.paymentMethod}</td>
                   <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${amountClass(transaction.type)}`}>
                     {transaction.amount}
@@ -273,7 +279,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               ))
             ) : (
               <tr>
-                <td className="px-4 py-12 text-center text-sm font-medium text-[#45464d]" colSpan={10}>
+                <td className="px-4 py-12 text-center text-sm font-medium text-[#45464d]" colSpan={11}>
                   No transactions match the current filters.
                 </td>
               </tr>
@@ -309,6 +315,9 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 <CategoryBadge category={transaction.category} />
                 <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
                   {transaction.account}
+                </span>
+                <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
+                  {transaction.accountAmountType}
                 </span>
               </div>
               <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
@@ -428,6 +437,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               <DetailModalField label="Date" value={viewedTransaction.date} />
               <DetailModalField label="Payment method" value={viewedTransaction.paymentMethod} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
+              <DetailModalField label="Amount type" value={viewedTransaction.accountAmountType} />
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
               <DetailModalField label="Reflects to" value={getImpactLabel(viewedTransaction)} />
             </DetailModalSection>

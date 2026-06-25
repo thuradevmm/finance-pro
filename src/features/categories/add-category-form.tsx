@@ -10,6 +10,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import { getScopesForCategoryType, isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryType } from "@/types/finance";
@@ -178,6 +179,9 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
           <p className="text-sm leading-6 text-[#45464d]">
             Category usage is now controlled by category type. Income and expense categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate from transaction income/expense categories.
           </p>
+          <p className="mt-3 text-sm leading-6 text-[#45464d]">
+            The amount field here is a reference value for planning and preview, such as a monthly average for income or expense categories. Actual totals are calculated from related transaction records. When a transaction uses this category, that transaction amount is what updates reports, budgets, account summaries, and linked modules.
+          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {selectedScopes.map((scope) => (
               <span className="rounded bg-[#eff6ff] px-3 py-1 text-xs font-semibold text-[#0058be]" key={scope}>
@@ -297,7 +301,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             <div className="flex items-end justify-between gap-4 border-t border-[#c6c6cd]/40 pt-4">
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Monthly Avg</span>
-                <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage ? `MMK ${monthlyAverage}` : "MMK 0"}</ResponsiveAmount>
+                <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage ? formatMmkPreview(monthlyAverage) : formatMmkPreview(0)}</ResponsiveAmount>
               </div>
               <span className="text-right text-xs font-semibold text-[#45464d]">0 Transactions</span>
             </div>

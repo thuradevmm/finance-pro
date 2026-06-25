@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -187,8 +188,8 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
 
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{billingCycle} Cost</p>
-              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{amount ? `MMK ${amount}` : "MMK 0"}</ResponsiveAmount>
-              <ResponsiveAmount className="mt-2 font-semibold text-[#45464d]" maxSizeRem={0.875}>Yearly estimate: MMK {yearlyAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{amount ? formatMmkPreview(amount) : formatMmkPreview(0)}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-semibold text-[#45464d]" maxSizeRem={0.875}>Yearly estimate: {formatMmkPreview(yearlyAmount)}</ResponsiveAmount>
             </div>
 
             <dl className="mt-5 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteDebt } from "@/app/debts/actions";
 import { Icon } from "@/components/ui/icon";
@@ -117,9 +118,18 @@ function UpcomingPayments({ payments }: { payments: UpcomingDebtPayment[] }) {
 }
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecord[]; payments: UpcomingDebtPayment[] }) {
+  const searchParams = useSearchParams();
   const [visibleDebts, setVisibleDebts] = useState(debts);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const search = searchParams.get("q") ?? "";
+  const filteredDebts = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return visibleDebts.filter((debt) => {
+      const searchable = `${debt.name} ${debt.lender} ${debt.totalAmount} ${debt.repaidAmount} ${debt.remainingBalance} ${debt.monthlyPayment} ${debt.status}`.toLowerCase();
+      return normalizedSearch === "" || searchable.includes(normalizedSearch);
+    });
+  }, [search, visibleDebts]);
 
   async function handleDelete(debtId: string) {
     setError("");
@@ -138,7 +148,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecord[]; pay
       <div className="xl:col-span-9">
         {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
         {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
-        {visibleDebts.length > 0 ? <DebtsTable debts={visibleDebts} onDelete={handleDelete} /> : (
+        {filteredDebts.length > 0 ? <DebtsTable debts={filteredDebts} onDelete={handleDelete} /> : (
           <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
             <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
             <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No debts yet</h2>

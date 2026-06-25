@@ -11,6 +11,7 @@ import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -233,11 +234,11 @@ export function AddSavingsGoalForm({
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{savedAmount ? `MMK ${savedAmount}` : "MMK 0"}</ResponsiveAmount></dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{savedAmount ? formatMmkPreview(savedAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{targetAmount ? `MMK ${targetAmount}` : "MMK 0"}</ResponsiveAmount></dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{targetAmount ? formatMmkPreview(targetAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
             </dl>
 
@@ -245,7 +246,7 @@ export function AddSavingsGoalForm({
               Target: {targetDate || "Not set"}
             </div>
             <div className="mt-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
-              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyContribution ? `MMK ${monthlyContribution}` : "MMK 0"}</ResponsiveAmount>
+              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyContribution ? formatMmkPreview(monthlyContribution) : formatMmkPreview(0)}</ResponsiveAmount>
               <p className="mt-2">{description || "Savings plan note will appear here."}</p>
             </div>
           </div>

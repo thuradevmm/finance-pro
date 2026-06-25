@@ -1,13 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { formatMmk } from "@/lib/currency";
+import { formatMmk, formatMmkPreview } from "@/lib/currency";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import type { SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
+import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 export type TransactionRecord = Transaction & {
   accountId: string;
+  accountAmountType: AccountAmountType;
   amountValue: number;
   categoryId: string;
   dateValue: string;
@@ -28,6 +29,7 @@ export type TransactionRelatedOption = {
 
 export type TransactionFormData = {
   accountId: string;
+  accountAmountType: AccountAmountType;
   amount: number;
   categoryId: string;
   date: string;
@@ -56,7 +58,18 @@ type TransactionRow = {
   transaction_date: string;
   transfer_account_id: string | null;
   type: string;
+  metadata: unknown;
 };
+
+function metadataRecord(metadata: unknown) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+}
+
+function normalizeAccountAmountType(value: unknown): AccountAmountType {
+  return value === "Saving" ? "Saving" : "Operation";
+}
 
 function normalizeType(value: string): TransactionType {
   const type = value.toLowerCase();
@@ -77,10 +90,9 @@ function formatDisplayDate(value: string) {
 }
 
 function formatTransactionAmount(value: number, type: TransactionType) {
-  const formatted = formatMmk(Math.abs(value));
-  if (type === "Income") return `+${formatted}`;
-  if (type === "Expense") return `-${formatted}`;
-  return formatted;
+  if (type === "Income") return formatMmkPreview(value, "positive");
+  if (type === "Expense") return formatMmkPreview(value, "negative");
+  return formatMmk(value);
 }
 
 function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>): TransactionRecord {
@@ -90,9 +102,11 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   const transferAccount = row.transfer_account_id ? accounts.get(row.transfer_account_id) : undefined;
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
+  const metadata = metadataRecord(row.metadata);
 
   return {
     account: account?.name ?? "Unknown account",
+    accountAmountType: normalizeAccountAmountType(metadata.account_amount_type),
     accountId: row.account_id ?? "",
     amount: formatTransactionAmount(amountValue, type),
     amountValue,
@@ -121,7 +135,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
 export async function getTransactions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,payment_method,status,title,description,note,related_entity_type,related_entity_id")
+    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,payment_method,status,title,description,note,related_entity_type,related_entity_id,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("transaction_date", { ascending: false });
@@ -149,8 +163,8 @@ export function getTransactionSummaries(transactions: TransactionRecord[]): Summ
   const expenses = transactions.filter((t) => t.type === "Expense").reduce((sum, t) => sum + t.amountValue, 0);
   const transfers = transactions.filter((t) => t.type === "Transfer").reduce((sum, t) => sum + t.amountValue, 0);
   return [
-    { label: "Income", value: `+${formatMmk(income)}`, icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Expenses", value: `-${formatMmk(expenses)}`, icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
     { label: "Transfers", value: formatMmk(transfers), icon: "sync", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
     { label: "Net", value: formatMmk(income - expenses), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
   ];

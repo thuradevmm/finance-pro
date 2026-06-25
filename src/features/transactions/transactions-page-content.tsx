@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
@@ -23,6 +24,10 @@ type TransactionsPageContentProps = {
   initialAccountFilter?: string;
   initialCategoryFilter?: string;
   transactions: Transaction[];
+};
+
+type SearchableTransactionFiltersState = TransactionFiltersState & {
+  search: string;
 };
 
 const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
@@ -77,13 +82,18 @@ function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: s
   return transactionTime >= fromTime && transactionTime <= toTime;
 }
 
-function filterTransactions(transactions: Transaction[], filters: TransactionFiltersState) {
+function filterTransactions(transactions: Transaction[], filters: SearchableTransactionFiltersState) {
+  const normalizedSearch = filters.search.trim().toLowerCase();
+
   return transactions.filter((transaction) => {
+    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.paymentMethod} ${transaction.amount} ${transaction.note}`.toLowerCase();
+    const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
     const matchesAccount = filters.account === "Account" || transaction.account === filters.account;
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
     return (
+      matchesSearch &&
       matchesCategory &&
       matchesAccount &&
       matchesType &&
@@ -94,6 +104,8 @@ function filterTransactions(transactions: Transaction[], filters: TransactionFil
 }
 
 export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
+  const searchParams = useSearchParams();
+  const shellSearch = searchParams.get("q") ?? "";
   const effectiveFilterOptions = useMemo(() => ({
     ...filterOptions,
     category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
@@ -108,7 +120,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
   const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>("All");
 
-  const filteredTransactions = useMemo(() => filterTransactions(transactions, appliedFilters), [appliedFilters, transactions]);
+  const filteredTransactions = useMemo(() => filterTransactions(transactions, { ...appliedFilters, search: shellSearch }), [appliedFilters, shellSearch, transactions]);
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));

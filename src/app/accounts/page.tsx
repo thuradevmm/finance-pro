@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { deleteAccount as deleteAccountAction } from "@/app/accounts/actions";
 import { AppShell } from "@/components/app/app-shell";
@@ -10,6 +11,8 @@ import { SummaryCards } from "@/components/app/summary-cards";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -33,13 +36,15 @@ function AccountCard({
   account,
   onDelete,
   onView,
+  returnTo,
 }: {
   account: FinancialAccount;
   onDelete: (id: string) => void;
   onView: (account: FinancialAccount) => void;
+  returnTo: string;
 }) {
   return (
-    <article className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <article className="flex h-full flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 gap-3">
           <span className={`grid size-11 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
@@ -47,9 +52,10 @@ function AccountCard({
           </span>
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-[#0b1c30]">{account.name}</h2>
-            <p className="mt-1 text-sm font-medium text-[#45464d]">
+            <p className="mt-1 truncate text-sm font-medium text-[#45464d]">
               {account.institution} {account.accountNumber}
             </p>
+            <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{account.category || "Uncategorized"}</p>
           </div>
         </div>
         <StatusBadge status={account.status} />
@@ -57,31 +63,39 @@ function AccountCard({
 
       <div className="mt-5">
         <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
-        <p className={`amount-value mt-2 overflow-x-auto text-3xl font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+        <ResponsiveAmount className={`mt-2 font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
           {account.balance}
-        </p>
+        </ResponsiveAmount>
       </div>
 
       <dl className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Inflow</dt>
-          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#047857]">{account.monthlyInflow}</dd>
+          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.monthlyInflow}</ResponsiveAmount></dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Outflow</dt>
-          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#b42318]">{account.monthlyOutflow}</dd>
+          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.monthlyOutflow}</ResponsiveAmount></dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Available</dt>
-          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{account.availableBalance}</dd>
+          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{account.availableBalance}</ResponsiveAmount></dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Transactions</dt>
           <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{account.transactionCount}</dd>
         </div>
       </dl>
+      <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
+        {account.balanceBreakdowns.map((breakdown) => (
+          <div key={breakdown.type}>
+            <dt className="text-xs font-bold uppercase text-[#45464d]">{breakdown.type}</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{breakdown.amount}</ResponsiveAmount></dd>
+          </div>
+        ))}
+      </dl>
 
-      <div className="mt-5 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-4">
+      <div className="mt-auto flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-4">
         <button
           aria-label={`View ${account.name}`}
           className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
@@ -91,7 +105,7 @@ function AccountCard({
         >
           <Icon className="size-4" name="eye" />
         </button>
-        <RecordActions editHref={`/accounts/${account.id}/edit`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+        <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
         <Link
           aria-label={`View transactions for ${account.name}`}
           className="grid size-8 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff]"
@@ -109,10 +123,12 @@ function AccountsTable({
   items,
   onDelete,
   onView,
+  returnTo,
 }: {
   items: FinancialAccount[];
   onDelete: (id: string) => void;
   onView: (account: FinancialAccount) => void;
+  returnTo: string;
 }) {
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
@@ -125,6 +141,7 @@ function AccountsTable({
             <tr className="border-b border-[#c6c6cd]/50">
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Balance</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available</th>
@@ -149,6 +166,7 @@ function AccountsTable({
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.type}</td>
+                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.category || "Uncategorized"}</td>
                 <td className="px-4 py-4">
                   <StatusBadge status={account.status} />
                 </td>
@@ -167,7 +185,7 @@ function AccountsTable({
                     >
                       <Icon className="size-4" name="eye" />
                     </button>
-                    <RecordActions editHref={`/accounts/${account.id}/edit`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+                    <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
                     <Link
                       aria-label={`View transactions for ${account.name}`}
                       className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
@@ -187,13 +205,68 @@ function AccountsTable({
 }
 
 export default function AccountsPage() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [visibleAccounts, setVisibleAccounts] = useState<AccountRecord[]>([]);
   const [viewedAccount, setViewedAccount] = useState<FinancialAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const activeAccounts = visibleAccounts.filter((account) => account.status === "Active");
+  const search = searchParams.get("q") ?? "";
+  const viewMode = searchParams.get("view") === "Card" ? "Card" : "List";
+  const categoryFilter = searchParams.get("accountCategory") ?? "All categories";
+  const typeFilter = searchParams.get("accountType") ?? "All types";
+  const statusFilter = searchParams.get("accountStatus") ?? "All statuses";
+  const currentQuery = searchParams.toString();
+  const returnTo = `${pathname}${currentQuery ? `?${currentQuery}` : ""}`;
+  const addAccountHref = `/accounts/add?returnTo=${encodeURIComponent(returnTo)}`;
+  const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(visibleAccounts.map((account) => account.category || "Uncategorized")))], [visibleAccounts]);
+  const typeOptions = useMemo(() => ["All types", ...Array.from(new Set(visibleAccounts.map((account) => account.type)))], [visibleAccounts]);
+  const statusOptions = ["All statuses", "Active", "Needs Review", "Archived"];
+  const filteredAccounts = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return visibleAccounts.filter((account) => {
+      const searchable = [
+        account.name,
+        account.institution,
+        account.accountNumber,
+        account.bankBookAccountNumber,
+        account.cardNumber,
+        account.cardType,
+        account.cardExpiryCode,
+        account.mobileBankingAccountNumber,
+        account.phoneNumber,
+        account.type,
+        account.status,
+        account.category,
+        account.balance,
+        account.availableBalance,
+        ...account.balanceBreakdowns.map((item) => `${item.type} ${item.amount}`),
+      ].join(" ").toLowerCase();
+      const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
+      const matchesCategory = categoryFilter === "All categories" || (account.category || "Uncategorized") === categoryFilter;
+      const matchesType = typeFilter === "All types" || account.type === typeFilter;
+      const matchesStatus = statusFilter === "All statuses" || account.status === statusFilter;
+
+      return matchesSearch && matchesCategory && matchesType && matchesStatus;
+    });
+  }, [categoryFilter, search, statusFilter, typeFilter, visibleAccounts]);
+  const activeAccounts = filteredAccounts.filter((account) => account.status === "Active");
   const accountSummaries = getAccountSummaries(visibleAccounts);
+
+  function updateAccountParam(key: string, value: string, defaultValue: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    const normalizedValue = value.trim();
+    if (normalizedValue === "" || value === defaultValue) {
+      params.delete(key);
+    } else {
+      params.set(key, value);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -250,7 +323,7 @@ export default function AccountsPage() {
   return (
     <AppShell
       activeNavLabel="Accounts"
-      mobileAction={{ label: "Add account", icon: "plus", href: "/accounts/add", title: "Add account" }}
+      mobileAction={{ label: "Add account", icon: "plus", href: addAccountHref, title: "Add account" }}
       mobileSearchLabel="Search accounts on mobile"
       mobileSearchPlaceholder="Search accounts..."
       mobileSubtitle="Accounts"
@@ -269,7 +342,7 @@ export default function AccountsPage() {
             </button>
             <Link
               className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-              href="/accounts/add"
+              href={addAccountHref}
             >
               <Icon className="size-4" name="plus" />
               Add Account
@@ -291,36 +364,44 @@ export default function AccountsPage() {
           <Icon className="mx-auto size-8 text-[#76777d]" name="account" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No accounts yet</h2>
           <p className="mt-1 text-sm text-[#45464d]">Add your first account to start tracking balances.</p>
-          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/accounts/add">Add Account</Link>
+          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href={addAccountHref}>Add Account</Link>
         </section>
       ) : null}
 
-      {!isLoading && visibleAccounts.length > 0 ? <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      {!isLoading && visibleAccounts.length > 0 ? (
+        <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <TextInput label="Search Accounts" onChange={(value) => updateAccountParam("q", value, "")} placeholder="Name, category, type, number..." value={search} />
+            <SelectInput label="View Mode" onChange={(value) => updateAccountParam("view", value, "List")} options={["Card", "List"]} value={viewMode} />
+            <SelectInput label="Category" onChange={(value) => updateAccountParam("accountCategory", value, "All categories")} options={categoryOptions} value={categoryFilter} />
+            <SelectInput label="Type" onChange={(value) => updateAccountParam("accountType", value, "All types")} options={typeOptions} value={typeFilter} />
+            <SelectInput label="Status" onChange={(value) => updateAccountParam("accountStatus", value, "All statuses")} options={statusOptions} value={statusFilter} />
+          </div>
+        </section>
+      ) : null}
+
+      {!isLoading && visibleAccounts.length > 0 && viewMode === "Card" ? <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Accounts</h2>
             <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{activeAccounts.length} accounts</p>
           </div>
         </div>
-        <div className="-mx-4 overflow-x-auto px-4 pb-2">
-          <div className="flex min-w-max gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             {activeAccounts.map((account) => (
-              <div className="w-[320px] shrink-0 xl:w-[360px]" key={account.id}>
-                <AccountCard account={account} onDelete={deleteAccount} onView={setViewedAccount} />
-              </div>
+              <AccountCard account={account} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
             ))}
-          </div>
         </div>
       </section> : null}
 
-      {!isLoading && visibleAccounts.length > 0 ? <AccountsTable items={visibleAccounts} onDelete={deleteAccount} onView={setViewedAccount} /> : null}
+      {!isLoading && visibleAccounts.length > 0 && viewMode === "List" ? <AccountsTable items={filteredAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
       <DetailModal
         actions={
           viewedAccount ? (
             <>
               <Link
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
-                href={`/accounts/${viewedAccount.id}/edit`}
+                href={`/accounts/${viewedAccount.id}/edit?returnTo=${encodeURIComponent(returnTo)}`}
               >
                 <Icon className="size-4" name="edit" />
                 Edit
@@ -347,19 +428,30 @@ export default function AccountsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">Current Balance</p>
-                <p className={`amount-value mt-1 overflow-x-auto text-2xl font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+                <ResponsiveAmount className={`mt-1 font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
                   {viewedAccount.balance}
-                </p>
+                </ResponsiveAmount>
               </div>
               <StatusBadge status={viewedAccount.status} />
             </div>
             <DetailModalSection title="Account information">
               <DetailModalField label="Type" value={viewedAccount.type} />
+              <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
               <DetailModalField label="Institution" value={viewedAccount.institution} />
-              <DetailModalField label="Account label" value={viewedAccount.accountNumber} />
+              <DetailModalField label="Bank book / mobile number" value={viewedAccount.bankBookAccountNumber || viewedAccount.mobileBankingAccountNumber || "-"} />
+              <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "-"} />
+              <DetailModalField label="Card type" value={viewedAccount.cardType || "No Card"} />
+              <DetailModalField label="Card number" value={viewedAccount.cardNumber || "-"} />
+              <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode || "-"} />
+              <DetailModalField label="Expired code" value={viewedAccount.cardExpiryCode || "-"} />
               <DetailModalField label="Currency" value={viewedAccount.currency} />
               <DetailModalField label="Available balance" value={viewedAccount.availableBalance} />
               <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
+            </DetailModalSection>
+            <DetailModalSection title="Amount type split">
+              {viewedAccount.balanceBreakdowns.map((breakdown) => (
+                <DetailModalField key={breakdown.type} label={breakdown.type} value={breakdown.amount} />
+              ))}
             </DetailModalSection>
             <DetailModalSection title="Monthly activity">
               <DetailModalField label="Inflow" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />

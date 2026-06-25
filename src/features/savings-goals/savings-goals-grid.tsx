@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteSavingsGoal } from "@/app/savings-goals/actions";
 import { Icon } from "@/components/ui/icon";
@@ -64,9 +65,18 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
 }
 
 export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
+  const searchParams = useSearchParams();
   const [visibleGoals, setVisibleGoals] = useState(goals);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const search = searchParams.get("q") ?? "";
+  const filteredGoals = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return visibleGoals.filter((goal) => {
+      const searchable = `${goal.name} ${goal.account} ${goal.savedAmount} ${goal.targetAmount} ${goal.remainingAmount} ${goal.targetDate} ${goal.monthlyContribution} ${goal.status}`.toLowerCase();
+      return normalizedSearch === "" || searchable.includes(normalizedSearch);
+    });
+  }, [search, visibleGoals]);
 
   async function handleDelete(goalId: string) {
     setError("");
@@ -85,7 +95,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating savings goals…</p> : null}
 
-      {visibleGoals.length === 0 ? (
+      {filteredGoals.length === 0 ? (
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
           <Icon className="mx-auto size-8 text-[#76777d]" name="target" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No savings goals yet</h2>
@@ -93,7 +103,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
         </section>
       ) : (
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-          {visibleGoals.map((goal) => (
+          {filteredGoals.map((goal) => (
             <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} />
           ))}
         </section>

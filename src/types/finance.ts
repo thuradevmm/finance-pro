@@ -140,6 +140,7 @@ export type Transaction = {
   type: TransactionType;
   category: TransactionCategoryName;
   account: string;
+  accountAmountType: AccountAmountType;
   paymentMethod: string;
   amount: string;
   note: string;
@@ -162,6 +163,13 @@ export type SummaryMetric = {
 export type AccountType = "Bank Account" | "Credit Card" | "Cash Wallet" | "Digital Wallet" | "Savings";
 
 export type AccountStatus = "Active" | "Needs Review" | "Archived";
+export type AccountAmountType = string;
+
+export type AccountBalanceBreakdown = {
+  type: AccountAmountType;
+  amount: string;
+  amountValue: number;
+};
 
 export type FinancialAccount = {
   id: string;
@@ -171,6 +179,15 @@ export type FinancialAccount = {
   balance: string;
   availableBalance: string;
   accountNumber: string;
+  bankBookAccountNumber: string;
+  cardNumber: string;
+  cardSecurityCode: string;
+  cardExpiryCode: string;
+  cardType: string;
+  mobileBankingAccountNumber: string;
+  phoneNumber: string;
+  category: string;
+  balanceBreakdowns: AccountBalanceBreakdown[];
   currency: string;
   lastUpdated: string;
   monthlyInflow: string;

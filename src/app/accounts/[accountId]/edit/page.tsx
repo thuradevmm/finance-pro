@@ -8,8 +8,17 @@ import { getCategories } from "@/lib/categories/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 
-export default async function EditAccountPage({ params }: { params: Promise<{ accountId: string }> }) {
+export default async function EditAccountPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ accountId: string }>;
+  searchParams: Promise<{ returnTo?: string | string[] }>;
+}) {
   const { accountId } = await params;
+  const resolvedSearchParams = await searchParams;
+  const returnToParam = Array.isArray(resolvedSearchParams.returnTo) ? resolvedSearchParams.returnTo[0] : resolvedSearchParams.returnTo;
+  const returnTo = returnToParam?.startsWith("/accounts") ? returnToParam : "/accounts";
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   if (!user) notFound();
@@ -32,7 +41,7 @@ export default async function EditAccountPage({ params }: { params: Promise<{ ac
       topSearchPlaceholder="Search accounts..."
     >
       <PageHeader description={`Update account details for ${account.name}.`} title="Edit Account" />
-      <AddAccountForm account={account} categories={categories} />
+      <AddAccountForm account={account} categories={categories} returnTo={returnTo} />
     </AppShell>
   );
 }

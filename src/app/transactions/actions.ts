@@ -22,6 +22,9 @@ function payload(input: TransactionFormData) {
     description: input.note.trim() || null,
     note: input.note.trim() || null,
     payment_method: input.paymentMethod,
+    metadata: {
+      account_amount_type: input.accountAmountType,
+    },
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
     status: input.status.toLowerCase(),

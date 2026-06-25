@@ -10,6 +10,7 @@ import { useInteractionLoading } from "@/components/app/interaction-loading-prov
 import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -72,11 +73,10 @@ function formatDatePreview(value: string) {
 
 function formatPreviewAmount(amount: string, type: TransactionType) {
   const value = Number(amount);
-  if (!Number.isFinite(value) || value <= 0) return "MMK 0";
-  const text = `MMK ${value.toLocaleString()}`;
-  if (type === "Income") return `+${text}`;
-  if (type === "Expense") return `-${text}`;
-  return text;
+  if (!Number.isFinite(value) || value <= 0) return formatMmkPreview(0);
+  if (type === "Income") return formatMmkPreview(value, "positive");
+  if (type === "Expense") return formatMmkPreview(value, "negative");
+  return formatMmkPreview(value);
 }
 
 export function AddTransactionForm({
@@ -96,6 +96,7 @@ export function AddTransactionForm({
   const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : "");
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? new Date().toISOString().slice(0, 10));
   const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? "");
+  const [accountAmountType, setAccountAmountType] = useState(transaction?.accountAmountType ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
   const [transferToAccountId, setTransferToAccountId] = useState(transaction?.transferAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? "");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
@@ -112,6 +113,11 @@ export function AddTransactionForm({
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
   const selectedAccount = accounts.find((account) => account.id === accountId);
+  const accountAmountTypeOptions = useMemo(() => {
+    const optionNames = selectedAccount?.balanceBreakdowns.map((breakdown) => breakdown.type) ?? [];
+    return accountAmountType && !optionNames.includes(accountAmountType) ? [accountAmountType, ...optionNames] : optionNames;
+  }, [accountAmountType, selectedAccount]);
+  const effectiveAccountAmountType = accountAmountTypeOptions[0] ?? "General";
   const selectedTransferAccount = accounts.find((account) => account.id === transferToAccountId);
   const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
@@ -134,6 +140,12 @@ export function AddTransactionForm({
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
   }
 
+  function handleAccountChange(name: string) {
+    const nextAccount = accounts.find((account) => account.name === name);
+    setAccountId(nextAccount?.id ?? "");
+    setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
+  }
+
   async function handleSaveTransaction(addAnother = false) {
     const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || (!isTransfer && !categoryId);
     setShowErrors(hasErrors);
@@ -142,6 +154,7 @@ export function AddTransactionForm({
 
     const input: TransactionFormData = {
       accountId,
+      accountAmountType: effectiveAccountAmountType,
       amount: amountNumber,
       categoryId,
       date: transactionDate,
@@ -225,7 +238,7 @@ export function AddTransactionForm({
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <SelectInput label={isTransfer ? "From Account" : "Account"} onChange={(name) => setAccountId(accounts.find((account) => account.name === name)?.id ?? "")} options={accounts.length > 0 ? accounts.map((account) => account.name) : ["No accounts"]} value={selectedAccount?.name ?? "No accounts"} />
+              <SelectInput label={isTransfer ? "From Account" : "Account"} onChange={handleAccountChange} options={accounts.length > 0 ? accounts.map((account) => account.name) : ["No accounts"]} value={selectedAccount?.name ?? "No accounts"} />
               {isTransfer ? (
                 <SelectInput label="To Account" onChange={(name) => setTransferToAccountId(accounts.find((account) => account.name === name)?.id ?? "")} options={accounts.filter((account) => account.id !== accountId).map((account) => account.name)} value={selectedTransferAccount?.name ?? accounts.find((account) => account.id !== accountId)?.name ?? ""} />
               ) : (
@@ -236,6 +249,7 @@ export function AddTransactionForm({
             {categoryHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select a category.</p> : null}
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
               <SelectInput label="Payment Method" onChange={setPaymentMethod} options={isTransfer ? ["Internal Transfer", "Bank Transfer", "Wallet Transfer"] : ["Cash", "Debit Card", "Credit Card", "Bank Transfer", "Digital Wallet", "Direct Deposit"]} value={paymentMethod} />
               <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
             </div>
@@ -277,6 +291,7 @@ export function AddTransactionForm({
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Date</span><span className="text-sm font-semibold text-[#0b1c30]">{formatDatePreview(transactionDate)}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Account</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount?.name ?? "No account"}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveAccountAmountType}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount?.name ?? "No account" : selectedCategory?.name ?? "No category"}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedRelatedOption?.label ?? "No linked record"}</span></div>
             <div className="border-t border-[#c6c6cd]/40 pt-4"><span className="text-xs font-bold uppercase text-[#45464d]">Note</span><p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">{note.trim() || "Add transaction note"}</p></div>

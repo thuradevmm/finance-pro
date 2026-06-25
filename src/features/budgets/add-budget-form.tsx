@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import type { BudgetFormData, BudgetRecord } from "@/lib/budgets/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -208,7 +209,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
 
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{period} Limit</p>
-              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{budgetAmount.trim() === "" ? "MMK 0" : `MMK ${budgetAmount}`}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{budgetAmount.trim() === "" ? formatMmkPreview(0) : formatMmkPreview(budgetAmount)}</ResponsiveAmount>
               <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#dce9ff]">
                 <div className="h-full w-0 rounded-full bg-[#0058be]" />
               </div>

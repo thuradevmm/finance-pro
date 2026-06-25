@@ -16,6 +16,8 @@ type MobileHeaderProps = {
   subtitle: string;
   searchLabel?: string;
   searchPlaceholder?: string;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
   action?: MobileHeaderAction;
   onOpenNavigation?: () => void;
 };
@@ -25,6 +27,8 @@ export function MobileHeader({
   subtitle,
   searchLabel = "Search on mobile",
   searchPlaceholder = "Search...",
+  searchValue,
+  onSearchChange,
   action,
   onOpenNavigation,
 }: MobileHeaderProps) {
@@ -63,7 +67,7 @@ export function MobileHeader({
         </div>
       </div>
       <div className="mt-4">
-        <SearchField label={searchLabel} placeholder={searchPlaceholder} />
+        <SearchField label={searchLabel} onChange={onSearchChange} placeholder={searchPlaceholder} value={searchValue} />
       </div>
     </header>
   );

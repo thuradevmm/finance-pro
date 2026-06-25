@@ -11,6 +11,7 @@ import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -230,18 +231,18 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Repaid</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#047857]" maxSizeRem={1.125}>{repaidAmount ? `MMK ${repaidAmount}` : "MMK 0"}</ResponsiveAmount></dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#047857]" maxSizeRem={1.125}>{repaidAmount ? formatMmkPreview(repaidAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Remaining</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>MMK {remaining.toLocaleString()}</ResponsiveAmount></dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(remaining)}</ResponsiveAmount></dd>
               </div>
             </dl>
 
             <div className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Monthly Payment</span>
-                <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyPayment ? `MMK ${monthlyPayment}` : "MMK 0"}</ResponsiveAmount>
+                <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyPayment ? formatMmkPreview(monthlyPayment) : formatMmkPreview(0)}</ResponsiveAmount>
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Start</span>

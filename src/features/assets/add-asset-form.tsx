@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { calculateUsageDuration } from "@/lib/date-duration";
@@ -186,11 +187,11 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Purchase</dt>
-                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{purchaseAmount ? `MMK ${purchaseAmount}` : "MMK 0"}</ResponsiveAmount></dd>
+                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{purchaseAmount ? formatMmkPreview(purchaseAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Current</dt>
-                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0058be]" maxSizeRem={0.875}>{currentValue ? `MMK ${currentValue}` : "MMK 0"}</ResponsiveAmount></dd>
+                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0058be]" maxSizeRem={0.875}>{currentValue ? formatMmkPreview(currentValue) : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Started</dt>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
@@ -273,10 +274,19 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
 }
 
 export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
+  const searchParams = useSearchParams();
   const [visibleAssets, setVisibleAssets] = useState(assets);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
-  const activeAssets = visibleAssets.filter((asset) => asset.status === "Active");
+  const search = searchParams.get("q") ?? "";
+  const filteredAssets = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return visibleAssets.filter((asset) => {
+      const searchable = `${asset.name} ${asset.category} ${asset.purchaseDate} ${asset.purchaseAmount} ${asset.currentValue} ${asset.condition} ${asset.status} ${asset.note}`.toLowerCase();
+      return normalizedSearch === "" || searchable.includes(normalizedSearch);
+    });
+  }, [search, visibleAssets]);
+  const activeAssets = filteredAssets.filter((asset) => asset.status === "Active");
   async function deleteAsset(id: string) {
     setError("");
     setIsPending(true);
@@ -314,8 +324,8 @@ export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
       </section>
       {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating assets…</p> : null}
-      <AssetsTable assets={visibleAssets} onDelete={deleteAsset} />
-      <AssetHistorySection assets={visibleAssets} />
+      <AssetsTable assets={filteredAssets} onDelete={deleteAsset} />
+      <AssetHistorySection assets={filteredAssets} />
     </>
   );
 }

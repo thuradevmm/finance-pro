@@ -23,6 +23,9 @@ async function authenticatedClient() {
 }
 
 function accountPayload(input: AccountFormData) {
+  const operationAmount = input.amountTypes.find((item) => item.type.toLowerCase() === "operation")?.amount ?? null;
+  const savingAmount = input.amountTypes.find((item) => item.type.toLowerCase() === "saving")?.amount ?? null;
+
   return {
     currency_code: input.currency,
     description: input.notes.trim() || null,
@@ -30,10 +33,20 @@ function accountPayload(input: AccountFormData) {
     is_active: input.status !== "Archived",
     metadata: {
       account_number: input.accountNumber.trim(),
+      amount_types: input.amountTypes.map((item) => ({ amount: item.amount, type: item.type.trim() })),
       available_balance: input.availableBalance,
+      bank_book_account_number: input.bankBookAccountNumber.trim(),
+      card_expiry_code: input.cardExpiryCode.trim(),
+      card_number: input.cardNumber.trim(),
+      card_security_code: input.cardSecurityCode.trim(),
+      card_type: input.cardType,
       category: input.category,
       institution: input.institution.trim(),
       monthly_budget_limit: input.monthlyBudgetLimit,
+      mobile_banking_account_number: input.mobileBankingAccountNumber.trim(),
+      operation_amount: operationAmount,
+      phone_number: input.phoneNumber.trim(),
+      saving_amount: savingAmount,
       status: input.status,
     },
     name: input.name.trim(),

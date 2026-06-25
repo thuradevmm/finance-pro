@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteCategory } from "@/app/categories/actions";
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
@@ -71,12 +72,20 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
 }
 
 export function CategoriesPageContent({ categories }: { categories: CategoryRecord[] }) {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("Expense Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
-  const filteredCategories = useMemo(() => visibleCategories.filter((category) => category.type === activeType), [activeType, visibleCategories]);
+  const search = searchParams.get("q") ?? "";
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return visibleCategories.filter((category) => {
+      const searchable = `${category.name} ${category.description} ${category.type} ${category.monthlyAverage} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
+      return category.type === activeType && (normalizedSearch === "" || searchable.includes(normalizedSearch));
+    });
+  }, [activeType, search, visibleCategories]);
 
   async function handleDelete(categoryId: string) {
     setError("");

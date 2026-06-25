@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteBudget } from "@/app/budgets/actions";
 import { Icon } from "@/components/ui/icon";
@@ -190,13 +191,21 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
 }
 
 export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
+  const searchParams = useSearchParams();
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const search = searchParams.get("q") ?? "";
   const filteredBudgets = useMemo(
-    () => visibleBudgets.filter((budget) => budget.period === activePeriod),
-    [activePeriod, visibleBudgets],
+    () => {
+      const normalizedSearch = search.trim().toLowerCase();
+      return visibleBudgets.filter((budget) => {
+        const searchable = `${budget.category} ${budget.period} ${budget.budget} ${budget.actual} ${budget.remaining} ${budget.status}`.toLowerCase();
+        return budget.period === activePeriod && (normalizedSearch === "" || searchable.includes(normalizedSearch));
+      });
+    },
+    [activePeriod, search, visibleBudgets],
   );
 
   async function handleDelete(id: string) {

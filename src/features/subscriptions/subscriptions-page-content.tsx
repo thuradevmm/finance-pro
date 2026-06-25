@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { deleteSubscription } from "@/app/subscriptions/actions";
 import { Icon } from "@/components/ui/icon";
@@ -110,9 +111,18 @@ export function SubscriptionsPageContent({
   billings: UpcomingSubscriptionBilling[];
   subscriptions: SubscriptionRecord[];
 }) {
+  const searchParams = useSearchParams();
   const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const search = searchParams.get("q") ?? "";
+  const filteredSubscriptions = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return visibleSubscriptions.filter((subscription) => {
+      const searchable = `${subscription.name} ${subscription.amount} ${subscription.billingCycle} ${subscription.category} ${subscription.paymentAccount} ${subscription.nextBillingDate} ${subscription.status}`.toLowerCase();
+      return normalizedSearch === "" || searchable.includes(normalizedSearch);
+    });
+  }, [search, visibleSubscriptions]);
 
   async function handleDelete(subscriptionId: string) {
     setError("");
@@ -133,7 +143,7 @@ export function SubscriptionsPageContent({
       <BillingTimeline billings={billings} />
       <SubscriptionsTable
         onDelete={handleDelete}
-        subscriptions={visibleSubscriptions}
+        subscriptions={filteredSubscriptions}
       />
     </>
   );
