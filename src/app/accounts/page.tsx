@@ -24,6 +24,50 @@ const statusStyles: Record<AccountStatus, string> = {
   Archived: "border-[#e4e4e7] bg-[#f8f9ff] text-[#45464d]",
 };
 
+type AccountViewMode = "Card" | "List" | "Lookup";
+
+function decimalScaleFromNumber(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  const textValue = String(value);
+  if (!textValue.includes("e")) return textValue.split(".")[1]?.length ?? 0;
+
+  const [, exponentText = "0"] = textValue.split("e-");
+  const significantDigits = textValue.split("e-")[0]?.replace(".", "").replace("-", "").length ?? 0;
+  return Math.max(Number(exponentText) + significantDigits - 1, 0);
+}
+
+function toScaledBigInt(value: number, scale: number) {
+  const textValue = String(value);
+  const isNegative = textValue.startsWith("-");
+  const [wholePart, fractionPart = ""] = textValue.replace("-", "").split(".");
+  const scaledText = `${wholePart}${fractionPart.padEnd(scale, "0")}`.replace(/^0+(?=\d)/, "");
+  const scaledValue = BigInt(scaledText || "0");
+  return isNegative ? -scaledValue : scaledValue;
+}
+
+function sumScaledAmounts(values: number[]) {
+  const scale = Math.max(0, ...values.map(decimalScaleFromNumber));
+  const value = values.reduce((total, amount) => total + toScaledBigInt(amount, scale), BigInt(0));
+  return { scale, value };
+}
+
+function formatScaledAuditAmount(value: bigint, scale: number) {
+  const isNegative = value < BigInt(0);
+  const absoluteText = (isNegative ? -value : value).toString().padStart(scale + 1, "0");
+  const wholeText = scale > 0 ? absoluteText.slice(0, -scale) : absoluteText;
+  const fractionText = scale > 0 ? absoluteText.slice(-scale) : "";
+  const groupedWholeText = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0, useGrouping: true }).format(Number(wholeText));
+  const displayScale = Math.max(2, scale);
+  const displayFraction = fractionText.padEnd(displayScale, "0");
+
+  return `${isNegative ? "-" : ""}${groupedWholeText}.${displayFraction}`;
+}
+
+function formatAuditAmount(value: number) {
+  const scaledAmount = sumScaledAmounts([value]);
+  return formatScaledAuditAmount(scaledAmount.value, scaledAmount.scale);
+}
+
 function StatusBadge({ status }: { status: AccountStatus }) {
   return (
     <span className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-bold ${statusStyles[status]}`}>
@@ -116,6 +160,81 @@ function AccountCard({
         </Link>
       </div>
     </article>
+  );
+}
+
+function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] }) {
+  const amountTypes = Array.from(
+    accounts.reduce((types, account) => {
+      for (const breakdown of account.balanceBreakdowns) types.add(breakdown.type);
+      return types;
+    }, new Set<string>()),
+  );
+  const totalColumns = amountTypes.map((amountType) => ({
+    amountType,
+    total: sumScaledAmounts(accounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
+  }));
+  const grandTotal = sumScaledAmounts(accounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)));
+
+  return (
+    <section className="mb-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+        <h2 className="text-sm font-bold uppercase text-[#45464d]">Amount Type Lookup</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1040px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-[#c6c6cd]/50">
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Source</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
+              {amountTypes.map((amountType) => (
+                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
+              ))}
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+            {accounts.map((account) => {
+              const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
+              const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
+
+              return (
+                <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`grid size-9 place-items-center rounded-md ${account.bg} ${account.tone}`}>
+                        <Icon className="size-4" name={account.icon} />
+                      </span>
+                      <div>
+                        <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
+                        <p className="mt-1 text-xs font-medium text-[#45464d]">{account.category || "Uncategorized"}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
+                  {amountTypes.map((amountType) => (
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                      {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
+                    </td>
+                  ))}
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
+                </tr>
+              );
+            })}
+            <tr className="transition hover:bg-[#f8f9ff]">
+              <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">TOTAL</td>
+              <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Total</td>
+              {totalColumns.map(({ amountType, total }) => (
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                  {formatScaledAuditAmount(total.value, total.scale)}
+                </td>
+              ))}
+              <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(grandTotal.value, grandTotal.scale)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -214,7 +333,8 @@ export default function AccountsPage() {
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
-  const viewMode = searchParams.get("view") === "Card" ? "Card" : "List";
+  const viewParam = searchParams.get("view");
+  const viewMode: AccountViewMode = viewParam === "Card" || viewParam === "Lookup" ? viewParam : "List";
   const categoryFilter = searchParams.get("accountCategory") ?? "All categories";
   const typeFilter = searchParams.get("accountType") ?? "All types";
   const statusFilter = searchParams.get("accountStatus") ?? "All statuses";
@@ -372,7 +492,7 @@ export default function AccountsPage() {
         <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
             <TextInput label="Search Accounts" onChange={(value) => updateAccountParam("q", value, "")} placeholder="Name, category, type, number..." value={search} />
-            <SelectInput label="View Mode" onChange={(value) => updateAccountParam("view", value, "List")} options={["Card", "List"]} value={viewMode} />
+            <SelectInput label="View Mode" onChange={(value) => updateAccountParam("view", value, "List")} options={["List", "Card", "Lookup"]} value={viewMode} />
             <SelectInput label="Category" onChange={(value) => updateAccountParam("accountCategory", value, "All categories")} options={categoryOptions} value={categoryFilter} />
             <SelectInput label="Type" onChange={(value) => updateAccountParam("accountType", value, "All types")} options={typeOptions} value={typeFilter} />
             <SelectInput label="Status" onChange={(value) => updateAccountParam("accountStatus", value, "All statuses")} options={statusOptions} value={statusFilter} />
@@ -395,6 +515,7 @@ export default function AccountsPage() {
       </section> : null}
 
       {!isLoading && visibleAccounts.length > 0 && viewMode === "List" ? <AccountsTable items={filteredAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+      {!isLoading && visibleAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}
       <DetailModal
         actions={
           viewedAccount ? (
