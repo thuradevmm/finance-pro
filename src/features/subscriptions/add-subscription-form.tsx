@@ -11,7 +11,7 @@ import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls"
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
-import type { AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SubscriptionFormData, SubscriptionRecordWithValues } from "@/lib/subscriptions/supabase";
@@ -103,6 +103,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
                 label="First Billing Date"
                 onChange={setFirstBillingDate}
                 placeholder="2026-11-15"
+                type="date"
                 value={firstBillingDate}
               />
               {billingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">First billing date is required.</p> : null}
@@ -111,7 +112,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Subscription Category" onChange={(name) => setCategoryId(subscriptionCategories.find((category) => category.name === name)?.id ?? "")} options={subscriptionCategories.length > 0 ? subscriptionCategories.map((category) => category.name) : ["No subscription categories"]} value={selectedCategory?.name ?? "No subscription categories"} />
-            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(paymentAccounts.find((account) => account.name === name)?.id ?? "")} options={paymentAccounts.length > 0 ? paymentAccounts.map((account) => account.name) : ["No accounts"]} value={selectedAccount?.name ?? "No accounts"} />
+            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No accounts"} />
           </div>
           <div className="mt-5">
             <SelectInput label="Status" onChange={(value) => setStatus(value as SubscriptionStatus)} options={["Active", "Paused", "Expiring"]} value={status} />
@@ -199,7 +200,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Account</dt>
-                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount?.name ?? "No account"}</dd>
+                <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No account"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>

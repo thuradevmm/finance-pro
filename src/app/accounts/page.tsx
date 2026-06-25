@@ -13,7 +13,7 @@ import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
-import { getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
+import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
 import type { AccountStatus, FinancialAccount } from "@/types/finance";
@@ -78,13 +78,15 @@ function StatusBadge({ status }: { status: AccountStatus }) {
 
 function AccountCard({
   account,
+  accounts,
   onDelete,
   onView,
   returnTo,
 }: {
-  account: FinancialAccount;
+  account: AccountRecord;
+  accounts: AccountRecord[];
   onDelete: (id: string) => void;
-  onView: (account: FinancialAccount) => void;
+  onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
   return (
@@ -153,7 +155,7 @@ function AccountCard({
         <Link
           aria-label={`View transactions for ${account.name}`}
           className="grid size-8 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff]"
-          href={`/transactions?account=${encodeURIComponent(account.name)}`}
+          href={`/transactions?account=${encodeURIComponent(getAccountOptionLabel(account, accounts))}`}
           title="View transactions"
         >
           <Icon className="size-4" name="receipt" />
@@ -239,14 +241,16 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
 }
 
 function AccountsTable({
+  accounts,
   items,
   onDelete,
   onView,
   returnTo,
 }: {
-  items: FinancialAccount[];
+  accounts: AccountRecord[];
+  items: AccountRecord[];
   onDelete: (id: string) => void;
-  onView: (account: FinancialAccount) => void;
+  onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
   return (
@@ -308,7 +312,7 @@ function AccountsTable({
                     <Link
                       aria-label={`View transactions for ${account.name}`}
                       className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
-                      href={`/transactions?account=${encodeURIComponent(account.name)}`}
+                      href={`/transactions?account=${encodeURIComponent(getAccountOptionLabel(account, accounts))}`}
                     >
                       <Icon className="size-4" name="receipt" />
                     </Link>
@@ -328,7 +332,7 @@ export default function AccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [visibleAccounts, setVisibleAccounts] = useState<AccountRecord[]>([]);
-  const [viewedAccount, setViewedAccount] = useState<FinancialAccount | null>(null);
+  const [viewedAccount, setViewedAccount] = useState<AccountRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
@@ -509,12 +513,12 @@ export default function AccountsPage() {
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             {activeAccounts.map((account) => (
-              <AccountCard account={account} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
+              <AccountCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
             ))}
         </div>
       </section> : null}
 
-      {!isLoading && visibleAccounts.length > 0 && viewMode === "List" ? <AccountsTable items={filteredAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+      {!isLoading && visibleAccounts.length > 0 && viewMode === "List" ? <AccountsTable accounts={visibleAccounts} items={filteredAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
       {!isLoading && visibleAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}
       <DetailModal
         actions={
@@ -529,7 +533,7 @@ export default function AccountsPage() {
               </Link>
               <Link
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]"
-                href={`/transactions?account=${encodeURIComponent(viewedAccount.name)}`}
+                href={`/transactions?account=${encodeURIComponent(getAccountOptionLabel(viewedAccount, visibleAccounts))}`}
               >
                 <Icon className="size-4" name="receipt" />
                 Transactions

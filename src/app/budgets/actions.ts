@@ -18,6 +18,11 @@ function planPayload(input: BudgetFormData) {
   return {
     description: input.description.trim() || null,
     end_date: input.endDate,
+    metadata: {
+      category_id: input.categoryId,
+      category_name: input.categoryName,
+      status: input.status.toLowerCase(),
+    },
     name: `${input.categoryName} ${input.period} Budget`,
     period_type: input.period.toLowerCase(),
     plan_type: "budget",
@@ -30,6 +35,12 @@ function itemPayload(input: BudgetFormData) {
   return {
     alert_percentage: input.alertPercentage,
     category_id: input.categoryId,
+    metadata: {
+      alert_percentage: input.alertPercentage,
+      category_id: input.categoryId,
+      category_name: input.categoryName,
+      planned_amount: input.amount,
+    },
     note: input.description.trim() || null,
     planned_amount: input.amount,
     type: "expense",

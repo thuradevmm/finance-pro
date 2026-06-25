@@ -13,7 +13,7 @@ import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import type { AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 
@@ -67,7 +67,7 @@ export function AddSavingsGoalForm({
   const effectiveAccountId = accountId || accountOptions[0]?.id || "";
   const selectedStyle = goalStyleCategories.find((category) => category.id === effectiveStyleId) ?? goalStyleCategories[0] ?? fallbackStyle;
   const selectedAccount = accountOptions.find((account) => account.id === effectiveAccountId);
-  const selectedAccountName = selectedAccount?.name ?? "";
+  const selectedAccountName = selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "";
 
   async function handleSaveGoal(addAnother = false) {
     const hasErrors = name.trim() === "" || targetAmount.trim() === "" || targetDate.trim() === "";
@@ -121,11 +121,11 @@ export function AddSavingsGoalForm({
             </div>
             <SelectInput
               label="Savings Account"
-              onChange={(accountName) => setAccountId(accountOptions.find((account) => account.name === accountName)?.id ?? "")}
-              options={accountOptions.length > 0 ? accountOptions.map((account) => account.name) : ["No accounts available"]}
+              onChange={(accountName) => setAccountId(findAccountByOptionLabel(accountOptions, accountName)?.id ?? "")}
+              options={accountOptions.length > 0 ? getAccountOptionLabels(accountOptions) : ["No accounts available"]}
               value={selectedAccountName || "No accounts available"}
             />
-            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount?.name ?? "Create an account before linking a savings goal."}</p>
+            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "Create an account before linking a savings goal."}</p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -145,7 +145,7 @@ export function AddSavingsGoalForm({
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="2026-12-31" value={targetDate} />
+              <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="2026-12-31" type="date" value={targetDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
             </div>
             <TextInput label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="number" value={monthlyContribution} />
@@ -225,7 +225,7 @@ export function AddSavingsGoalForm({
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">Goal Preview</p>
                 <h3 className="text-xl font-semibold text-[#0b1c30]">{name || "New Savings Goal"}</h3>
-                <p className="mt-1 text-xs font-semibold text-[#45464d]">{selectedAccount?.name ?? "No account selected"}</p>
+                <p className="mt-1 text-xs font-semibold text-[#45464d]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "No account selected"}</p>
               </div>
             </div>
 

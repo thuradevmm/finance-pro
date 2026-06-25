@@ -95,12 +95,17 @@ function mapGoal(
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const account = accountId ? accountsById.get(accountId) : undefined;
   const category = categoryId ? categoriesById.get(categoryId) : undefined;
-  const targetAmountValue = numericValue(row.target_amount);
-  const savedAmountValue = numericValue(row.current_amount, numericValue(row.saved_amount)) + (linkedSavingsByGoalId.get(row.id) ?? 0);
-  const monthlyContributionValue = numericValue(row.monthly_contribution);
+  const targetAmountValue = numericValue(row.target_amount) || numericValue(metadata.target_amount);
+  const savedAmountValue = (
+    numericValue(row.current_amount)
+    || numericValue(row.saved_amount)
+    || numericValue(metadata.current_amount)
+    || numericValue(metadata.saved_amount)
+  ) + (linkedSavingsByGoalId.get(row.id) ?? 0);
+  const monthlyContributionValue = numericValue(row.monthly_contribution) || numericValue(metadata.monthly_contribution);
   const remainingAmountValue = Math.max(targetAmountValue - savedAmountValue, 0);
   const progressPercent = targetAmountValue > 0 ? Math.min(Math.round((savedAmountValue / targetAmountValue) * 100), 100) : 0;
-  const targetDateValue = row.target_date ?? "";
+  const targetDateValue = row.target_date ?? (typeof metadata.target_date === "string" ? metadata.target_date : "");
   const appearance = category
     ? { bg: category.bg, icon: category.icon, tone: category.tone }
     : {

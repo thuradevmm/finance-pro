@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
-import type { BudgetCategory, BudgetPeriod, BudgetStatus, SummaryMetric } from "@/types/finance";
+import { getCategoryTypeStyle } from "@/lib/categories/category-style";
+import type { BudgetCategory, BudgetPeriod, BudgetStatus, CategoryScope, CategoryType, SummaryMetric } from "@/types/finance";
 
 export type BudgetRecord = BudgetCategory & {
   alertPercentage: number;
@@ -32,6 +32,7 @@ type PlanRow = {
   description: string | null;
   end_date: string | null;
   id: string;
+  metadata: unknown;
   period_type: string;
   start_date: string;
   status: string;
@@ -42,15 +43,16 @@ type ItemRow = {
   budget_plan_id: string;
   category_id: string;
   id: string;
+  metadata: unknown;
   note: string | null;
   planned_amount: number | string;
 };
 
 type CategoryRow = {
-  color: string | null;
-  icon: string | null;
   id: string;
+  metadata: unknown;
   name: string;
+  type: string;
 };
 
 type TransactionRow = {
@@ -60,19 +62,32 @@ type TransactionRow = {
   type: string;
 };
 
-const iconNames = new Set<IconName>(["category", "food", "home", "medical", "savings", "settings", "shopping", "subscriptions", "travel"]);
-const appearances: Record<string, { bg: string; tone: string }> = {
-  Amber: { bg: "bg-[#fffbeb]", tone: "text-[#92400e]" },
-  Blue: { bg: "bg-[#eff6ff]", tone: "text-[#0058be]" },
-  Gray: { bg: "bg-[#f8f9ff]", tone: "text-[#45464d]" },
-  Green: { bg: "bg-[#ecfdf5]", tone: "text-[#047857]" },
-  Indigo: { bg: "bg-[#eef2ff]", tone: "text-[#4f46e5]" },
-  Red: { bg: "bg-[#fff1f0]", tone: "text-[#b42318]" },
-};
-
 function numericValue(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
+}
+
+function metadataRecord(metadata: unknown) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+}
+
+function categoryTypeForBudget(row: CategoryRow): CategoryType {
+  const metadata = metadataRecord(row.metadata);
+  const metadataType = typeof metadata.category_type === "string" ? metadata.category_type : "";
+  const normalizedType = (metadataType || row.type).toLowerCase().replace(/[_-]/g, " ");
+  const scopes = Array.isArray(metadata.scopes)
+    ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string")
+    : [];
+
+  if (normalizedType === "income") return "Income";
+  if (scopes.includes("Accounts")) return "Account";
+  if (scopes.includes("Assets")) return "Asset";
+  if (scopes.includes("Debts")) return "Debt";
+  if (scopes.includes("Savings Goals")) return "Savings Goal";
+  if (scopes.includes("Subscriptions")) return "Subscription";
+  return "Expense";
 }
 
 function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStatus {
@@ -83,9 +98,9 @@ function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStat
 
 export async function getBudgets(supabase: SupabaseClient, userId: string): Promise<BudgetRecord[]> {
   const [plansResult, itemsResult, categoriesResult, transactionsResult] = await Promise.all([
-    supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description").eq("user_id", userId).is("deleted_at", null).order("start_date", { ascending: false }),
-    supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note").eq("user_id", userId),
-    supabase.from("categories").select("id,name,icon,color").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata").eq("user_id", userId).is("deleted_at", null).order("start_date", { ascending: false }),
+    supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,metadata").eq("user_id", userId),
+    supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
     supabase.from("transactions").select("category_id,transaction_date,type,amount").eq("user_id", userId).is("deleted_at", null),
   ]);
 
@@ -101,7 +116,9 @@ export async function getBudgets(supabase: SupabaseClient, userId: string): Prom
     const category = categories.get(item.category_id);
     if (!plan || !category) return [];
 
-    const amountValue = numericValue(item.planned_amount);
+    const itemMetadata = metadataRecord(item.metadata);
+    const planMetadata = metadataRecord(plan.metadata);
+    const amountValue = numericValue(item.planned_amount) || numericValue(itemMetadata.planned_amount);
     const actualValue = transactions
       .filter((transaction) => transaction.category_id === item.category_id
         && transaction.type.toLowerCase() === "expense"
@@ -110,8 +127,8 @@ export async function getBudgets(supabase: SupabaseClient, userId: string): Prom
       .reduce((total, transaction) => total + Math.abs(numericValue(transaction.amount)), 0);
     const remainingValue = amountValue - actualValue;
     const usagePercent = amountValue > 0 ? Math.round((actualValue / amountValue) * 100) : 0;
-    const alertPercentage = numericValue(item.alert_percentage) || 80;
-    const appearance = appearances[category.color ?? "Blue"] ?? appearances.Blue;
+    const alertPercentage = numericValue(item.alert_percentage) || numericValue(itemMetadata.alert_percentage) || 80;
+    const appearance = getCategoryTypeStyle(categoryTypeForBudget(category));
 
     return [{
       ...appearance,
@@ -122,9 +139,9 @@ export async function getBudgets(supabase: SupabaseClient, userId: string): Prom
       budget: formatMmk(amountValue),
       category: category.name,
       categoryId: category.id,
-      description: plan.description ?? item.note ?? "",
+      description: plan.description ?? item.note ?? (typeof planMetadata.description === "string" ? planMetadata.description : ""),
       endDate: plan.end_date ?? "",
-      icon: category.icon && iconNames.has(category.icon as IconName) ? category.icon as IconName : "category",
+      icon: appearance.icon,
       id: item.id,
       itemId: item.id,
       period: plan.period_type.toLowerCase() === "yearly" ? "Yearly" : "Monthly",

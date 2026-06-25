@@ -86,7 +86,7 @@ function filterTransactions(transactions: Transaction[], filters: SearchableTran
   const normalizedSearch = filters.search.trim().toLowerCase();
 
   return transactions.filter((transaction) => {
-    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.paymentMethod} ${transaction.amount} ${transaction.note}`.toLowerCase();
+    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.amount} ${transaction.note}`.toLowerCase();
     const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
     const matchesAccount = filters.account === "Account" || transaction.account === filters.account;

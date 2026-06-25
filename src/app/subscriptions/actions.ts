@@ -22,7 +22,12 @@ function payload(input: SubscriptionFormData) {
     category_id: input.categoryId || null,
     metadata: {
       account_id: input.accountId || null,
+      amount: input.amount,
+      billing_cycle: input.billingCycle.toLowerCase(),
       category_id: input.categoryId || null,
+      next_billing_date: input.nextBillingDate || null,
+      reminder_enabled: input.reminderEnabled,
+      status: input.status.toLowerCase(),
     },
     name: input.name.trim(),
     next_billing_date: input.nextBillingDate || null,

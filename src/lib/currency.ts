@@ -2,18 +2,8 @@ export const SYSTEM_CURRENCY = "MMK" as const;
 export const SYSTEM_CURRENCY_NAME = "Myanmar Kyat";
 export const SYSTEM_CURRENCY_LABEL = `${SYSTEM_CURRENCY_NAME} (${SYSTEM_CURRENCY})`;
 
-function countFractionDigits(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  const textValue = String(value);
-  if (!textValue.includes("e")) return textValue.split(".")[1]?.length ?? 0;
-
-  const [, exponentText = "0"] = textValue.split("e-");
-  const significantDigits = textValue.split("e-")[0]?.replace(".", "").replace("-", "").length ?? 0;
-  return Math.max(Number(exponentText) + significantDigits - 1, 0);
-}
-
-export function formatMmk(value: number, maximumFractionDigits = countFractionDigits(value)) {
-  const fractionDigits = Math.min(Math.max(maximumFractionDigits, countFractionDigits(value)), 20);
+export function formatMmk(value: number, maximumFractionDigits = 2) {
+  const fractionDigits = Math.min(Math.max(maximumFractionDigits, 0), 20);
 
   return new Intl.NumberFormat("en-MM", {
     currency: SYSTEM_CURRENCY,
@@ -30,7 +20,7 @@ export function formatMmkPreview(value: number | string, sign: "negative" | "non
 
   const absoluteValue = Math.abs(numericValue);
   const formattedAmount = new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 20,
+    maximumFractionDigits: 2,
     minimumFractionDigits: 0,
     useGrouping: true,
   }).format(absoluteValue);

@@ -1,5 +1,5 @@
-import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
+import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 import type { CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
@@ -11,12 +11,9 @@ export type CategoryRecord = FinancialCategory & {
 };
 
 export type CategoryFormData = {
-  color: string;
   description: string;
-  icon: IconName;
   isActive: boolean;
   isDefault: boolean;
-  monthlyAverage: number;
   name: string;
   scopes: CategoryScope[];
   type: CategoryType;
@@ -35,19 +32,16 @@ type CategoryRow = {
   user_id: string | null;
 };
 
-const iconNames = new Set<IconName>([
-  "account", "box", "category", "credit", "document", "food", "home", "medical",
-  "plus", "savings", "settings", "shopping", "subscriptions", "target", "travel",
-  "trendingDown", "trendingUp", "users",
-]);
+type CategoryTransactionRow = {
+  amount: number | string;
+  category_id: string | null;
+  transaction_date: string;
+  type: string;
+};
 
-const colorStyles: Record<string, Pick<FinancialCategory, "bg" | "marker" | "tone">> = {
-  Amber: { bg: "bg-[#fffbeb]", marker: "bg-[#92400e]", tone: "text-[#92400e]" },
-  Blue: { bg: "bg-[#eff6ff]", marker: "bg-[#2170e4]", tone: "text-[#0058be]" },
-  Gray: { bg: "bg-[#f8f9ff]", marker: "bg-[#76777d]", tone: "text-[#45464d]" },
-  Green: { bg: "bg-[#ecfdf5]", marker: "bg-[#047857]", tone: "text-[#047857]" },
-  Indigo: { bg: "bg-[#eef2ff]", marker: "bg-[#4f46e5]", tone: "text-[#4f46e5]" },
-  Red: { bg: "bg-[#fff1f0]", marker: "bg-[#b42318]", tone: "text-[#b42318]" },
+type CategoryActivity = {
+  monthlyAverage: number;
+  transactionCount: number;
 };
 
 function metadataRecord(metadata: unknown) {
@@ -78,20 +72,56 @@ function normalizeCategoryType(rowType: string, scopes: CategoryScope[], metadat
   return "Expense";
 }
 
-function mapCategory(row: CategoryRow): CategoryRecord {
+function numericValue(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function monthKey(value: string) {
+  return value.slice(0, 7);
+}
+
+function buildCategoryActivity(transactions: CategoryTransactionRow[]) {
+  const monthlyTotalsByCategory = new Map<string, Map<string, number>>();
+  const transactionCounts = new Map<string, number>();
+
+  for (const transaction of transactions) {
+    if (!transaction.category_id) continue;
+    const type = transaction.type.toLowerCase();
+    if (type !== "income" && type !== "expense") continue;
+
+    const categoryMonths = monthlyTotalsByCategory.get(transaction.category_id) ?? new Map<string, number>();
+    const month = monthKey(transaction.transaction_date);
+    categoryMonths.set(month, (categoryMonths.get(month) ?? 0) + numericValue(transaction.amount));
+    monthlyTotalsByCategory.set(transaction.category_id, categoryMonths);
+    transactionCounts.set(transaction.category_id, (transactionCounts.get(transaction.category_id) ?? 0) + 1);
+  }
+
+  const activityByCategory = new Map<string, CategoryActivity>();
+  for (const [categoryId, monthlyTotals] of monthlyTotalsByCategory) {
+    const total = Array.from(monthlyTotals.values()).reduce((sum, value) => sum + value, 0);
+    activityByCategory.set(categoryId, {
+      monthlyAverage: monthlyTotals.size === 0 ? 0 : total / monthlyTotals.size,
+      transactionCount: transactionCounts.get(categoryId) ?? 0,
+    });
+  }
+
+  return activityByCategory;
+}
+
+function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
   const scopes = Array.isArray(metadata.scopes)
     ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string")
     : ["Transactions", "Reports"] as CategoryScope[];
-  const monthlyAverage = typeof metadata.monthly_average === "number" ? metadata.monthly_average : 0;
-  const transactionCount = typeof metadata.transaction_count === "number" ? metadata.transaction_count : 0;
-  const color = row.color && colorStyles[row.color] ? row.color : "Blue";
+  const type = normalizeCategoryType(row.type, scopes, metadata);
+  const style = getCategoryTypeStyle(type);
+  const monthlyAverage = activity?.monthlyAverage ?? 0;
+  const transactionCount = activity?.transactionCount ?? 0;
 
   return {
-    ...colorStyles[color],
-    color,
+    ...style,
     description: typeof metadata.description === "string" ? metadata.description : row.description ?? "",
-    icon: row.icon && iconNames.has(row.icon as IconName) ? row.icon as IconName : "category",
     id: row.id,
     isDefault: row.is_default,
     isSharedDefault: row.is_default && row.user_id === null,
@@ -100,7 +130,7 @@ function mapCategory(row: CategoryRow): CategoryRecord {
     scopes,
     status: row.is_active ? "Active" : "Hidden",
     transactionCount,
-    type: normalizeCategoryType(row.type, scopes, metadata),
+    type,
   };
 }
 
@@ -109,18 +139,27 @@ export async function getCategories() {
   const { user, error: userError } = await getUserSafely(supabase);
   if (userError || !user) throw new Error(userError ?? "You must be signed in to view categories.");
 
-  const { data, error } = await supabase
-    .from("categories")
-    .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .order("is_default", { ascending: false })
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
+  const [categoriesResult, transactionsResult] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .order("is_default", { ascending: false })
+      .order("sort_order", { ascending: true })
+      .order("name", { ascending: true }),
+    supabase
+      .from("transactions")
+      .select("category_id,amount,transaction_date,type")
+      .eq("user_id", user.id)
+      .is("deleted_at", null),
+  ]);
 
-  if (error) throw new Error(error.message);
+  if (categoriesResult.error) throw new Error(categoriesResult.error.message);
+  if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
-  return (data as CategoryRow[]).map(mapCategory);
+  const activityByCategory = buildCategoryActivity(transactionsResult.data as CategoryTransactionRow[]);
+  return (categoriesResult.data as CategoryRow[]).map((category) => mapCategory(category, activityByCategory.get(category.id)));
 }
 
 export async function getCategory(categoryId: string) {

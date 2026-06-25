@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatMmk, formatMmkPreview } from "@/lib/currency";
-import type { AccountRecord } from "@/lib/accounts/supabase";
+import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
@@ -34,7 +34,6 @@ export type TransactionFormData = {
   categoryId: string;
   date: string;
   note: string;
-  paymentMethod: string;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
   status: string;
@@ -50,7 +49,6 @@ type TransactionRow = {
   description: string | null;
   id: string;
   note: string | null;
-  payment_method: string | null;
   related_entity_id: string | null;
   related_entity_type: string | null;
   status: string | null;
@@ -95,7 +93,7 @@ function formatTransactionAmount(value: number, type: TransactionType) {
   return formatMmk(value);
 }
 
-function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>): TransactionRecord {
+function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord {
   const type = normalizeType(row.type);
   const amountValue = Number(row.amount) || 0;
   const account = row.account_id ? accounts.get(row.account_id) : undefined;
@@ -105,7 +103,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   const metadata = metadataRecord(row.metadata);
 
   return {
-    account: account?.name ?? "Unknown account",
+    account: account ? getAccountOptionLabel(account, accountList) : "Unknown account",
     accountAmountType: normalizeAccountAmountType(metadata.account_amount_type),
     accountId: row.account_id ?? "",
     amount: formatTransactionAmount(amountValue, type),
@@ -116,7 +114,6 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     dateValue: row.transaction_date,
     id: row.id,
     note,
-    paymentMethod: row.payment_method ?? (type === "Transfer" ? "Internal Transfer" : ""),
     relatedEntityId: row.related_entity_id ?? "",
     relatedEntityType: normalizeRelatedType(row.related_entity_type),
     status: row.status ?? "cleared",
@@ -135,13 +132,13 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
 export async function getTransactions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,payment_method,status,title,description,note,related_entity_type,related_entity_id,metadata")
+    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("transaction_date", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data as TransactionRow[]).map((row) => mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c]))));
+  return (data as TransactionRow[]).map((row) => mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), accounts, new Map(categories.map((c) => [c.id, c]))));
 }
 
 export async function getTransaction(supabase: SupabaseClient, userId: string, transactionId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
@@ -151,7 +148,7 @@ export async function getTransaction(supabase: SupabaseClient, userId: string, t
 
 export function getTransactionFilterOptions(transactions: TransactionRecord[], accounts: AccountRecord[], categories: CategoryRecord[]): TransactionFilterOptions {
   return {
-    account: ["Account", ...accounts.map((account) => account.name)],
+    account: ["Account", ...getAccountOptionLabels(accounts)],
     amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
     category: ["Category", "Transfer", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     type: ["Type", "Income", "Expense", "Transfer"],

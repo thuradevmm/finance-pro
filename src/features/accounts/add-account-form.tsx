@@ -225,6 +225,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
   const balanceHasError = showErrors && openingBalance.trim() === "";
+  const availableBalanceHasError = showErrors && availableBalance.trim() !== "" && !Number.isFinite(Number(availableBalance));
   const amountTypesHaveError = showErrors && amountTypes.some((item) => item.type.trim() === "" || item.amount.trim() === "" || !Number.isFinite(Number(item.amount)));
   const hasCard = cardType !== "No Card";
   const cardHasError = showErrors && hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
@@ -233,19 +234,16 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const openingBalanceValue = Number(openingBalance);
   const effectiveAvailableBalanceValue = availableBalance.trim() === "" ? openingBalanceValue : Number(availableBalance);
   const amountTypesTotal = amountTypes.reduce((total, item) => total + (Number.isFinite(Number(item.amount)) ? Number(item.amount) : 0), 0);
-  const amountComparisonScale = decimalScale([openingBalance, availableBalance.trim() === "" ? openingBalance : availableBalance, ...amountTypes.map((item) => item.amount)]);
+  const amountComparisonScale = decimalScale([openingBalance, ...amountTypes.map((item) => item.amount)]);
   const openingBalanceScaled = decimalToScaledBigInt(openingBalance, amountComparisonScale);
-  const availableBalanceScaled = decimalToScaledBigInt(availableBalance.trim() === "" ? openingBalance : availableBalance, amountComparisonScale);
   const amountTypesTotalScaled = amountTypes.reduce<bigint | null>((total, item) => {
     const amount = decimalToScaledBigInt(item.amount, amountComparisonScale);
     return total == null || amount == null ? null : total + amount;
   }, BigInt(0));
   const balancesMatchAmountTypes =
     openingBalanceScaled != null &&
-    availableBalanceScaled != null &&
     amountTypesTotalScaled != null &&
-    amountTypesTotalScaled === openingBalanceScaled &&
-    (selectedType === "Credit Card" || amountTypesTotalScaled === availableBalanceScaled);
+    amountTypesTotalScaled === openingBalanceScaled;
   const amountTotalHasError = showErrors && !balancesMatchAmountTypes;
 
   function updateAmountType(id: string, field: "amount" | "type", value: string) {
@@ -268,8 +266,9 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   async function handleSaveAccount(addAnother = false) {
     const normalizedAmountTypes = amountTypes.map((item) => ({ amount: Number(item.amount), type: item.type.trim() }));
     const hasInvalidAmountTypes = normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === "" || !Number.isFinite(item.amount));
+    const hasInvalidAvailableBalance = availableBalance.trim() !== "" && !Number.isFinite(Number(availableBalance));
     const hasInvalidCard = hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
-    const hasErrors = accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "" || hasInvalidAmountTypes || !balancesMatchAmountTypes || hasInvalidCard;
+    const hasErrors = accountName.trim() === "" || institution.trim() === "" || openingBalance.trim() === "" || hasInvalidAvailableBalance || hasInvalidAmountTypes || !balancesMatchAmountTypes || hasInvalidCard;
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -394,7 +393,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                 </div>
                 {balanceHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Balance is required.</p> : null}
               </div>
-              <TextInput label={availableLabel} onChange={setAvailableBalance} placeholder="0.00" type="number" value={availableBalance} />
+              <div>
+                <TextInput label={availableLabel} onChange={setAvailableBalance} placeholder="0.00" type="number" value={availableBalance} />
+                {availableBalanceHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{availableLabel} must be a valid number.</p> : null}
+              </div>
               <SelectInput label="Currency" onChange={setCurrency} options={currencies} value={currency} />
             </div>
           </FormCard>
@@ -431,7 +433,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
             </div>
             {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name and valid amount.</p> : null}
             <div className={`mt-4 rounded-lg border px-4 py-3 text-sm font-semibold ${amountTotalHasError ? "border-[#fecaca] bg-[#fff1f0] text-[#991b1b]" : "border-[#c6c6cd]/60 bg-white text-[#45464d]"}`}>
-              Amount type total: {formatMmkPreview(amountTypesTotal)}. This must match opening balance{selectedType === "Credit Card" ? "." : " and available balance."}
+              Amount type total: {formatMmkPreview(amountTypesTotal)}. This must exactly match opening balance.
             </div>
             <button
               className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"

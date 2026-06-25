@@ -35,6 +35,42 @@ export type AccountFormData = {
   type: AccountType;
 };
 
+function compactIdentifier(value: string) {
+  const normalized = value.replace(/\s+/g, "");
+  if (!normalized) return "";
+  return normalized.length > 4 ? `*${normalized.slice(-4)}` : normalized;
+}
+
+export function getAccountOptionLabel(account: AccountRecord, accounts: AccountRecord[] = []) {
+  const identifier = compactIdentifier(account.bankBookAccountNumber || account.mobileBankingAccountNumber || account.phoneNumber || account.cardNumber);
+  const baseLabel = [
+    account.name,
+    account.type,
+    account.institution,
+    identifier,
+  ].filter(Boolean).join(" · ");
+
+  const hasDuplicateLabel = accounts.filter((item) => {
+    const itemIdentifier = compactIdentifier(item.bankBookAccountNumber || item.mobileBankingAccountNumber || item.phoneNumber || item.cardNumber);
+    return [
+      item.name,
+      item.type,
+      item.institution,
+      itemIdentifier,
+    ].filter(Boolean).join(" · ") === baseLabel;
+  }).length > 1;
+
+  return hasDuplicateLabel ? `${baseLabel} · ${account.id.slice(0, 8)}` : baseLabel;
+}
+
+export function getAccountOptionLabels(accounts: AccountRecord[]) {
+  return accounts.map((account) => getAccountOptionLabel(account, accounts));
+}
+
+export function findAccountByOptionLabel(accounts: AccountRecord[], label: string) {
+  return accounts.find((account) => getAccountOptionLabel(account, accounts) === label);
+}
+
 type AccountRow = {
   color: string | null;
   created_at: string;

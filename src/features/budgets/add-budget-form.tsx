@@ -149,10 +149,10 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={startDateHasError} label="Start Date" onChange={setStartDate} placeholder="2026-06-01" value={startDate} />
+              <TextInput error={startDateHasError} label="Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
               {startDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start date is required.</p> : null}
             </div>
-            <TextInput label="End Date" onChange={setEndDate} placeholder={period === "Monthly" ? "2026-06-30" : "2026-12-31"} value={endDate} />
+            <TextInput label="End Date" onChange={setEndDate} placeholder={period === "Monthly" ? "2026-06-30" : "2026-12-31"} type="date" value={endDate} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">

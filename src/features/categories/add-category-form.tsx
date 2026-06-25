@@ -6,76 +6,43 @@ import { useState } from "react";
 
 import { createCategory, updateCategory } from "@/app/categories/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
-import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
+import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
-import { getScopesForCategoryType, isTransactionCategoryType } from "@/lib/categories/category-scopes";
+import { getCategoryTypeStyle } from "@/lib/categories/category-style";
+import { getScopesForCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryType } from "@/types/finance";
 
-type CategoryIconOption = {
-  label: string;
-  icon: IconName;
-};
-
-type CategoryColorOption = {
-  label: string;
-  marker: string;
-  bg: string;
-  tone: string;
-};
-
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
-const categoryIcons: CategoryIconOption[] = [
-  { label: "Food", icon: "food" },
-  { label: "Travel", icon: "travel" },
-  { label: "Housing", icon: "home" },
-  { label: "Shopping", icon: "shopping" },
-  { label: "Savings", icon: "savings" },
-  { label: "Income", icon: "trendingUp" },
-  { label: "Medical", icon: "medical" },
-  { label: "Subscription", icon: "subscriptions" },
-];
-const categoryColors: CategoryColorOption[] = [
-  { label: "Green", marker: "bg-[#047857]", bg: "bg-[#ecfdf5]", tone: "text-[#047857]" },
-  { label: "Blue", marker: "bg-[#2170e4]", bg: "bg-[#eff6ff]", tone: "text-[#0058be]" },
-  { label: "Indigo", marker: "bg-[#4f46e5]", bg: "bg-[#eef2ff]", tone: "text-[#4f46e5]" },
-  { label: "Amber", marker: "bg-[#92400e]", bg: "bg-[#fffbeb]", tone: "text-[#92400e]" },
-  { label: "Red", marker: "bg-[#b42318]", bg: "bg-[#fff1f0]", tone: "text-[#b42318]" },
-  { label: "Gray", marker: "bg-[#76777d]", bg: "bg-[#f8f9ff]", tone: "text-[#45464d]" },
-];
 export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
-  const [selectedIcon, setSelectedIcon] = useState<CategoryIconOption>(categoryIcons.find((option) => option.icon === category?.icon) ?? categoryIcons[0]);
-  const [selectedColor, setSelectedColor] = useState<CategoryColorOption>(categoryColors.find((option) => option.label === category?.color) ?? categoryColors[0]);
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
-  const [monthlyAverage, setMonthlyAverage] = useState(category ? category.monthlyAverage.replace(/[^0-9.]/g, "") : "");
   const [status, setStatus] = useState(category?.status ?? "Active");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const selectedScopes = getScopesForCategoryType(selectedType);
-  const averageHasError = showErrors && isTransactionCategoryType(selectedType) && monthlyAverage.trim() === "";
+  const selectedStyle = getCategoryTypeStyle(selectedType);
+  const monthlyAverage = category && category.type === selectedType ? category.monthlyAverage : formatMmkPreview(0);
+  const transactionCount = category && category.type === selectedType ? category.transactionCount : 0;
 
   async function handleSaveCategory(addAnother = false) {
-    const hasErrors = name.trim() === "" || (isTransactionCategoryType(selectedType) && monthlyAverage.trim() === "");
+    const hasErrors = name.trim() === "";
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
 
     const input: CategoryFormData = {
-      color: selectedColor.label,
       description: description.trim(),
-      icon: selectedIcon.icon,
       isActive: status === "Active",
       isDefault: false,
-      monthlyAverage: Number(monthlyAverage),
       name: name.trim(),
       scopes: selectedScopes,
       type: selectedType,
@@ -95,7 +62,6 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       setIsSaving(false);
       setName("");
       setDescription("");
-      setMonthlyAverage("");
       setSelectedType("Expense");
       setShowErrors(false);
       return;
@@ -149,16 +115,9 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
               <TextInput error={nameHasError} label="Category Name" onChange={setName} placeholder="Food" value={name} />
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Category name is required.</p> : null}
             </div>
-            <div>
-              <TextInput
-                error={averageHasError}
-                label={isTransactionCategoryType(selectedType) ? "Monthly Average" : "Reference Amount"}
-                onChange={setMonthlyAverage}
-                placeholder={isTransactionCategoryType(selectedType) ? "850" : "0"}
-                type="number"
-                value={monthlyAverage}
-              />
-              {averageHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly average is required for income and expense categories.</p> : null}
+            <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
+              <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated Monthly Avg</span>
+              <ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{monthlyAverage}</ResponsiveAmount>
             </div>
           </div>
 
@@ -180,7 +139,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             Category usage is now controlled by category type. Income and expense categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate from transaction income/expense categories.
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
-            The amount field here is a reference value for planning and preview, such as a monthly average for income or expense categories. Actual totals are calculated from related transaction records. When a transaction uses this category, that transaction amount is what updates reports, budgets, account summaries, and linked modules.
+            Monthly average and transaction count are calculated from related transaction records. When a transaction uses this category, that transaction amount is what updates reports, budgets, account summaries, and linked modules.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {selectedScopes.map((scope) => (
@@ -191,59 +150,18 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
           </div>
         </FormCard>
 
-        <FormCard title="Icon and Color">
-          <div>
-            <FieldLabel>Icon</FieldLabel>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-              {categoryIcons.map((option) => {
-                const isActive = selectedIcon.icon === option.icon;
-
-                return (
-                  <button
-                    aria-label={option.label}
-                    aria-pressed={isActive}
-                    className={
-                      isActive
-                        ? "grid size-11 place-items-center rounded-lg border border-[#2170e4] bg-[#eff6ff] text-[#0058be]"
-                        : "grid size-11 place-items-center rounded-lg border border-[#c6c6cd]/70 bg-white text-[#45464d] transition hover:bg-[#eff4ff]"
-                    }
-                    key={option.label}
-                    onClick={() => setSelectedIcon(option)}
-                    title={option.label}
-                    type="button"
-                  >
-                    <Icon name={option.icon} />
-                  </button>
-                );
-              })}
+        <FormCard title="Automatic Style">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className={`grid size-11 shrink-0 place-items-center rounded-full ${selectedStyle.bg} ${selectedStyle.tone}`}>
+                <Icon name={selectedStyle.icon} />
+              </span>
+              <div className="min-w-0">
+                <span className="block text-xs font-bold uppercase text-[#45464d]">Type Style</span>
+                <span className="mt-1 block truncate text-sm font-semibold text-[#0b1c30]">{selectedType} uses {selectedStyle.color}</span>
+              </div>
             </div>
-          </div>
-
-          <div className="mt-5">
-            <FieldLabel>Color</FieldLabel>
-            <div className="flex flex-wrap gap-2">
-              {categoryColors.map((option) => {
-                const isActive = selectedColor.label === option.label;
-
-                return (
-                  <button
-                    aria-label={option.label}
-                    aria-pressed={isActive}
-                    className={
-                      isActive
-                        ? "grid size-10 place-items-center rounded-lg border border-[#0b1c30] bg-white"
-                        : "grid size-10 place-items-center rounded-lg border border-[#c6c6cd]/70 bg-white transition hover:bg-[#eff4ff]"
-                    }
-                    key={option.label}
-                    onClick={() => setSelectedColor(option)}
-                    title={option.label}
-                    type="button"
-                  >
-                    <span className={`size-5 rounded-full ${option.marker}`} />
-                  </button>
-                );
-              })}
-            </div>
+            <span className={`size-4 shrink-0 rounded-full ${selectedStyle.marker}`} />
           </div>
         </FormCard>
 
@@ -279,10 +197,10 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <div className="mb-6 flex items-start justify-between gap-4">
-              <span className={`grid size-12 place-items-center rounded-full ${selectedColor.bg} ${selectedColor.tone}`}>
-                <Icon name={selectedIcon.icon} />
+              <span className={`grid size-12 place-items-center rounded-full ${selectedStyle.bg} ${selectedStyle.tone}`}>
+                <Icon name={selectedStyle.icon} />
               </span>
-              <span className={`size-3 rounded-full ${selectedColor.marker}`} />
+              <span className={`size-3 rounded-full ${selectedStyle.marker}`} />
             </div>
             <div className="mb-1 flex items-center gap-2">
               <h3 className="text-xl font-semibold text-[#0b1c30]">{name || "New Category"}</h3>
@@ -301,9 +219,9 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             <div className="flex items-end justify-between gap-4 border-t border-[#c6c6cd]/40 pt-4">
               <div>
                 <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Monthly Avg</span>
-                <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage ? formatMmkPreview(monthlyAverage) : formatMmkPreview(0)}</ResponsiveAmount>
+                <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage}</ResponsiveAmount>
               </div>
-              <span className="text-right text-xs font-semibold text-[#45464d]">0 Transactions</span>
+              <span className="text-right text-xs font-semibold text-[#45464d]">{transactionCount} Transactions</span>
             </div>
           </div>
         </div>

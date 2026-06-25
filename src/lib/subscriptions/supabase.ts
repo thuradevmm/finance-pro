@@ -71,7 +71,8 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
-  const amountValue = numericValue(row.amount ?? metadata.amount);
+  const amountValue = numericValue(row.amount) || numericValue(metadata.amount);
+  const nextBillingDateValue = row.next_billing_date ?? (typeof metadata.next_billing_date === "string" ? metadata.next_billing_date : "");
 
   return {
     accountId,
@@ -84,8 +85,8 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     icon: category?.icon ?? "subscriptions",
     id: row.id,
     name: row.name,
-    nextBillingDate: formatDate(row.next_billing_date ?? ""),
-    nextBillingDateValue: row.next_billing_date ?? "",
+    nextBillingDate: formatDate(nextBillingDateValue),
+    nextBillingDateValue,
     paymentAccount: accounts.get(accountId)?.name ?? "No account selected",
     reminderEnabled: row.reminder_enabled ?? Boolean(metadata.reminder_enabled),
     status: normalizeStatus(row.status ?? metadata.status),

@@ -21,7 +21,7 @@ function payload(input: TransactionFormData) {
     category_id: input.type === "Transfer" ? null : input.categoryId || null,
     description: input.note.trim() || null,
     note: input.note.trim() || null,
-    payment_method: input.paymentMethod,
+    payment_method: null,
     metadata: {
       account_amount_type: input.accountAmountType,
     },

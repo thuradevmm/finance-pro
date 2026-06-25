@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import type { CategoryFormData } from "@/lib/categories/supabase";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -16,15 +17,16 @@ async function authenticatedClient() {
 }
 
 function categoryPayload(input: CategoryFormData, extraMetadata: Record<string, unknown> = {}) {
+  const style = getCategoryTypeStyle(input.type);
+
   return {
-    color: input.color,
-    icon: input.icon,
+    color: style.color,
+    icon: style.icon,
     is_active: input.isActive,
     is_default: false,
     metadata: {
       category_type: input.type,
       description: input.description,
-      monthly_average: input.monthlyAverage,
       scopes: input.scopes,
       ...extraMetadata,
     },

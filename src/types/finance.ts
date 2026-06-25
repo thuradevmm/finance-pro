@@ -141,7 +141,6 @@ export type Transaction = {
   category: TransactionCategoryName;
   account: string;
   accountAmountType: AccountAmountType;
-  paymentMethod: string;
   amount: string;
   note: string;
   attachment?: "receipt" | "document";

@@ -7,6 +7,7 @@ import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string };
+type DebtPayload = Record<string, unknown>;
 
 async function authenticatedClient() {
   const supabase = await createClient();
@@ -14,17 +15,26 @@ async function authenticatedClient() {
   return { supabase, user };
 }
 
-function payload(input: DebtFormData) {
+function payload(input: DebtFormData): DebtPayload {
   return {
     category_id: input.categoryId || null,
     description: input.notes.trim() || null,
-    interest_rate: input.interestRate,
     lender: input.lender.trim(),
     metadata: {
       category_id: input.categoryId || null,
+      duration_months: input.durationMonths,
+      interest_rate: input.interestRate,
+      interest_rate_period: input.interestRatePeriod.toLowerCase(),
+      lender: input.lender.trim(),
+      monthly_payment: input.monthlyPayment,
+      next_payment_date: input.nextPaymentDate || null,
       notes: input.notes.trim(),
       payment_account_id: input.paymentAccountId || null,
+      payoff_date: input.payoffDate || null,
+      repaid_amount: input.repaidAmount,
       start_date: input.startDate,
+      status: input.status.toLowerCase(),
+      total_amount: input.totalAmount,
       type: input.type,
     },
     monthly_payment: input.monthlyPayment,
@@ -35,23 +45,73 @@ function payload(input: DebtFormData) {
     start_date: input.startDate || null,
     status: input.status.toLowerCase(),
     total_amount: input.totalAmount,
-    type: input.type,
   };
+}
+
+function missingSchemaColumn(message: string) {
+  return message.match(/Could not find the '([^']+)' column/)?.[1] ?? null;
 }
 
 export async function createDebt(input: DebtFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const { error } = await supabase.from("debts").insert({ ...payload(input), user_id: user.id });
-  if (error) return { error: error.message };
-  revalidatePath("/debts");
-  return {};
+  const debtPayload = payload(input);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { error } = await supabase.from("debts").insert({ ...debtPayload, user_id: user.id });
+    if (!error) {
+      revalidatePath("/debts");
+      return {};
+    }
+
+    const column = missingSchemaColumn(error.message);
+    if (!column || column === "user_id" || !(column in debtPayload)) return { error: error.message };
+    delete debtPayload[column];
+  }
+
+  return { error: "Debt could not be saved because the database schema is not aligned with the debt form." };
+}
+
+async function updateDebtPayload(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  debtId: string,
+  userId: string,
+  debtPayload: DebtPayload,
+) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const result = await supabase.from("debts").update(debtPayload).eq("id", debtId).eq("user_id", userId).select("id").maybeSingle();
+    if (!result.error) return result;
+
+    const column = missingSchemaColumn(result.error.message);
+    if (!column || !(column in debtPayload)) return result;
+    delete debtPayload[column];
+  }
+
+  return { data: null, error: { message: "Debt could not be updated because the database schema is not aligned with the debt form." } };
+}
+
+async function archiveDebtPayload(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  debtId: string,
+  userId: string,
+) {
+  const archivePayload: DebtPayload = { deleted_at: new Date().toISOString(), status: "archived" };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await supabase.from("debts").update(archivePayload).eq("id", debtId).eq("user_id", userId).select("id").maybeSingle();
+    if (!result.error) return result;
+
+    const column = missingSchemaColumn(result.error.message);
+    if (!column || !(column in archivePayload)) return result;
+    delete archivePayload[column];
+  }
+
+  return { data: null, error: { message: "Debt could not be deleted because the database schema is not aligned with the debt form." } };
 }
 
 export async function updateDebt(debtId: string, input: DebtFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const { data, error } = await supabase.from("debts").update(payload(input)).eq("id", debtId).eq("user_id", user.id).select("id").maybeSingle();
+  const { data, error } = await updateDebtPayload(supabase, debtId, user.id, payload(input));
   if (error) return { error: error.message };
   if (!data) return { error: "Debt not found." };
   revalidatePath("/debts");
@@ -62,7 +122,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
 export async function deleteDebt(debtId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const { data, error } = await supabase.from("debts").update({ deleted_at: new Date().toISOString(), status: "archived" }).eq("id", debtId).eq("user_id", user.id).select("id").maybeSingle();
+  const { data, error } = await archiveDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };
   if (!data) return { error: "Debt not found." };
   revalidatePath("/debts");

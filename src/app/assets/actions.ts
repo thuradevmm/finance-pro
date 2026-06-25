@@ -22,8 +22,13 @@ function payload(input: AssetFormData) {
     description: input.note.trim() || null,
     metadata: {
       category_id: input.categoryId || null,
+      condition: input.condition,
+      current_value: input.currentValue,
       note: input.note.trim(),
+      purchase_amount: input.purchaseAmount,
+      purchase_date: input.purchaseDate || null,
       start_using_date: input.startUsingDate,
+      status: input.status,
     },
     name: input.name.trim(),
     purchase_amount: input.purchaseAmount,

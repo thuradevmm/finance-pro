@@ -12,7 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import type { AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import type { TransactionType } from "@/types/finance";
@@ -100,7 +100,6 @@ export function AddTransactionForm({
   const [transferToAccountId, setTransferToAccountId] = useState(transaction?.transferAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? "");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
-  const [paymentMethod, setPaymentMethod] = useState(transaction?.paymentMethod ?? (selectedType === "Income" ? "Direct Deposit" : selectedType === "Transfer" ? "Internal Transfer" : "Cash"));
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
   const [note, setNote] = useState(transaction?.note ?? "");
   const [relatedOptionValue, setRelatedOptionValue] = useState(
@@ -118,7 +117,9 @@ export function AddTransactionForm({
     return accountAmountType && !optionNames.includes(accountAmountType) ? [accountAmountType, ...optionNames] : optionNames;
   }, [accountAmountType, selectedAccount]);
   const effectiveAccountAmountType = accountAmountTypeOptions[0] ?? "General";
-  const selectedTransferAccount = accounts.find((account) => account.id === transferToAccountId);
+  const transferAccountOptions = useMemo(() => accounts.filter((account) => account.id !== accountId), [accountId, accounts]);
+  const selectedTransferAccount = transferAccountOptions.find((account) => account.id === transferToAccountId) ?? transferAccountOptions[0];
+  const effectiveTransferToAccountId = selectedTransferAccount?.id ?? "";
   const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
@@ -132,7 +133,6 @@ export function AddTransactionForm({
     setSelectedType(type);
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
-    setPaymentMethod(type === "Income" ? "Direct Deposit" : type === "Transfer" ? "Internal Transfer" : "Cash");
   }
 
   function handleRelatedOptionChange(label: string) {
@@ -141,13 +141,13 @@ export function AddTransactionForm({
   }
 
   function handleAccountChange(name: string) {
-    const nextAccount = accounts.find((account) => account.name === name);
+    const nextAccount = findAccountByOptionLabel(accounts, name);
     setAccountId(nextAccount?.id ?? "");
     setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
   }
 
   async function handleSaveTransaction(addAnother = false) {
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || (!isTransfer && !categoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -159,12 +159,11 @@ export function AddTransactionForm({
       categoryId,
       date: transactionDate,
       note,
-      paymentMethod,
       relatedEntityId: selectedRelatedOption?.value ?? "",
       relatedEntityType: selectedRelatedOption?.type ?? "none",
       status,
       title: note.trim() || `${selectedType} transaction`,
-      transferAccountId: isTransfer ? transferToAccountId : "",
+      transferAccountId: isTransfer ? effectiveTransferToAccountId : "",
       type: selectedType,
     };
 
@@ -238,9 +237,14 @@ export function AddTransactionForm({
             </div>
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <SelectInput label={isTransfer ? "From Account" : "Account"} onChange={handleAccountChange} options={accounts.length > 0 ? accounts.map((account) => account.name) : ["No accounts"]} value={selectedAccount?.name ?? "No accounts"} />
+              <SelectInput label={isTransfer ? "From Account" : "Account"} onChange={handleAccountChange} options={accounts.length > 0 ? getAccountOptionLabels(accounts) : ["No accounts"]} value={selectedAccount ? getAccountOptionLabel(selectedAccount, accounts) : "No accounts"} />
               {isTransfer ? (
-                <SelectInput label="To Account" onChange={(name) => setTransferToAccountId(accounts.find((account) => account.name === name)?.id ?? "")} options={accounts.filter((account) => account.id !== accountId).map((account) => account.name)} value={selectedTransferAccount?.name ?? accounts.find((account) => account.id !== accountId)?.name ?? ""} />
+                <SelectInput
+                  label="To Account"
+                  onChange={(name) => setTransferToAccountId(findAccountByOptionLabel(transferAccountOptions, name)?.id ?? "")}
+                  options={getAccountOptionLabels(transferAccountOptions)}
+                  value={selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : ""}
+                />
               ) : (
                 <SelectInput label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
               )}
@@ -250,7 +254,6 @@ export function AddTransactionForm({
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
-              <SelectInput label="Payment Method" onChange={setPaymentMethod} options={isTransfer ? ["Internal Transfer", "Bank Transfer", "Wallet Transfer"] : ["Cash", "Debit Card", "Credit Card", "Bank Transfer", "Digital Wallet", "Direct Deposit"]} value={paymentMethod} />
               <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
             </div>
           </FormCard>
@@ -290,9 +293,9 @@ export function AddTransactionForm({
           <h3 className="mt-2 text-center"><ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatPreviewAmount(amount, selectedType)}</ResponsiveAmount></h3>
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Date</span><span className="text-sm font-semibold text-[#0b1c30]">{formatDatePreview(transactionDate)}</span></div>
-            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Account</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount?.name ?? "No account"}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Account</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accounts) : "No account"}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveAccountAmountType}</span></div>
-            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount?.name ?? "No account" : selectedCategory?.name ?? "No category"}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : "No account" : selectedCategory?.name ?? "No category"}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedRelatedOption?.label ?? "No linked record"}</span></div>
             <div className="border-t border-[#c6c6cd]/40 pt-4"><span className="text-xs font-bold uppercase text-[#45464d]">Note</span><p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">{note.trim() || "Add transaction note"}</p></div>
           </div>

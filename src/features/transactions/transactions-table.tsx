@@ -183,7 +183,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         </div>
       </div>
       <div className="hidden overflow-x-auto lg:block">
-        <table className="w-full min-w-[1040px] border-collapse text-left">
+        <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/60 bg-[#f8f9ff]">
               <th className="w-12 px-4 py-3 text-center">
@@ -201,7 +201,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Amount Type</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Payment Method</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Amount</th>
               <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Note</th>
               <th className="w-16 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">
@@ -237,7 +236,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.account}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.accountAmountType}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.paymentMethod}</td>
                   <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${amountClass(transaction.type)}`}>
                     {transaction.amount}
                   </td>
@@ -435,7 +433,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             </div>
             <DetailModalSection title="Transaction information">
               <DetailModalField label="Date" value={viewedTransaction.date} />
-              <DetailModalField label="Payment method" value={viewedTransaction.paymentMethod} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
               <DetailModalField label="Amount type" value={viewedTransaction.accountAmountType} />
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />

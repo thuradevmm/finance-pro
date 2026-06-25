@@ -64,9 +64,11 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
-  const storedPurchaseAmount = numericValue(row.purchase_amount ?? metadata.purchase_amount);
+  const storedPurchaseAmount = numericValue(row.purchase_amount) || numericValue(metadata.purchase_amount);
   const purchaseAmountValue = storedPurchaseAmount || (linkedPurchasesByAssetId.get(row.id) ?? 0);
-  const currentValueValue = numericValue(row.current_value ?? metadata.current_value, purchaseAmountValue);
+  const currentValueValue = numericValue(row.current_value) || numericValue(metadata.current_value, purchaseAmountValue);
+  const purchaseDate = row.purchase_date ?? (typeof metadata.purchase_date === "string" ? metadata.purchase_date : "");
+  const startUsingDate = row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : purchaseDate);
 
   return {
     bg: category?.bg ?? "bg-[#eff6ff]",
@@ -81,8 +83,8 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
     note: row.description ?? (typeof metadata.note === "string" ? metadata.note : ""),
     purchaseAmount: formatMmk(purchaseAmountValue),
     purchaseAmountValue,
-    purchaseDate: row.purchase_date ?? "",
-    startUsingDate: row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : row.purchase_date ?? ""),
+    purchaseDate,
+    startUsingDate,
     status: normalizeStatus(row.status ?? metadata.status),
     tone: category?.tone ?? "text-[#0058be]",
     usageDuration: "",

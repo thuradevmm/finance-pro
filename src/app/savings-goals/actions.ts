@@ -23,7 +23,13 @@ function goalPayload(input: SavingsGoalFormData) {
     metadata: {
       account_id: input.accountId || null,
       category_id: input.categoryId || null,
+      current_amount: input.savedAmount,
       description: input.description.trim(),
+      monthly_contribution: input.monthlyContribution,
+      saved_amount: input.savedAmount,
+      status: input.savedAmount >= input.targetAmount ? "completed" : "active",
+      target_amount: input.targetAmount,
+      target_date: input.targetDate,
     },
     monthly_contribution: input.monthlyContribution,
     name: input.name.trim(),
