@@ -11,7 +11,7 @@ import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls"
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
-import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SubscriptionFormData, SubscriptionRecordWithValues } from "@/lib/subscriptions/supabase";
@@ -158,7 +158,10 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Subscription Category" onChange={(name) => setCategoryId(subscriptionCategories.find((category) => category.name === name)?.id ?? "")} options={subscriptionCategories.length > 0 ? subscriptionCategories.map((category) => category.name) : ["No subscription categories"]} value={selectedCategory?.name ?? "No subscription categories"} />
-            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No accounts"} />
+            <div>
+              <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No accounts"} />
+              {selectedAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedAccount)}</p> : null}
+            </div>
           </div>
           <div className="mt-5">
             <SelectInput label="Status" onChange={(value) => setStatus(value as SubscriptionStatus)} options={["Active", "Paused", "Expiring"]} value={status} />

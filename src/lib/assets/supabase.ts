@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatMmk } from "@/lib/currency";
+import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { AssetRecord, AssetStatus, SummaryMetric } from "@/types/finance";
 
@@ -18,13 +19,19 @@ export type AssetFormData = {
 
 export type AssetRecordWithValues = AssetRecord & {
   categoryId: string;
+  createdAtValue: string;
   currentValueValue: number;
   purchaseAmountValue: number;
+  purchaseDateTimeValue: string;
+  purchaseDateValue: string;
+  startUsingDateTimeValue: string;
+  startUsingDateValue: string;
 };
 
 type AssetRow = {
   category_id?: string | null;
   condition?: string | null;
+  created_at?: string | null;
   current_value?: number | string | null;
   description?: string | null;
   id: string;
@@ -67,14 +74,15 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   const storedPurchaseAmount = numericValue(row.purchase_amount) || numericValue(metadata.purchase_amount);
   const purchaseAmountValue = storedPurchaseAmount || (linkedPurchasesByAssetId.get(row.id) ?? 0);
   const currentValueValue = numericValue(row.current_value) || numericValue(metadata.current_value, purchaseAmountValue);
-  const purchaseDate = row.purchase_date ?? (typeof metadata.purchase_date === "string" ? metadata.purchase_date : "");
-  const startUsingDate = row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : purchaseDate);
+  const purchaseDateValue = row.purchase_date ?? (typeof metadata.purchase_date === "string" ? metadata.purchase_date : "");
+  const startUsingDateValue = row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : purchaseDateValue);
 
   return {
     bg: category?.bg ?? "bg-[#eff6ff]",
     category: category?.name ?? "Uncategorized",
     categoryId,
     condition: normalizeCondition(row.condition ?? metadata.condition),
+    createdAtValue: row.created_at ?? "",
     currentValue: formatMmk(currentValueValue),
     currentValueValue,
     icon: category?.icon ?? "box",
@@ -83,8 +91,12 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
     note: row.description ?? (typeof metadata.note === "string" ? metadata.note : ""),
     purchaseAmount: formatMmk(purchaseAmountValue),
     purchaseAmountValue,
-    purchaseDate,
-    startUsingDate,
+    purchaseDate: formatDisplayDate(purchaseDateValue, ""),
+    purchaseDateTimeValue: combineDateWithTimestampTime(purchaseDateValue, row.created_at),
+    purchaseDateValue,
+    startUsingDate: formatDisplayDate(startUsingDateValue, ""),
+    startUsingDateTimeValue: combineDateWithTimestampTime(startUsingDateValue, row.created_at),
+    startUsingDateValue,
     status: normalizeStatus(row.status ?? metadata.status),
     tone: category?.tone ?? "text-[#0058be]",
     usageDuration: "",
@@ -107,7 +119,9 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
       (linkedPurchasesByAssetId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),
     );
   }
-  return (assetsResult.data as AssetRow[]).map((row) => mapAsset(row, categoriesById, linkedPurchasesByAssetId));
+  return (assetsResult.data as AssetRow[])
+    .map((row) => mapAsset(row, categoriesById, linkedPurchasesByAssetId))
+    .sort((first, second) => dateTimeSortValue(second.purchaseDateTimeValue) - dateTimeSortValue(first.purchaseDateTimeValue));
 }
 
 export async function getAsset(supabase: SupabaseClient, userId: string, assetId: string, categories: CategoryRecord[]) {

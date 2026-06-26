@@ -11,8 +11,9 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
+import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import type { TransactionType } from "@/types/finance";
@@ -64,13 +65,6 @@ function SelectInput({ label, onChange, options, value }: { label: string; onCha
   );
 }
 
-function formatDatePreview(value: string) {
-  if (!value) return "-";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-}
-
 function formatPreviewAmount(amount: string, type: TransactionType) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) return formatMmkPreview(0);
@@ -97,7 +91,8 @@ export function AddTransactionForm({
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? new Date().toISOString().slice(0, 10));
   const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? "");
   const [accountAmountType, setAccountAmountType] = useState(transaction?.accountAmountType ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
-  const [transferToAccountId, setTransferToAccountId] = useState(transaction?.transferAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? "");
+  const [transferToAccountId, setTransferToAccountId] = useState(transaction?.transferAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
+  const [transferAccountAmountType, setTransferAccountAmountType] = useState(transaction?.transferAccountAmountType ?? accounts.find((account) => account.id !== accountId)?.balanceBreakdowns[0]?.type ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
@@ -117,9 +112,16 @@ export function AddTransactionForm({
     return accountAmountType && !optionNames.includes(accountAmountType) ? [accountAmountType, ...optionNames] : optionNames;
   }, [accountAmountType, selectedAccount]);
   const effectiveAccountAmountType = accountAmountTypeOptions.includes(accountAmountType) ? accountAmountType : accountAmountTypeOptions[0] ?? "General";
-  const transferAccountOptions = useMemo(() => accounts.filter((account) => account.id !== accountId), [accountId, accounts]);
+  const transferAccountOptions = accounts;
   const selectedTransferAccount = transferAccountOptions.find((account) => account.id === transferToAccountId) ?? transferAccountOptions[0];
   const effectiveTransferToAccountId = selectedTransferAccount?.id ?? "";
+  const transferAccountAmountTypeOptions = useMemo(() => {
+    const optionNames = selectedTransferAccount?.balanceBreakdowns.map((breakdown) => breakdown.type) ?? [];
+    return transferAccountAmountType && !optionNames.includes(transferAccountAmountType) ? [transferAccountAmountType, ...optionNames] : optionNames;
+  }, [selectedTransferAccount, transferAccountAmountType]);
+  const effectiveTransferAccountAmountType = transferAccountAmountTypeOptions.includes(transferAccountAmountType)
+    ? transferAccountAmountType
+    : transferAccountAmountTypeOptions[0] ?? "General";
   const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
@@ -134,6 +136,7 @@ export function AddTransactionForm({
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;
   const accountHasError = showErrors && !accountId;
+  const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
   const categoryHasError = showErrors && !isTransfer && !categoryId;
   const debtLinkHasError = showErrors && requiresDebtLink && effectiveRelatedOption?.type !== "debt";
   const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
@@ -158,10 +161,17 @@ export function AddTransactionForm({
     setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
   }
 
+  function handleTransferAccountChange(name: string) {
+    const nextAccount = findAccountByOptionLabel(transferAccountOptions, name);
+    setTransferToAccountId(nextAccount?.id ?? "");
+    setTransferAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
+  }
+
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasMissingDebtLink = requiresDebtLink && effectiveRelatedOption?.type !== "debt";
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasMissingDebtLink || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
+    const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasMissingDebtLink || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -178,6 +188,7 @@ export function AddTransactionForm({
       status,
       title: note.trim() || `${selectedType} transaction`,
       transferAccountId: isTransfer ? effectiveTransferToAccountId : "",
+      transferAccountAmountType: isTransfer ? effectiveTransferAccountAmountType : "",
       type: selectedType,
     };
 
@@ -255,7 +266,7 @@ export function AddTransactionForm({
               {isTransfer ? (
                 <SelectInput
                   label="To Account"
-                  onChange={(name) => setTransferToAccountId(findAccountByOptionLabel(transferAccountOptions, name)?.id ?? "")}
+                  onChange={handleTransferAccountChange}
                   options={getAccountOptionLabels(transferAccountOptions)}
                   value={selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : ""}
                 />
@@ -263,13 +274,27 @@ export function AddTransactionForm({
                 <SelectInput label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
               )}
             </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <p className="text-xs font-semibold text-[#76777d]">{selectedAccount ? getAccountOptionDescription(selectedAccount) : ""}</p>
+              {isTransfer ? <p className="text-xs font-semibold text-[#76777d]">{selectedTransferAccount ? getAccountOptionDescription(selectedTransferAccount) : ""}</p> : null}
+            </div>
             {accountHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select an account.</p> : null}
             {categoryHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select a category.</p> : null}
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
-              <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
+              {isTransfer ? (
+                <SelectInput label="To Account Amount Type" onChange={setTransferAccountAmountType} options={transferAccountAmountTypeOptions.length > 0 ? transferAccountAmountTypeOptions : ["General"]} value={effectiveTransferAccountAmountType} />
+              ) : (
+                <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
+              )}
             </div>
+            {isTransfer ? (
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
+              </div>
+            ) : null}
+            {transferAmountTypeHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Choose a different amount type when transferring within the same account.</p> : null}
             {availableAmountHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">This {effectiveAccountAmountType} transaction exceeds the available amount for the selected account.</p> : null}
           </FormCard>
 
@@ -288,8 +313,13 @@ export function AddTransactionForm({
             {debtLinkHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Credit card charges and payments must be linked to a debt record.</p> : null}
           </FormCard>
 
+          {formError ? (
+            <div className="rounded-lg border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium leading-6 text-[#991b1b]" role="alert">
+              {formError}
+            </div>
+          ) : null}
+
           <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
-            {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
             <Link className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]" href="/transactions">Cancel</Link>
             <button className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff] disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || Boolean(transaction)} onClick={() => handleSaveTransaction(true)} type="button">Save & Add Another</button>
             <LoadingButton className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]" isLoading={isSaving} loadingLabel="Saving…" onClick={() => handleSaveTransaction(false)} type="button">Save Transaction</LoadingButton>
@@ -305,10 +335,11 @@ export function AddTransactionForm({
           <p className="text-center text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
           <h3 className="mt-2 text-center"><ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatPreviewAmount(amount, selectedType)}</ResponsiveAmount></h3>
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
-            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Date</span><span className="text-sm font-semibold text-[#0b1c30]">{formatDatePreview(transactionDate)}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Date</span><span className="text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(transactionDate, "-")}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Account</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accounts) : "No account"}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveAccountAmountType}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : "No account" : selectedCategory?.name ?? "No category"}</span></div>
+            {isTransfer ? <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">To Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveTransferAccountAmountType}</span></div> : null}
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveRelatedOption?.label ?? "No linked record"}</span></div>
             <div className="border-t border-[#c6c6cd]/40 pt-4"><span className="text-xs font-bold uppercase text-[#45464d]">Note</span><p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">{note.trim() || "Add transaction note"}</p></div>
           </div>

@@ -13,7 +13,7 @@ import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
-import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 
@@ -125,7 +125,7 @@ export function AddSavingsGoalForm({
               options={accountOptions.length > 0 ? getAccountOptionLabels(accountOptions) : ["No accounts available"]}
               value={selectedAccountName || "No accounts available"}
             />
-            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "Create an account before linking a savings goal."}</p>
+            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount ? getAccountOptionDescription(selectedAccount) : "Create an account before linking a savings goal."}</p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">

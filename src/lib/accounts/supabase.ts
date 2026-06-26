@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
+import { formatDisplayDate } from "@/lib/date-format";
 import type { AccountAmountType, AccountStatus, AccountType, FinancialAccount, SummaryMetric } from "@/types/finance";
 
 export type AccountRecord = FinancialAccount & {
@@ -41,24 +42,20 @@ function compactIdentifier(value: string) {
 
 export function getAccountOptionLabel(account: AccountRecord, accounts: AccountRecord[] = []) {
   const identifier = compactIdentifier(account.bankBookAccountNumber || account.mobileBankingAccountNumber || account.phoneNumber || account.cardNumber);
-  const baseLabel = [
-    account.name,
-    account.type,
-    account.institution,
-    identifier,
-  ].filter(Boolean).join(" · ");
+  const baseLabel = account.name || "Unnamed account";
+  const duplicateNames = accounts.filter((item) => (item.name || "Unnamed account") === baseLabel);
+  if (duplicateNames.length <= 1) return baseLabel;
 
-  const hasDuplicateLabel = accounts.filter((item) => {
-    const itemIdentifier = compactIdentifier(item.bankBookAccountNumber || item.mobileBankingAccountNumber || item.phoneNumber || item.cardNumber);
-    return [
-      item.name,
-      item.type,
-      item.institution,
-      itemIdentifier,
-    ].filter(Boolean).join(" · ") === baseLabel;
-  }).length > 1;
+  const labelWithInstitution = [baseLabel, account.institution].filter(Boolean).join(" · ");
+  const duplicateInstitutionLabels = duplicateNames.filter((item) => {
+    return [item.name || "Unnamed account", item.institution].filter(Boolean).join(" · ") === labelWithInstitution;
+  });
+  if (labelWithInstitution !== baseLabel && duplicateInstitutionLabels.length <= 1) return labelWithInstitution;
 
-  return hasDuplicateLabel ? `${baseLabel} · ${account.id.slice(0, 8)}` : baseLabel;
+  const labelWithIdentifier = [labelWithInstitution, identifier].filter(Boolean).join(" · ");
+  if (labelWithIdentifier !== labelWithInstitution) return labelWithIdentifier;
+
+  return `${baseLabel} · ${account.id.slice(0, 8)}`;
 }
 
 export function getAccountOptionLabels(accounts: AccountRecord[]) {
@@ -67,6 +64,16 @@ export function getAccountOptionLabels(accounts: AccountRecord[]) {
 
 export function findAccountByOptionLabel(accounts: AccountRecord[], label: string) {
   return accounts.find((account) => getAccountOptionLabel(account, accounts) === label);
+}
+
+export function getAccountOptionDescription(account: AccountRecord) {
+  const identifier = compactIdentifier(account.bankBookAccountNumber || account.mobileBankingAccountNumber || account.phoneNumber || account.cardNumber);
+  return [
+    account.type,
+    account.category || "Uncategorized",
+    account.institution,
+    identifier,
+  ].filter(Boolean).join(" · ");
 }
 
 type AccountRow = {
@@ -196,6 +203,7 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
     const amount = numericValue(transaction.amount);
     const metadata = metadataRecord(transaction.metadata);
     const amountType = normalizeAmountType(metadata.account_amount_type);
+    const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
     const type = transaction.type.toLowerCase();
 
     if (transaction.account_id) {
@@ -219,7 +227,7 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
       const isCreditCard = isCreditCardType(accountTypes.get(transaction.transfer_account_id));
       transferActivity.transactionCount += 1;
       transferActivity.inflow += amount;
-      addActivityDelta(transferActivity, amountType, isCreditCard ? -amount : amount);
+      addActivityDelta(transferActivity, transferAmountType, isCreditCard ? -amount : amount);
     }
   }
 
@@ -277,7 +285,7 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
     id: row.id,
     institution: typeof metadata.institution === "string" ? metadata.institution : "",
     initialBalanceValue,
-    lastUpdated: new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(row.updated_at ?? row.created_at)),
+    lastUpdated: formatDisplayDate(new Date(row.updated_at ?? row.created_at)),
     monthlyBudgetLimit: metadata.monthly_budget_limit == null ? null : numericValue(metadata.monthly_budget_limit),
     monthlyInflow: formatMmk(activity.inflow),
     monthlyOutflow: formatMmk(activity.outflow),

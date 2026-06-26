@@ -7,11 +7,13 @@ import { useSearchParams } from "next/navigation";
 import { deleteBudget } from "@/app/budgets/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { formatMmk } from "@/lib/currency";
 import type { BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
+type BudgetSortKey = "actual" | "budget" | "category" | "remaining" | "status" | "usage";
 
 const statusStyles: Record<BudgetStatus, string> = {
   "Under Budget": "bg-[#ecfdf5] text-[#166534]",
@@ -128,6 +130,28 @@ function UsageMeter({ budget }: { budget: BudgetCategory }) {
 }
 
 function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]; onDelete: (id: string) => void }) {
+  const [sortKey, setSortKey] = useState<BudgetSortKey>("category");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const sortedBudgets = useMemo(() => {
+    function value(budget: BudgetCategory) {
+      if (sortKey === "category" || sortKey === "status") return String(budget[sortKey]).toLowerCase();
+      if (sortKey === "usage") return budget.usagePercent;
+      return parseCurrency(budget[sortKey]);
+    }
+    return [...budgets].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
+  }, [budgets, sortDirection, sortKey]);
+
+  function handleSort(key: BudgetSortKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "category" || key === "status" ? "asc" : "desc");
+      return key;
+    });
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -141,17 +165,17 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
         <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50 bg-white">
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Category</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Budget</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Actual</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Remaining</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Usage</th>
-              <th className="px-4 py-3 text-xs font-semibold uppercase text-[#45464d]">Status</th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Category</SortHeader></th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("budget")} sortDirection={sortKey === "budget" ? sortDirection : undefined}>Budget</SortHeader></th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("actual")} sortDirection={sortKey === "actual" ? sortDirection : undefined}>Actual</SortHeader></th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("remaining")} sortDirection={sortKey === "remaining" ? sortDirection : undefined}>Remaining</SortHeader></th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("usage")} sortDirection={sortKey === "usage" ? sortDirection : undefined}>Usage</SortHeader></th>
+              <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="w-28 px-4 py-3 text-right text-xs font-semibold uppercase text-[#45464d]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {budgets.map((budget) => (
+            {sortedBudgets.map((budget) => (
               <tr className={budget.status === "Over Budget" ? "bg-[#fff1f0]/50 transition hover:bg-[#fff1f0]" : "transition hover:bg-[#f8f9ff]"} key={budget.id}>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">

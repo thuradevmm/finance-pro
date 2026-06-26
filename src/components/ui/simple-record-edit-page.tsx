@@ -8,6 +8,7 @@ import { useInteractionLoading } from "@/components/app/interaction-loading-prov
 import { SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import { formatDisplayDate } from "@/lib/date-format";
 import { formatMmk } from "@/lib/currency";
 
 export type SimpleEditField = {
@@ -81,7 +82,7 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
       return "";
     }
 
-    return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+    return formatDisplayDate(value);
   }
 
   function getMetricValue(metric: { format?: "usageDurationFromDate"; key: string }) {

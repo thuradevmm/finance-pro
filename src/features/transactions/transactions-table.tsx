@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { deleteTransaction } from "@/app/transactions/actions";
+import { deleteTransaction, reverseTransaction } from "@/app/transactions/actions";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
+import { dateTimeSortValue } from "@/lib/date-format";
 import type { Transaction } from "@/types/finance";
 
 type TransactionsTableProps = {
@@ -16,7 +18,9 @@ type TransactionsTableProps = {
   totalResults: number;
 };
 
-const transactionsPerPage = 10;
+const rowsPerPageOptions = [10, 25, 50, 100];
+
+type SortKey = "account" | "amount" | "amountType" | "category" | "date" | "note" | "type";
 
 function AttachmentIcon({ attachment }: { attachment?: Transaction["attachment"] }) {
   if (!attachment) {
@@ -65,38 +69,66 @@ function getImpactLabel(transaction: Transaction) {
   return "No linked record";
 }
 
-type TransactionAction = "view" | "edit" | "delete";
+type TransactionAction = "view" | "edit" | "reverse" | "delete";
 
 const transactionActions: {
   label: string;
   action: TransactionAction;
-  icon: "eye" | "edit" | "trash";
+  icon: "eye" | "edit" | "sync" | "trash";
   tone: string;
 }[] = [
   { label: "View details", action: "view", icon: "eye", tone: "text-[#45464d] hover:text-[#0b1c30]" },
   { label: "Edit transaction", action: "edit", icon: "edit", tone: "text-[#45464d] hover:text-[#0b1c30]" },
+  { label: "Reverse transaction", action: "reverse", icon: "sync", tone: "text-[#4f46e5] hover:text-[#3730a3]" },
   { label: "Delete transaction", action: "delete", icon: "trash", tone: "text-[#b42318] hover:text-[#8f1d14]" },
 ];
 
+function parseCurrency(value: string) {
+  return Number(value.replace(/[^0-9.-]/g, "")) || 0;
+}
+
+function sortableValue(transaction: Transaction, key: SortKey) {
+  if (key === "amount") return transaction.amountValue ?? parseCurrency(transaction.amount);
+  if (key === "date") return dateTimeSortValue(transaction.dateTimeValue ?? `${transaction.dateValue ?? transaction.date}T00:00:00`);
+  if (key === "amountType") return `${transaction.accountAmountType} ${transaction.transferAccountAmountType ?? ""}`.toLowerCase();
+  return String(transaction[key] ?? "").toLowerCase();
+}
+
+function compareTransactions(first: Transaction, second: Transaction, key: SortKey, direction: SortDirection) {
+  const firstValue = sortableValue(first, key);
+  const secondValue = sortableValue(second, key);
+  return compareSortValues(firstValue, secondValue, direction);
+}
+
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [deletedTransactionIds, setDeletedTransactionIds] = useState<string[]>([]);
+  const [reversedTransactionIds, setReversedTransactionIds] = useState<string[]>([]);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [deleteError, setDeleteError] = useState("");
+  const [reverseError, setReverseError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [reversingTransactionId, setReversingTransactionId] = useState("");
   const visibleTransactions = useMemo(
     () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
     [deletedTransactionIds, transactions],
   );
-  const pageCount = Math.max(Math.ceil(visibleTransactions.length / transactionsPerPage), 1);
+  const sortedTransactions = useMemo(
+    () => [...visibleTransactions].sort((first, second) => compareTransactions(first, second, sortKey, sortDirection)),
+    [sortDirection, sortKey, visibleTransactions],
+  );
+  const pageCount = Math.max(Math.ceil(sortedTransactions.length / rowsPerPage), 1);
   const effectiveCurrentPage = Math.min(currentPage, pageCount);
-  const pageStartIndex = (effectiveCurrentPage - 1) * transactionsPerPage;
-  const paginatedTransactions = visibleTransactions.slice(pageStartIndex, pageStartIndex + transactionsPerPage);
-  const resultStart = visibleTransactions.length > 0 ? pageStartIndex + 1 : 0;
-  const resultEnd = Math.min(pageStartIndex + paginatedTransactions.length, visibleTransactions.length);
-  const visibleTotalResults = Math.min(totalResults, visibleTransactions.length);
+  const pageStartIndex = (effectiveCurrentPage - 1) * rowsPerPage;
+  const paginatedTransactions = sortedTransactions.slice(pageStartIndex, pageStartIndex + rowsPerPage);
+  const resultStart = sortedTransactions.length > 0 ? pageStartIndex + 1 : 0;
+  const resultEnd = Math.min(pageStartIndex + paginatedTransactions.length, sortedTransactions.length);
+  const visibleTotalResults = Math.min(totalResults, sortedTransactions.length);
   const pageTransactionIds = useMemo(() => paginatedTransactions.map((transaction) => transaction.id), [paginatedTransactions]);
   const selectedVisibleTransactions = useMemo(
     () => visibleTransactions.filter((transaction) => selectedTransactionIds.includes(transaction.id)),
@@ -128,7 +160,36 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     if (action === "delete") {
       setViewedTransaction(null);
       setDeletingTransaction(transaction);
+      return;
     }
+
+    if (action === "reverse") {
+      void confirmReverseTransaction(transaction);
+    }
+  }
+
+  function handleSort(key: SortKey) {
+    setCurrentPage(1);
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "date" || key === "amount" ? "desc" : "asc");
+      return key;
+    });
+  }
+
+  async function confirmReverseTransaction(transaction: Transaction) {
+    setReversingTransactionId(transaction.id);
+    setReverseError("");
+    const result = await reverseTransaction(transaction.id);
+    setReversingTransactionId("");
+    if (result.error) {
+      setReverseError(result.error);
+      return;
+    }
+    setReversedTransactionIds((ids) => [...ids, transaction.id]);
   }
 
   async function confirmDeleteTransaction() {
@@ -228,6 +289,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   return (
     <section className="space-y-3 lg:overflow-hidden lg:rounded-lg lg:border lg:border-[#c6c6cd]/70 lg:bg-white lg:shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       {deleteError ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{deleteError}</div> : null}
+      {reverseError ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{reverseError}</div> : null}
       <div
         className={`flex min-h-14 flex-col gap-3 rounded-lg border px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-t-0 ${
           hasSelectedTransactions
@@ -273,13 +335,13 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   type="checkbox"
                 />
               </th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Date</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-              <th className="w-40 px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Amount Type</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Amount</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Note</th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("date")} sortDirection={sortKey === "date" ? sortDirection : undefined}>Date</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("type")} sortDirection={sortKey === "type" ? sortDirection : undefined}>Type</SortHeader></th>
+              <th className="w-40 px-4 py-3"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Category</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("account")} sortDirection={sortKey === "account" ? sortDirection : undefined}>Account</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("amountType")} sortDirection={sortKey === "amountType" ? sortDirection : undefined}>Amount Type</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("amount")} sortDirection={sortKey === "amount" ? sortDirection : undefined}>Amount</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("note")} sortDirection={sortKey === "note" ? sortDirection : undefined}>Note</SortHeader></th>
               <th className="w-16 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">
                 <span className="sr-only">Attachment</span>
                 <span className="mx-auto grid size-8 place-items-center rounded-md text-[#45464d]" title="File">
@@ -313,8 +375,14 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                       <CategoryBadge category={transaction.category} />
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.account}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.accountAmountType}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">
+                    {transaction.account}
+                    {transaction.transferAccount ? <span className="block text-xs font-medium text-[#76777d]">to {transaction.transferAccount}</span> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">
+                    {transaction.accountAmountType}
+                    {transaction.transferAccountAmountType ? <span className="block text-xs font-medium text-[#76777d]">to {transaction.transferAccountAmountType}</span> : null}
+                  </td>
                   <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${amountClass(transaction.type)}`}>
                     {transaction.amount}
                   </td>
@@ -341,9 +409,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                           <button
                             aria-label={`${item.label} for ${transaction.id}`}
                             className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                            disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
                             key={item.action}
                             onClick={() => handleAction(item.action, transaction)}
-                            title={item.label}
+                            title={item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
                             type="button"
                           >
                             <Icon className="size-4" name={item.icon} />
@@ -391,10 +460,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 <TransactionTypeBadge type={transaction.type} />
                 <CategoryBadge category={transaction.category} />
                 <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {transaction.account}
+                  {transaction.transferAccount ? `${transaction.account} → ${transaction.transferAccount}` : transaction.account}
                 </span>
                 <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {transaction.accountAmountType}
+                  {transaction.transferAccountAmountType ? `${transaction.accountAmountType} → ${transaction.transferAccountAmountType}` : transaction.accountAmountType}
                 </span>
               </div>
               <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
@@ -413,9 +482,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <button
                       aria-label={`${item.label} for ${transaction.id}`}
                       className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                      disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
                       key={item.action}
                       onClick={() => handleAction(item.action, transaction)}
-                      title={item.label}
+                      title={item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
                       type="button"
                     >
                       <Icon className="size-4" name={item.icon} />
@@ -433,11 +503,26 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-[#f8f9ff]">
-        <p className="text-sm text-[#45464d]">
-          Showing <span className="font-semibold text-[#0b1c30]">{resultStart}</span> to{" "}
-          <span className="font-semibold text-[#0b1c30]">{resultEnd}</span> of{" "}
-          <span className="font-semibold text-[#0b1c30]">{visibleTotalResults}</span> results
-        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <p className="text-sm text-[#45464d]">
+            Showing <span className="font-semibold text-[#0b1c30]">{resultStart}</span> to{" "}
+            <span className="font-semibold text-[#0b1c30]">{resultEnd}</span> of{" "}
+            <span className="font-semibold text-[#0b1c30]">{visibleTotalResults}</span> results
+          </p>
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#45464d]">
+            Rows
+            <select
+              className="h-9 rounded-md border border-[#c6c6cd] bg-white px-2 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+              onChange={(event) => {
+                setRowsPerPage(Number(event.target.value));
+                setCurrentPage(1);
+              }}
+              value={rowsPerPage}
+            >
+              {rowsPerPageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        </div>
         <nav aria-label="Pagination" className="inline-flex w-fit overflow-hidden rounded-md border border-[#c6c6cd] bg-white shadow-sm">
           <button
             aria-label="Previous page"
@@ -522,6 +607,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               <DetailModalField label="Date" value={viewedTransaction.date} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
               <DetailModalField label="Amount type" value={viewedTransaction.accountAmountType} />
+              {viewedTransaction.transferAccount ? <DetailModalField label="To account" value={viewedTransaction.transferAccount} /> : null}
+              {viewedTransaction.transferAccountAmountType ? <DetailModalField label="To amount type" value={viewedTransaction.transferAccountAmountType} /> : null}
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
               <DetailModalField label="Reflects to" value={getImpactLabel(viewedTransaction)} />
             </DetailModalSection>

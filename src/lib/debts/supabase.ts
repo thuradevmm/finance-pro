@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
+import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { DebtRecord, DebtStatus, SummaryMetric, UpcomingDebtPayment } from "@/types/finance";
 
@@ -28,6 +29,7 @@ export type DebtInterestRatePeriod = "Monthly" | "Yearly";
 
 export type DebtRecordWithValues = DebtRecord & {
   categoryId: string;
+  createdAtValue: string;
   durationMonths: number;
   interestRatePeriod: DebtInterestRatePeriod;
   interestRateValue: number;
@@ -44,6 +46,7 @@ export type DebtRecordWithValues = DebtRecord & {
 
 type DebtRow = {
   category_id?: string | null;
+  created_at?: string | null;
   description?: string | null;
   id: string;
   interest_rate?: number | string | null;
@@ -110,10 +113,7 @@ function normalizeStatus(value: unknown, remaining: number): DebtStatus {
 }
 
 function formatDate(value: string) {
-  if (!value) return "Not set";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  return formatDisplayDate(value);
 }
 
 function mapDebt(
@@ -141,6 +141,7 @@ function mapDebt(
   return {
     ...appearance,
     categoryId,
+    createdAtValue: row.created_at ?? "",
     durationMonths,
     id: row.id,
     interestRate: `${numericValue(row.interest_rate) || numericValue(metadata.interest_rate)}% ${interestRatePeriod.toLowerCase()}`,
@@ -151,6 +152,7 @@ function mapDebt(
     monthlyPaymentValue,
     name: row.name,
     nextPaymentDate: formatDate(nextPaymentDateValue),
+    nextPaymentDateTimeValue: combineDateWithTimestampTime(nextPaymentDateValue, row.created_at),
     nextPaymentDateValue,
     notes: row.description ?? (typeof metadata.notes === "string" ? metadata.notes : ""),
     paymentAccountId: row.payment_account_id ?? (typeof metadata.payment_account_id === "string" ? metadata.payment_account_id : ""),
@@ -192,7 +194,9 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
     const targetMap = isCreditCardCharge && !isCreditCardPayment ? linkedChargesByDebtId : linkedRepaymentsByDebtId;
     targetMap.set(transaction.related_entity_id, (targetMap.get(transaction.related_entity_id) ?? 0) + amount);
   }
-  return (debtsResult.data as DebtRow[]).map((row) => mapDebt(row, categoriesById, linkedChargesByDebtId, linkedRepaymentsByDebtId));
+  return (debtsResult.data as DebtRow[])
+    .map((row) => mapDebt(row, categoriesById, linkedChargesByDebtId, linkedRepaymentsByDebtId))
+    .sort((first, second) => dateTimeSortValue(first.nextPaymentDateTimeValue ?? "") - dateTimeSortValue(second.nextPaymentDateTimeValue ?? ""));
 }
 
 export async function getDebt(supabase: SupabaseClient, userId: string, debtId: string, categories: CategoryRecord[]) {
@@ -215,10 +219,12 @@ export function getUpcomingDebtPayments(debts: DebtRecordWithValues[]): Upcoming
   const today = Date.now();
   return debts
     .filter((debt) => debt.status !== "Paid" && debt.nextPaymentDateValue)
+    .sort((first, second) => dateTimeSortValue(first.nextPaymentDateTimeValue ?? "") - dateTimeSortValue(second.nextPaymentDateTimeValue ?? ""))
     .slice(0, 5)
     .map((debt) => ({
       amount: debt.monthlyPayment,
       debtName: debt.name,
+      dueDateTimeValue: debt.nextPaymentDateTimeValue,
       dueLabel: debt.nextPaymentDate,
       id: debt.id,
       isOverdue: new Date(`${debt.nextPaymentDateValue}T23:59:59`).getTime() < today,

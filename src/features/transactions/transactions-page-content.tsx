@@ -75,7 +75,7 @@ function matchesAmountFilter(transaction: Transaction, amountFilter: string) {
 }
 
 function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: string) {
-  const transactionTime = new Date(transaction.date).getTime();
+  const transactionTime = new Date(`${transaction.dateValue ?? transaction.date}T00:00:00`).getTime();
   const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const toTime = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : Number.POSITIVE_INFINITY;
 
@@ -86,10 +86,10 @@ function filterTransactions(transactions: Transaction[], filters: SearchableTran
   const normalizedSearch = filters.search.trim().toLowerCase();
 
   return transactions.filter((transaction) => {
-    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.amount} ${transaction.note}`.toLowerCase();
+    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.transferAccount ?? ""} ${transaction.transferAccountAmountType ?? ""} ${transaction.amount} ${transaction.note}`.toLowerCase();
     const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
-    const matchesAccount = filters.account === "Account" || transaction.account === filters.account;
+    const matchesAccount = filters.account === "Account" || transaction.account === filters.account || transaction.transferAccount === filters.account;
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
     return (
@@ -124,6 +124,10 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
+    setAppliedFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
+    if (key === "type") {
+      setActiveTab(value === "Type" ? "All" : (value as TransactionTab));
+    }
   }
 
   function applyFilters() {

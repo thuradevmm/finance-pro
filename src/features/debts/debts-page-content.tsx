@@ -7,7 +7,9 @@ import { deleteDebt } from "@/app/debts/actions";
 import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { RecordActions } from "@/components/ui/record-actions";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { formatMmk } from "@/lib/currency";
+import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
 import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
@@ -16,6 +18,11 @@ const statusStyles: Record<DebtStatus, string> = {
   Overdue: "bg-[#ffdad6] text-[#93000a]",
   Paid: "bg-[#6ffbbe] text-[#005236]",
 };
+type DebtSortKey = "monthlyPayment" | "name" | "remainingBalance" | "repaidAmount" | "status" | "totalAmount";
+
+function parseCurrency(value: string) {
+  return Number(value.replace(/[^0-9.-]/g, "")) || 0;
+}
 
 function DebtProgress({ debt }: { debt: DebtRecord }) {
   const color = debt.status === "Overdue" ? "bg-[#ba1a1a]" : debt.status === "Paid" ? "bg-[#047857]" : "bg-[#0058be]";
@@ -50,7 +57,7 @@ function parseDateInput(value: string) {
 }
 
 function formatDateLabel(date: Date) {
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  return formatDisplayDate(date);
 }
 
 function formatMonthKey(date: Date) {
@@ -171,6 +178,28 @@ function DebtsTable({
   onToggleActiveOnly: () => void;
   showActiveOnly: boolean;
 }) {
+  const [sortKey, setSortKey] = useState<DebtSortKey>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const sortedDebts = useMemo(() => {
+    function value(debt: DebtRecord) {
+      if (sortKey === "name") return `${debt.name} ${debt.lender}`.toLowerCase();
+      if (sortKey === "status") return debt.status.toLowerCase();
+      return parseCurrency(debt[sortKey]);
+    }
+    return [...debts].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
+  }, [debts, sortDirection, sortKey]);
+
+  function handleSort(key: DebtSortKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "name" || key === "status" ? "asc" : "desc");
+      return key;
+    });
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/60 px-4 py-4">
@@ -196,17 +225,17 @@ function DebtsTable({
         <table className="w-full min-w-[1040px] border-collapse text-left">
           <thead>
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3">Debt Name</th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Total Amount</th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Repaid Amount</th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Remaining Balance</th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Monthly Payment</th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-center">Status</th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Debt Name</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("totalAmount")} sortDirection={sortKey === "totalAmount" ? sortDirection : undefined}>Total Amount</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("repaidAmount")} sortDirection={sortKey === "repaidAmount" ? sortDirection : undefined}>Repaid Amount</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("remainingBalance")} sortDirection={sortKey === "remainingBalance" ? sortDirection : undefined}>Remaining Balance</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Monthly Payment</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-center"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {debts.map((debt) => (
+            {sortedDebts.map((debt) => (
               <tr className="transition hover:bg-[#f8f9ff]" key={debt.id}>
                 <td className="px-4 py-4">
                   <div className="flex items-start gap-3">

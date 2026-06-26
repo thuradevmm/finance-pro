@@ -7,7 +7,10 @@ import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { calculateUsageDuration } from "@/lib/date-duration";
+import { dateTimeSortValue } from "@/lib/date-format";
+import type { AssetRecordWithValues } from "@/lib/assets/supabase";
 import { formatMmk } from "@/lib/currency";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
@@ -25,6 +28,7 @@ const conditionStyles: Record<AssetRecord["condition"], string> = {
 };
 
 const amountRanges = ["All amounts", "Under MMK 500", "MMK 500 - 1,500", "MMK 1,500+"] as const;
+type AssetSortKey = "condition" | "currentValue" | "name" | "purchaseAmount" | "purchaseDate" | "usage";
 
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.]/g, "")) || 0;
@@ -34,8 +38,8 @@ function formatCurrency(value: number) {
   return formatMmk(value);
 }
 
-function getPurchaseYear(asset: AssetRecord) {
-  const purchaseDate = new Date(asset.purchaseDate);
+function getPurchaseYear(asset: AssetRecordWithValues) {
+  const purchaseDate = new Date(asset.purchaseDateValue);
 
   if (Number.isNaN(purchaseDate.getTime())) {
     return "Unknown";
@@ -44,7 +48,7 @@ function getPurchaseYear(asset: AssetRecord) {
   return String(purchaseDate.getFullYear());
 }
 
-function matchesAmountRange(asset: AssetRecord, range: (typeof amountRanges)[number]) {
+function matchesAmountRange(asset: AssetRecordWithValues, range: (typeof amountRanges)[number]) {
   const purchaseAmount = parseCurrency(asset.purchaseAmount);
 
   if (range === "Under MMK 500") {
@@ -62,8 +66,8 @@ function matchesAmountRange(asset: AssetRecord, range: (typeof amountRanges)[num
   return true;
 }
 
-function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: string) => void | Promise<void> }) {
-  const usageDuration = calculateUsageDuration(asset.startUsingDate);
+function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete: (id: string) => void | Promise<void> }) {
+  const usageDuration = calculateUsageDuration(asset.startUsingDateValue);
 
   return (
     <article className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
@@ -109,7 +113,32 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecord; onDelete: (id: str
   );
 }
 
-function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (id: string) => void | Promise<void> }) {
+function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; onDelete: (id: string) => void | Promise<void> }) {
+  const [sortKey, setSortKey] = useState<AssetSortKey>("purchaseDate");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const sortedAssets = useMemo(() => {
+    function value(asset: AssetRecordWithValues) {
+      if (sortKey === "name") return `${asset.name} ${asset.category}`.toLowerCase();
+      if (sortKey === "purchaseDate") return dateTimeSortValue(asset.purchaseDateTimeValue);
+      if (sortKey === "purchaseAmount") return asset.purchaseAmountValue;
+      if (sortKey === "currentValue") return asset.currentValueValue;
+      if (sortKey === "usage") return dateTimeSortValue(asset.startUsingDateTimeValue);
+      return asset.condition.toLowerCase();
+    }
+    return [...assets].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
+  }, [assets, sortDirection, sortKey]);
+
+  function handleSort(key: AssetSortKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "name" || key === "condition" ? "asc" : "desc");
+      return key;
+    });
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -119,17 +148,17 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (i
         <table className="w-full min-w-[980px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Asset</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Purchase Date</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Purchase</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Current Value</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Usage</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Condition</th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Asset</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("purchaseDate")} sortDirection={sortKey === "purchaseDate" ? sortDirection : undefined}>Purchase Date</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("purchaseAmount")} sortDirection={sortKey === "purchaseAmount" ? sortDirection : undefined}>Purchase</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("currentValue")} sortDirection={sortKey === "currentValue" ? sortDirection : undefined}>Current Value</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("usage")} sortDirection={sortKey === "usage" ? sortDirection : undefined}>Usage</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("condition")} sortDirection={sortKey === "condition" ? sortDirection : undefined}>Condition</SortHeader></th>
               <th className="w-24 px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {assets.map((asset) => (
+            {sortedAssets.map((asset) => (
               <tr className="transition hover:bg-[#f8f9ff]" key={asset.id}>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">
@@ -145,7 +174,7 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (i
                 <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.purchaseDate}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{asset.purchaseAmount}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{asset.currentValue}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDate)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDateValue)}</td>
                 <td className={`whitespace-nowrap px-4 py-4 font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
@@ -161,7 +190,7 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecord[]; onDelete: (i
   );
 }
 
-function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
+function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All categories");
   const [year, setYear] = useState("All years");
@@ -189,7 +218,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
 
         return searchMatches && categoryMatches && yearMatches && amountMatches;
       })
-      .sort((firstAsset, secondAsset) => new Date(secondAsset.purchaseDate).getTime() - new Date(firstAsset.purchaseDate).getTime());
+      .sort((firstAsset, secondAsset) => dateTimeSortValue(secondAsset.purchaseDateTimeValue) - dateTimeSortValue(firstAsset.purchaseDateTimeValue));
   }, [amountRange, assets, category, search, year]);
   const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + parseCurrency(asset.purchaseAmount), 0);
 
@@ -254,7 +283,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
                 <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.purchaseDate}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{asset.purchaseAmount}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{asset.startUsingDate}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDate)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{calculateUsageDuration(asset.startUsingDateValue)}</td>
                 <td className="whitespace-nowrap px-4 py-4">
                   <span className={`rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span>
                 </td>
@@ -273,7 +302,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecord[] }) {
   );
 }
 
-export function AssetsPageContent({ assets }: { assets: AssetRecord[] }) {
+export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] }) {
   const searchParams = useSearchParams();
   const [visibleAssets, setVisibleAssets] = useState(assets);
   const [error, setError] = useState("");

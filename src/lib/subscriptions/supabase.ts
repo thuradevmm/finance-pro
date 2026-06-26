@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmk } from "@/lib/currency";
+import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { BillingCycle, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
@@ -25,6 +26,7 @@ export type SubscriptionRecordWithValues = SubscriptionRecord & {
   amountValue: number;
   billedAmountValue: number;
   categoryId: string;
+  createdAtValue: string;
   nextBillingDateValue: string;
 };
 
@@ -33,6 +35,7 @@ type SubscriptionRow = {
   amount?: number | string | null;
   billing_cycle?: string | null;
   category_id?: string | null;
+  created_at?: string | null;
   id: string;
   metadata?: unknown;
   name: string;
@@ -66,10 +69,7 @@ function normalizeStatus(value: unknown): SubscriptionStatus {
 }
 
 function formatDate(value: string) {
-  if (!value) return "Not set";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+  return formatDisplayDate(value);
 }
 
 function normalizeCurrency(value: unknown) {
@@ -141,10 +141,12 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     billingCurrency,
     category: category?.name ?? (typeof metadata.category_name === "string" ? metadata.category_name : "Uncategorized"),
     categoryId,
+    createdAtValue: row.created_at ?? "",
     icon: category?.icon ?? "subscriptions",
     id: row.id,
     name: row.name,
     nextBillingDate: formatDate(nextBillingDateValue),
+    nextBillingDateTimeValue: combineDateWithTimestampTime(nextBillingDateValue, row.created_at),
     nextBillingDateValue,
     paymentAccount: accounts.get(accountId)?.name ?? "No account selected",
     exchangeRate,
@@ -160,7 +162,9 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
 export async function getSubscriptions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
   const { data, error } = await supabase.from("subscriptions").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data as SubscriptionRow[]).map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c]))));
+  return (data as SubscriptionRow[])
+    .map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c]))))
+    .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""));
 }
 
 export async function getSubscription(supabase: SupabaseClient, userId: string, subscriptionId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
@@ -181,7 +185,7 @@ export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithVa
 export function getUpcomingSubscriptionBillings(subscriptions: SubscriptionRecordWithValues[]): UpcomingSubscriptionBilling[] {
   return subscriptions
     .filter((s) => s.nextBillingDateValue)
-    .sort((first, second) => (dateOnly(first.nextBillingDateValue)?.getTime() ?? 0) - (dateOnly(second.nextBillingDateValue)?.getTime() ?? 0))
+    .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""))
     .slice(0, 8)
     .map((subscription, index) => {
       const days = daysUntil(subscription.nextBillingDateValue);

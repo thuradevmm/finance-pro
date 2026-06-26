@@ -13,6 +13,7 @@ import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -25,6 +26,7 @@ const statusStyles: Record<AccountStatus, string> = {
 };
 
 type AccountViewMode = "Card" | "List" | "Lookup";
+type AccountSortKey = "account" | "balance" | "status" | "type";
 
 function decimalScaleFromNumber(value: number) {
   if (!Number.isFinite(value)) return 0;
@@ -254,6 +256,28 @@ function AccountsTable({
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
+  const [sortKey, setSortKey] = useState<AccountSortKey>("account");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const sortedItems = useMemo(() => {
+    function value(account: AccountRecord) {
+      if (sortKey === "account") return `${account.name} ${account.institution}`.toLowerCase();
+      if (sortKey === "balance") return account.balanceValue;
+      return String(account[sortKey]).toLowerCase();
+    }
+    return [...items].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
+  }, [items, sortDirection, sortKey]);
+
+  function handleSort(key: AccountSortKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "balance" ? "desc" : "asc");
+      return key;
+    });
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
@@ -263,15 +287,15 @@ function AccountsTable({
         <table className="w-full min-w-[760px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Amount</th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("account")} sortDirection={sortKey === "account" ? sortDirection : undefined}>Account</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("type")} sortDirection={sortKey === "type" ? sortDirection : undefined}>Type</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("balance")} sortDirection={sortKey === "balance" ? sortDirection : undefined}>Total Amount</SortHeader></th>
               <th className="w-32 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {items.map((account) => (
+            {sortedItems.map((account) => (
               <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">

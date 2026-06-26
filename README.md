@@ -150,11 +150,12 @@ In Supabase Dashboard:
    - Local redirect URL: `http://localhost:3000/auth/callback`
    - Add your production URL before deploying.
 
-Apply migrations:
+Apply migrations to the linked Supabase project:
 
 ```bash
 npm run db:login
 npm run db:link -- --project-ref YOUR_PROJECT_REF
+npm run db:migration:list
 npm run db:push
 ```
 
@@ -170,6 +171,73 @@ Current migrations:
 - `202606220001_remove_shared_default_categories.sql`
 - `202606220002_category_cleanup.sql`
 - `202606230001_category_types_no_defaults.sql`
+- `202606250001_transaction_metadata.sql`
+- `202606250002_auto_category_style.sql`
+- `202606250003_app_flow_schema_alignment.sql`
+- `202606260001_subscription_reminders.sql`
+- `202606260002_allow_same_account_amount_type_transfers.sql`
+
+## Supabase Migration Flow
+
+Use the npm scripts for Supabase CLI commands. The CLI is installed as a project dev dependency, so a global Supabase install is not required.
+
+### Local-first database change
+
+1. Start the local Supabase stack:
+
+```bash
+npm run db:start
+```
+
+2. Create a new migration file:
+
+```bash
+npm run db:new -- your_change_name
+```
+
+3. Edit the generated SQL file in `supabase/migrations`.
+4. Rebuild the local database from migrations:
+
+```bash
+npm run db:reset
+```
+
+5. Regenerate local TypeScript database types:
+
+```bash
+npm run db:types:local
+```
+
+6. Run app checks and test the related screens.
+7. Push the verified migrations to the linked Supabase project:
+
+```bash
+npm run db:migration:list
+npm run db:push
+npm run db:types
+```
+
+### Remote-to-local schema sync
+
+Use this only when a schema change was made directly in Supabase Dashboard and needs to be captured locally.
+
+```bash
+npm run db:pull -- remote_schema_sync
+npm run db:reset
+npm run db:types:local
+```
+
+Review the generated migration before committing it. Do not edit migrations that have already been applied to a shared or production database; create a new migration instead.
+
+### Existing cloud database fixes
+
+When a local code change depends on a migration, run this against the linked project before testing the deployed or cloud-backed app:
+
+```bash
+npm run db:migration:list
+npm run db:push
+npm run db:types
+```
 
 ## Available Scripts
 
@@ -180,8 +248,17 @@ npm run start
 npm run lint
 npm run db:login
 npm run db:link
+npm run db:status
+npm run db:start
+npm run db:stop
+npm run db:new -- migration_name
+npm run db:diff
+npm run db:pull -- migration_name
 npm run db:push
+npm run db:reset
+npm run db:migration:list
 npm run db:types
+npm run db:types:local
 ```
 
 ## Verification

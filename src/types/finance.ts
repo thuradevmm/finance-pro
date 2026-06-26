@@ -51,6 +51,7 @@ export type SavingsGoal = {
   remainingAmount: string;
   progressPercent: number;
   targetDate: string;
+  targetDateTimeValue?: string;
   monthlyContribution: string;
   account: string;
   status: SavingsGoalStatus;
@@ -71,6 +72,7 @@ export type DebtRecord = {
   monthlyPayment: string;
   interestRate: string;
   nextPaymentDate: string;
+  nextPaymentDateTimeValue?: string;
   progressPercent: number;
   status: DebtStatus;
   icon: IconName;
@@ -82,6 +84,7 @@ export type UpcomingDebtPayment = {
   id: string;
   debtName: string;
   dueLabel: string;
+  dueDateTimeValue?: string;
   amount: string;
   isOverdue?: boolean;
 };
@@ -102,6 +105,7 @@ export type SubscriptionRecord = {
   exchangeRateLabel: string;
   paymentAccount: string;
   nextBillingDate: string;
+  nextBillingDateTimeValue?: string;
   status: SubscriptionStatus;
   category: string;
   reminderDaysBefore: number;
@@ -148,11 +152,16 @@ export type AssetRecord = {
 export type Transaction = {
   id: string;
   date: string;
+  dateValue?: string;
+  dateTimeValue?: string;
   type: TransactionType;
   category: TransactionCategoryName;
   account: string;
   accountAmountType: AccountAmountType;
+  transferAccount?: string;
+  transferAccountAmountType?: AccountAmountType;
   amount: string;
+  amountValue?: number;
   note: string;
   attachment?: "receipt" | "document";
   linkedAssetId?: string;

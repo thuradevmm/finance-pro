@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatMmk, formatMmkPreview } from "@/lib/currency";
+import { combineDateWithTimestampTime, formatDisplayDate } from "@/lib/date-format";
 import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -17,6 +18,7 @@ export type TransactionRecord = Transaction & {
   status: string;
   title: string;
   transferAccountId: string;
+  transferAccountAmountType: AccountAmountType;
 };
 
 export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
@@ -39,6 +41,7 @@ export type TransactionFormData = {
   status: string;
   title: string;
   transferAccountId: string;
+  transferAccountAmountType: AccountAmountType;
   type: TransactionType;
 };
 
@@ -46,6 +49,7 @@ type TransactionRow = {
   account_id: string | null;
   amount: number | string;
   category_id: string | null;
+  created_at: string | null;
   description: string | null;
   id: string;
   note: string | null;
@@ -81,26 +85,29 @@ function normalizeRelatedType(value: string | null): TransactionRelatedEntityTyp
   return "none";
 }
 
-function formatDisplayDate(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-}
-
 function formatTransactionAmount(value: number, type: TransactionType) {
   if (type === "Income") return formatMmkPreview(value, "positive");
   if (type === "Expense") return formatMmkPreview(value, "negative");
   return formatMmk(value);
 }
 
-function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord {
-  const type = normalizeType(row.type);
+function pairedTransferRole(metadata: Record<string, unknown>) {
+  return typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role : "";
+}
+
+function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
+  const metadata = metadataRecord(row.metadata);
+  const pairRole = pairedTransferRole(metadata);
+  if (pairRole === "in") return null;
+
+  const type = pairRole === "out" ? "Transfer" : normalizeType(row.type);
   const amountValue = Number(row.amount) || 0;
   const account = row.account_id ? accounts.get(row.account_id) : undefined;
-  const transferAccount = row.transfer_account_id ? accounts.get(row.transfer_account_id) : undefined;
+  const metadataTransferAccountId = typeof metadata.transfer_account_id === "string" ? metadata.transfer_account_id : "";
+  const transferAccountId = row.transfer_account_id ?? metadataTransferAccountId;
+  const transferAccount = transferAccountId ? accounts.get(transferAccountId) : undefined;
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
-  const metadata = metadataRecord(row.metadata);
 
   return {
     account: account ? getAccountOptionLabel(account, accountList) : "Unknown account",
@@ -112,13 +119,16 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     categoryId: row.category_id ?? "",
     date: formatDisplayDate(row.transaction_date),
     dateValue: row.transaction_date,
+    dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
     id: row.id,
     note,
     relatedEntityId: row.related_entity_id ?? "",
     relatedEntityType: normalizeRelatedType(row.related_entity_type),
     status: row.status ?? "cleared",
     title: row.title ?? note,
-    transferAccountId: row.transfer_account_id ?? "",
+    transferAccountId,
+    transferAccount: transferAccount ? getAccountOptionLabel(transferAccount, accountList) : "",
+    transferAccountAmountType: normalizeAccountAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type),
     type,
     ...(row.related_entity_type === "asset" ? { linkedAssetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "budget" ? { linkedBudgetId: row.related_entity_id ?? undefined } : {}),
@@ -132,13 +142,17 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
 export async function getTransactions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
+    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata,created_at")
     .eq("user_id", userId)
     .is("deleted_at", null)
-    .order("transaction_date", { ascending: false });
+    .order("transaction_date", { ascending: false })
+    .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data as TransactionRow[]).map((row) => mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), accounts, new Map(categories.map((c) => [c.id, c]))));
+  return (data as TransactionRow[]).flatMap((row) => {
+    const transaction = mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), accounts, new Map(categories.map((c) => [c.id, c])));
+    return transaction ? [transaction] : [];
+  });
 }
 
 export async function getTransaction(supabase: SupabaseClient, userId: string, transactionId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {

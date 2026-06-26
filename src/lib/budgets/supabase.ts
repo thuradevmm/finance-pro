@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { formatMmk } from "@/lib/currency";
+import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus, CategoryScope, CategoryType, SummaryMetric } from "@/types/finance";
 
@@ -14,6 +15,7 @@ export type BudgetRecord = BudgetCategory & {
   planId: string;
   planStatus: "Active" | "Paused";
   startDate: string;
+  startDateTimeValue: string;
 };
 
 export type BudgetFormData = {
@@ -29,6 +31,7 @@ export type BudgetFormData = {
 };
 
 type PlanRow = {
+  created_at: string | null;
   description: string | null;
   end_date: string | null;
   id: string;
@@ -98,7 +101,7 @@ function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStat
 
 export async function getBudgets(supabase: SupabaseClient, userId: string): Promise<BudgetRecord[]> {
   const [plansResult, itemsResult, categoriesResult, transactionsResult] = await Promise.all([
-    supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata").eq("user_id", userId).is("deleted_at", null).order("start_date", { ascending: false }),
+    supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata,created_at").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
     supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,metadata").eq("user_id", userId),
     supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
     supabase.from("transactions").select("category_id,transaction_date,type,amount").eq("user_id", userId).is("deleted_at", null),
@@ -129,6 +132,8 @@ export async function getBudgets(supabase: SupabaseClient, userId: string): Prom
     const usagePercent = amountValue > 0 ? Math.round((actualValue / amountValue) * 100) : 0;
     const alertPercentage = numericValue(item.alert_percentage) || numericValue(itemMetadata.alert_percentage) || 80;
     const appearance = getCategoryTypeStyle(categoryTypeForBudget(category));
+    const period: BudgetPeriod = plan.period_type.toLowerCase() === "yearly" ? "Yearly" : "Monthly";
+    const planStatus: BudgetRecord["planStatus"] = plan.status.toLowerCase() === "paused" ? "Paused" : "Active";
 
     return [{
       ...appearance,
@@ -144,16 +149,17 @@ export async function getBudgets(supabase: SupabaseClient, userId: string): Prom
       icon: appearance.icon,
       id: item.id,
       itemId: item.id,
-      period: plan.period_type.toLowerCase() === "yearly" ? "Yearly" : "Monthly",
+      period,
       planId: plan.id,
-      planStatus: plan.status.toLowerCase() === "paused" ? "Paused" : "Active",
+      planStatus,
       remaining: formatMmk(remainingValue),
       startDate: plan.start_date,
+      startDateTimeValue: combineDateWithTimestampTime(plan.start_date, plan.created_at),
       status: budgetStatus(usagePercent, alertPercentage),
       tone: appearance.tone,
       usagePercent,
     }];
-  });
+  }).sort((first, second) => dateTimeSortValue(second.startDateTimeValue) - dateTimeSortValue(first.startDateTimeValue));
 }
 
 export async function getBudget(supabase: SupabaseClient, userId: string, budgetItemId: string) {

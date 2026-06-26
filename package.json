@@ -7,10 +7,19 @@
     "build": "node scripts/clean-next-dev-types.mjs && next build",
     "start": "next start",
     "lint": "eslint",
-    "db:login": "supabase login",
-    "db:link": "supabase link",
-    "db:push": "supabase db push",
-    "db:types": "supabase gen types typescript --linked --schema public > src/types/database.ts"
+    "db:login": "npx supabase login",
+    "db:link": "npx supabase link",
+    "db:status": "npx supabase status",
+    "db:start": "npx supabase start",
+    "db:stop": "npx supabase stop",
+    "db:new": "npx supabase migration new",
+    "db:diff": "npx supabase db diff",
+    "db:pull": "npx supabase db pull",
+    "db:push": "npx supabase db push",
+    "db:reset": "npx supabase db reset",
+    "db:migration:list": "npx supabase migration list",
+    "db:types": "npx supabase gen types typescript --linked --schema public > src/types/database.ts",
+    "db:types:local": "npx supabase gen types typescript --local --schema public > src/types/database.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

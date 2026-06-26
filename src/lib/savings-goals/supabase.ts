@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
+import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SavingsGoal, SavingsGoalStatus, SummaryMetric } from "@/types/finance";
@@ -9,6 +10,7 @@ import type { SavingsGoal, SavingsGoalStatus, SummaryMetric } from "@/types/fina
 export type SavingsGoalRecord = SavingsGoal & {
   accountId: string;
   categoryId: string;
+  createdAtValue: string;
   description: string;
   monthlyContributionValue: number;
   savedAmountValue: number;
@@ -30,6 +32,7 @@ export type SavingsGoalFormData = {
 type SavingsGoalRow = {
   account_id?: string | null;
   category_id?: string | null;
+  created_at?: string | null;
   current_amount?: number | string | null;
   description?: string | null;
   id: string;
@@ -118,6 +121,7 @@ function mapGoal(
     account: account?.name ?? (typeof metadata.account_name === "string" ? metadata.account_name : "No account selected"),
     accountId,
     categoryId,
+    createdAtValue: row.created_at ?? "",
     description: row.description ?? (typeof metadata.description === "string" ? metadata.description : ""),
     id: row.id,
     monthlyContribution: formatMmk(monthlyContributionValue),
@@ -131,6 +135,7 @@ function mapGoal(
     targetAmount: formatMmk(targetAmountValue),
     targetAmountValue,
     targetDate: formatDate(targetDateValue),
+    targetDateTimeValue: combineDateWithTimestampTime(targetDateValue, row.created_at),
     targetDateValue,
   };
 }
@@ -170,7 +175,9 @@ export async function getSavingsGoals(
     );
   }
 
-  return (goalsResult.data as SavingsGoalRow[]).map((goal) => mapGoal(goal, accountsById, categoriesById, linkedSavingsByGoalId));
+  return (goalsResult.data as SavingsGoalRow[])
+    .map((goal) => mapGoal(goal, accountsById, categoriesById, linkedSavingsByGoalId))
+    .sort((first, second) => dateTimeSortValue(first.targetDateTimeValue ?? "") - dateTimeSortValue(second.targetDateTimeValue ?? ""));
 }
 
 export async function getSavingsGoal(

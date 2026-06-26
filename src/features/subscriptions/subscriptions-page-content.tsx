@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { deleteSubscription } from "@/app/subscriptions/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { dateTimeSortValue } from "@/lib/date-format";
 import type { SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
@@ -13,6 +15,11 @@ const statusStyles: Record<SubscriptionStatus, string> = {
   Paused: "bg-[#f8f9ff] text-[#45464d]",
   Expiring: "bg-[#ffdad6] text-[#93000a]",
 };
+type SubscriptionSortKey = "amount" | "billedAmount" | "billingCycle" | "category" | "exchangeRate" | "name" | "nextBillingDate" | "paymentAccount" | "reminder" | "status";
+
+function parseCurrency(value: string) {
+  return Number(value.replace(/[^0-9.-]/g, "")) || 0;
+}
 
 function ReminderStatusBadge({ status }: { status: string }) {
   const urgent = status === "Overdue" || status === "Due today" || status.startsWith("Due in");
@@ -92,6 +99,31 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
 }
 
 function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void | Promise<void>; subscriptions: SubscriptionRecord[] }) {
+  const [sortKey, setSortKey] = useState<SubscriptionSortKey>("nextBillingDate");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const sortedSubscriptions = useMemo(() => {
+    function value(subscription: SubscriptionRecord) {
+      if (sortKey === "amount") return parseCurrency(subscription.amount);
+      if (sortKey === "billedAmount") return parseCurrency(subscription.billedAmount);
+      if (sortKey === "exchangeRate") return parseCurrency(subscription.exchangeRateLabel);
+      if (sortKey === "nextBillingDate") return dateTimeSortValue(subscription.nextBillingDateTimeValue ?? subscription.nextBillingDate);
+      if (sortKey === "reminder") return subscription.reminderStatus.toLowerCase();
+      return String(subscription[sortKey]).toLowerCase();
+    }
+    return [...subscriptions].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
+  }, [sortDirection, sortKey, subscriptions]);
+
+  function handleSort(key: SubscriptionSortKey) {
+    setSortKey((currentKey) => {
+      if (currentKey === key) {
+        setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return currentKey;
+      }
+      setSortDirection(key === "amount" || key === "billedAmount" || key === "exchangeRate" ? "desc" : "asc");
+      return key;
+    });
+  }
+
   return (
     <section>
       <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">All Subscriptions</h2>
@@ -100,21 +132,21 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
           <table className="w-full min-w-[1280px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold text-[#45464d]">
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3 text-right">MMK Amount</th>
-                <th className="px-4 py-3">Billed Amount</th>
-                <th className="px-4 py-3">Exchange Rate</th>
-                <th className="px-4 py-3">Billing Cycle</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Payment Account</th>
-                <th className="px-4 py-3">Next Billing</th>
-                <th className="px-4 py-3">Reminder</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Name</SortHeader></th>
+                <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("amount")} sortDirection={sortKey === "amount" ? sortDirection : undefined}>MMK Amount</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("billedAmount")} sortDirection={sortKey === "billedAmount" ? sortDirection : undefined}>Billed Amount</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("exchangeRate")} sortDirection={sortKey === "exchangeRate" ? sortDirection : undefined}>Exchange Rate</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("billingCycle")} sortDirection={sortKey === "billingCycle" ? sortDirection : undefined}>Billing Cycle</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Category</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("paymentAccount")} sortDirection={sortKey === "paymentAccount" ? sortDirection : undefined}>Payment Account</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("nextBillingDate")} sortDirection={sortKey === "nextBillingDate" ? sortDirection : undefined}>Next Billing</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("reminder")} sortDirection={sortKey === "reminder" ? sortDirection : undefined}>Reminder</SortHeader></th>
+                <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
                 <th className="w-24 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-              {subscriptions.map((subscription) => (
+              {sortedSubscriptions.map((subscription) => (
                 <tr className="transition hover:bg-[#f8f9ff]" key={subscription.id}>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-3">

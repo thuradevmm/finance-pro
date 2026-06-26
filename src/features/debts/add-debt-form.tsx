@@ -12,7 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
-import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
+import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
@@ -341,6 +341,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           </div>
           <div className="mt-5">
             <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(activeAccounts, name)?.id ?? "")} options={activeAccounts.length > 0 ? getAccountOptionLabels(activeAccounts) : ["No accounts"]} value={selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, activeAccounts) : "No accounts"} />
+            {selectedPaymentAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedPaymentAccount)}</p> : null}
           </div>
           <div className="mt-5">
             <TextAreaInput label="Notes" onChange={setNotes} placeholder="Optional repayment notes..." value={notes} />

@@ -26,8 +26,8 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
   const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Asset"), [categories]);
   const [name, setName] = useState(asset?.name ?? "");
   const [categoryId, setCategoryId] = useState(asset?.categoryId ?? assetCategories[0]?.id ?? "");
-  const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDate ?? "2026-06-15");
-  const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDate ?? "2026-06-15");
+  const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDateValue ?? "2026-06-15");
+  const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDateValue ?? "2026-06-15");
   const [purchaseAmount, setPurchaseAmount] = useState(asset ? String(asset.purchaseAmountValue) : "");
   const [currentValue, setCurrentValue] = useState(asset ? String(asset.currentValueValue) : "");
   const [condition, setCondition] = useState<AssetRecord["condition"]>(asset?.condition ?? "Good");
