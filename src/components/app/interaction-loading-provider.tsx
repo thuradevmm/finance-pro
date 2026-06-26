@@ -1,9 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { createContext, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 
-import { LoadingOverlay } from "@/components/ui/loading-state";
+import { NavigationProgress } from "@/components/ui/loading-state";
 
 type InteractionLoadingContextValue = {
   beginLoading: () => void;
@@ -35,22 +35,10 @@ export function InteractionLoadingProvider({ children }: { children: ReactNode }
     return () => window.clearTimeout(timeout);
   }, [isLoading]);
 
-  function handleClick(event: ReactMouseEvent<HTMLDivElement>) {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    if (!(event.target instanceof Element)) return;
-    const anchor = event.target.closest("a");
-    if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
-
-    const destination = new URL(anchor.href, window.location.href);
-    if (destination.origin !== window.location.origin) return;
-    if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
-    beginLoading();
-  }
-
   return (
     <InteractionLoadingContext.Provider value={{ beginLoading, isLoading }}>
-      <div className="flex min-h-full flex-1 flex-col" onClickCapture={handleClick}>{children}</div>
-      {isLoading ? <LoadingOverlay label="Loading…" /> : null}
+      <div className="flex min-h-full flex-1 flex-col">{children}</div>
+      {isLoading ? <NavigationProgress /> : null}
     </InteractionLoadingContext.Provider>
   );
 }

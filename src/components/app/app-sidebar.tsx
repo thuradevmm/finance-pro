@@ -1,3 +1,7 @@
+"use client";
+
+import Link, { useLinkStatus } from "next/link";
+
 import { Icon } from "@/components/ui/icon";
 import { navGroups, type NavItem } from "@/lib/app-navigation";
 
@@ -9,6 +13,17 @@ type AppSidebarProps = {
   onToggleCollapse?: () => void;
   variant?: "desktop" | "mobile";
 };
+
+function NavLinkPendingHint() {
+  const { pending } = useLinkStatus();
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-current transition-opacity duration-200 ${pending ? "opacity-60" : "opacity-0"}`}
+    />
+  );
+}
 
 export function AppSidebar({
   activeLabel,
@@ -68,12 +83,12 @@ export function AppSidebar({
                 const isActive = item.label === activeLabel;
 
                 return (
-                  <a
+                  <Link
                     aria-current={isActive ? "page" : undefined}
                     className={
                       isActive
-                        ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex h-10 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm`
-                        : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex h-10 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]`
+                        ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex h-10 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm`
+                        : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex h-10 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]`
                     }
                     href={item.href}
                     key={item.label}
@@ -82,7 +97,8 @@ export function AppSidebar({
                   >
                     <Icon className="size-5 shrink-0" name={item.icon} />
                     {!isCompact ? <span className="truncate">{item.label}</span> : null}
-                  </a>
+                    <NavLinkPendingHint />
+                  </Link>
                 );
               })}
             </div>

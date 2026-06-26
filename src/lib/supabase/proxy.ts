@@ -51,7 +51,9 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
-    if (authError) url.searchParams.set("error", "auth_unavailable");
+    if (authError && request.cookies.getAll().some((cookie) => cookie.name.startsWith("sb-"))) {
+      url.searchParams.set("error", "auth_unavailable");
+    }
     return NextResponse.redirect(url);
   }
 

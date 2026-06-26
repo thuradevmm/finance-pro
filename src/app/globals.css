@@ -34,6 +34,20 @@ input[type="number"]::-webkit-outer-spin-button {
   margin: 0;
 }
 
+@keyframes finance-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  55% {
+    transform: translateX(120%);
+  }
+
+  100% {
+    transform: translateX(320%);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

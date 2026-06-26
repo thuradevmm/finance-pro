@@ -29,6 +29,26 @@ export function formatMmkPreview(value: number | string, sign: "negative" | "non
   return `${SYSTEM_CURRENCY} ${signText}${formattedAmount}`;
 }
 
+export function formatCurrencyAmount(value: number, currencyCode: string) {
+  const normalizedCurrency = currencyCode.trim().toUpperCase() || SYSTEM_CURRENCY;
+  if (normalizedCurrency === SYSTEM_CURRENCY) return formatMmk(value);
+
+  try {
+    return new Intl.NumberFormat("en-US", {
+      currency: normalizedCurrency,
+      currencyDisplay: "code",
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+      style: "currency",
+    }).format(value);
+  } catch {
+    return `${normalizedCurrency} ${new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0,
+    }).format(value)}`;
+  }
+}
+
 export function parseCurrency(value: string) {
   const numericValue = Number(value.replace(/[^0-9.-]+/g, ""));
   return Number.isFinite(numericValue) ? numericValue : 0;

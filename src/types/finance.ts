@@ -95,11 +95,18 @@ export type SubscriptionRecord = {
   name: string;
   amount: string;
   billingCycle: BillingCycle;
+  billingCurrency: string;
+  billedAmount: string;
+  billedAmountValue: number;
+  exchangeRate: number;
+  exchangeRateLabel: string;
   paymentAccount: string;
   nextBillingDate: string;
   status: SubscriptionStatus;
   category: string;
+  reminderDaysBefore: number;
   reminderEnabled: boolean;
+  reminderStatus: string;
   icon: IconName;
   tone: string;
   bg: string;
@@ -110,9 +117,13 @@ export type UpcomingSubscriptionBilling = {
   dateLabel: string;
   name: string;
   amount: string;
+  billedAmount: string;
   billingCycle: BillingCycle;
+  exchangeRateLabel: string;
   icon: IconName;
   isNext?: boolean;
+  reminderLabel: string;
+  reminderDue: boolean;
 };
 
 export type AssetStatus = "Active" | "Sold" | "Archived";

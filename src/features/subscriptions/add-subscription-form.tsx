@@ -10,7 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
-import { formatMmkPreview } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
 import { findAccountByOptionLabel, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -18,9 +18,22 @@ import type { SubscriptionFormData, SubscriptionRecordWithValues } from "@/lib/s
 import type { BillingCycle, SubscriptionStatus } from "@/types/finance";
 
 const billingCycles: BillingCycle[] = ["Monthly", "Yearly", "Weekly"];
+const billingCurrencies = [SYSTEM_CURRENCY, "USD", "SGD", "THB", "EUR"];
+const reminderOptions = [
+  { label: "On billing date", value: 0 },
+  { label: "1 day before", value: 1 },
+  { label: "3 days before", value: 3 },
+  { label: "7 days before", value: 7 },
+  { label: "14 days before", value: 14 },
+  { label: "30 days before", value: 30 },
+];
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
+}
+
+function defaultNextBillingDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
@@ -29,36 +42,47 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
   const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Subscription"), [categories]);
   const paymentAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
   const [serviceName, setServiceName] = useState(subscription?.name ?? "");
-  const [amount, setAmount] = useState(subscription ? String(subscription.amountValue) : "");
+  const [billingCurrency, setBillingCurrency] = useState(subscription?.billingCurrency ?? SYSTEM_CURRENCY);
+  const [billedAmount, setBilledAmount] = useState(subscription ? String(subscription.billedAmountValue) : "");
+  const [exchangeRate, setExchangeRate] = useState(subscription && subscription.billingCurrency !== SYSTEM_CURRENCY ? String(subscription.exchangeRate) : "");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(subscription?.billingCycle ?? "Monthly");
-  const [firstBillingDate, setFirstBillingDate] = useState(subscription?.nextBillingDateValue ?? "2026-11-15");
+  const [nextBillingDate, setNextBillingDate] = useState(subscription?.nextBillingDateValue ?? defaultNextBillingDate());
   const [categoryId, setCategoryId] = useState(subscription?.categoryId ?? subscriptionCategories[0]?.id ?? "");
   const [paymentAccountId, setPaymentAccountId] = useState(subscription?.accountId ?? paymentAccounts[0]?.id ?? "");
   const [status, setStatus] = useState<SubscriptionStatus>(subscription?.status ?? "Active");
   const [reminderEnabled, setReminderEnabled] = useState(subscription?.reminderEnabled ?? true);
+  const [reminderDaysBefore, setReminderDaysBefore] = useState(subscription?.reminderDaysBefore ?? 3);
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedCategory = subscriptionCategories.find((item) => item.id === categoryId) ?? subscriptionCategories[0];
   const selectedAccount = paymentAccounts.find((item) => item.id === paymentAccountId);
+  const isForeignCurrency = billingCurrency !== SYSTEM_CURRENCY;
   const nameHasError = showErrors && serviceName.trim() === "";
-  const amountHasError = showErrors && amount.trim() === "";
-  const billingDateHasError = showErrors && firstBillingDate.trim() === "";
-  const parsedAmount = parseAmount(amount);
-  const yearlyAmount = billingCycle === "Yearly" ? parsedAmount : billingCycle === "Weekly" ? parsedAmount * 52 : parsedAmount * 12;
+  const amountHasError = showErrors && (billedAmount.trim() === "" || parseAmount(billedAmount) <= 0);
+  const exchangeRateHasError = showErrors && isForeignCurrency && (exchangeRate.trim() === "" || parseAmount(exchangeRate) <= 0);
+  const billingDateHasError = showErrors && nextBillingDate.trim() === "";
+  const parsedBilledAmount = parseAmount(billedAmount);
+  const parsedExchangeRate = isForeignCurrency ? parseAmount(exchangeRate) : 1;
+  const convertedAmount = parsedBilledAmount > 0 && parsedExchangeRate > 0 ? parsedBilledAmount * parsedExchangeRate : 0;
+  const yearlyAmount = billingCycle === "Yearly" ? convertedAmount : billingCycle === "Weekly" ? convertedAmount * 52 : convertedAmount * 12;
 
   async function handleSaveSubscription(addAnother = false) {
-    const hasErrors = serviceName.trim() === "" || amount.trim() === "" || firstBillingDate.trim() === "";
+    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateHasError || nextBillingDate.trim() === "";
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
     const input: SubscriptionFormData = {
       accountId: paymentAccountId,
-      amount: Number(amount),
+      amount: convertedAmount,
+      billedAmount: parsedBilledAmount,
       billingCycle,
+      billingCurrency,
       categoryId,
+      exchangeRate: parsedExchangeRate,
       name: serviceName,
-      nextBillingDate: firstBillingDate,
+      nextBillingDate,
+      reminderDaysBefore,
       reminderEnabled,
       status,
     };
@@ -72,7 +96,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
     if (addAnother && !subscription) {
       setIsSaving(false);
       setServiceName("");
-      setAmount("");
+      setBilledAmount("");
       return;
     }
     beginLoading();
@@ -90,9 +114,31 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Service name is required.</p> : null}
             </div>
             <div>
-              <TextInput error={amountHasError} label="Amount" onChange={setAmount} placeholder="20.00" type="number" value={amount} />
-              {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Amount is required.</p> : null}
+              <TextInput error={amountHasError} label="Billed Amount" onChange={setBilledAmount} placeholder="20.00" type="number" value={billedAmount} />
+              {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter a billed amount greater than zero.</p> : null}
             </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <SelectInput label="Billing Currency" onChange={(value) => setBillingCurrency(value)} options={billingCurrencies} value={billingCurrency} />
+            {isForeignCurrency ? (
+              <div>
+                <TextInput
+                  error={exchangeRateHasError}
+                  label={`Exchange Rate to ${SYSTEM_CURRENCY}`}
+                  onChange={setExchangeRate}
+                  placeholder={`1 ${billingCurrency} = ${SYSTEM_CURRENCY}`}
+                  type="number"
+                  value={exchangeRate}
+                />
+                {exchangeRateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Exchange rate is required for foreign-currency subscriptions.</p> : null}
+              </div>
+            ) : (
+              <div>
+                <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Exchange Rate to {SYSTEM_CURRENCY}</span>
+                <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-semibold text-[#45464d]">No conversion needed</div>
+              </div>
+            )}
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -100,13 +146,13 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
             <div>
               <TextInput
                 error={billingDateHasError}
-                label="First Billing Date"
-                onChange={setFirstBillingDate}
-                placeholder="2026-11-15"
+                label="Next Billing Date"
+                onChange={setNextBillingDate}
+                placeholder={defaultNextBillingDate()}
                 type="date"
-                value={firstBillingDate}
+                value={nextBillingDate}
               />
-              {billingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">First billing date is required.</p> : null}
+              {billingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Next billing date is required.</p> : null}
             </div>
           </div>
 
@@ -120,30 +166,51 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
         </FormCard>
 
         <FormCard title="Reminder Settings">
-          <button
-            aria-pressed={reminderEnabled}
-            className={
-              reminderEnabled
-                ? "flex w-full items-center gap-3 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 text-left"
-                : "flex w-full items-center gap-3 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 text-left transition hover:bg-[#eff4ff]"
-            }
-            onClick={() => setReminderEnabled((currentValue) => !currentValue)}
-            type="button"
-          >
-            <span
+          <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+            <button
+              aria-pressed={reminderEnabled}
               className={
                 reminderEnabled
-                  ? "grid size-5 place-items-center rounded border border-[#0058be] bg-[#0058be] text-white"
-                  : "grid size-5 place-items-center rounded border border-[#c6c6cd] bg-white text-transparent"
+                  ? "flex w-full items-center gap-3 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 text-left"
+                  : "flex w-full items-center gap-3 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 text-left transition hover:bg-[#eff4ff]"
+              }
+              onClick={() => setReminderEnabled((currentValue) => !currentValue)}
+              type="button"
+            >
+              <span
+                className={
+                  reminderEnabled
+                    ? "grid size-5 place-items-center rounded border border-[#0058be] bg-[#0058be] text-white"
+                    : "grid size-5 place-items-center rounded border border-[#c6c6cd] bg-white text-transparent"
+                }
+              >
+                <Icon className="size-3" name="close" />
+              </span>
+              <span>
+                <span className="block text-sm font-semibold text-[#0b1c30]">Enable billing reminder</span>
+                <span className="mt-1 block text-xs font-medium text-[#45464d]">Show this subscription in upcoming reminder views before renewal.</span>
+              </span>
+            </button>
+            <label
+              className={
+                reminderEnabled
+                  ? "block rounded-lg border border-[#c6c6cd]/70 bg-white p-4"
+                  : "block rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 opacity-60"
               }
             >
-              <Icon className="size-3" name="close" />
-            </span>
-            <span>
-              <span className="block text-sm font-semibold text-[#0b1c30]">Send reminder 3 days before billing</span>
-              <span className="mt-1 block text-xs font-medium text-[#45464d]">Useful for upcoming renewals and annual subscriptions.</span>
-            </span>
-          </button>
+              <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Reminder Lead Time</span>
+              <select
+                className="h-10 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 disabled:cursor-not-allowed"
+                disabled={!reminderEnabled}
+                onChange={(event) => setReminderDaysBefore(Number(event.target.value))}
+                value={reminderDaysBefore}
+              >
+                {reminderOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </FormCard>
 
         <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
@@ -189,7 +256,13 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
 
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{billingCycle} Cost</p>
-              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{amount ? formatMmkPreview(amount) : formatMmkPreview(0)}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{formatMmkPreview(convertedAmount)}</ResponsiveAmount>
+              <ResponsiveAmount className="mt-2 font-semibold text-[#0058be]" maxSizeRem={0.875}>
+                Billed: {formatCurrencyAmount(parsedBilledAmount || 0, billingCurrency)}
+              </ResponsiveAmount>
+              <p className="mt-2 text-xs font-semibold text-[#45464d]">
+                {isForeignCurrency ? `Rate: 1 ${billingCurrency} = ${formatMmkPreview(parsedExchangeRate || 0)}` : "No exchange rate needed"}
+              </p>
               <ResponsiveAmount className="mt-2 font-semibold text-[#45464d]" maxSizeRem={0.875}>Yearly estimate: {formatMmkPreview(yearlyAmount)}</ResponsiveAmount>
             </div>
 
@@ -203,12 +276,20 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
                 <dd className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No account"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Billing Currency</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{billingCurrency}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">MMK Equivalent</dt>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{formatMmkPreview(convertedAmount)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{firstBillingDate || "Not set"}</dd>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{nextBillingDate || "Not set"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Reminder</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{reminderEnabled ? "Enabled" : "Disabled"}</dd>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{reminderEnabled ? `${reminderDaysBefore} day${reminderDaysBefore === 1 ? "" : "s"} before` : "Disabled"}</dd>
               </div>
             </dl>
           </div>

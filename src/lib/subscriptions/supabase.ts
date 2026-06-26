@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { formatMmk } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmk } from "@/lib/currency";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { BillingCycle, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
@@ -8,10 +8,14 @@ import type { BillingCycle, SubscriptionRecord, SubscriptionStatus, SummaryMetri
 export type SubscriptionFormData = {
   accountId: string;
   amount: number;
+  billedAmount: number;
   billingCycle: BillingCycle;
+  billingCurrency: string;
   categoryId: string;
+  exchangeRate: number;
   name: string;
   nextBillingDate: string;
+  reminderDaysBefore: number;
   reminderEnabled: boolean;
   status: SubscriptionStatus;
 };
@@ -19,6 +23,7 @@ export type SubscriptionFormData = {
 export type SubscriptionRecordWithValues = SubscriptionRecord & {
   accountId: string;
   amountValue: number;
+  billedAmountValue: number;
   categoryId: string;
   nextBillingDateValue: string;
 };
@@ -32,6 +37,7 @@ type SubscriptionRow = {
   metadata?: unknown;
   name: string;
   next_billing_date?: string | null;
+  reminder_days_before?: number | string | null;
   reminder_enabled?: boolean | null;
   status?: string | null;
 };
@@ -66,20 +72,73 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
+function normalizeCurrency(value: unknown) {
+  const currency = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return currency || SYSTEM_CURRENCY;
+}
+
+function dateOnly(value: string) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function daysUntil(value: string) {
+  const date = dateOnly(value);
+  if (!date) return null;
+  const today = new Date();
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.ceil((date.getTime() - todayOnly.getTime()) / 86_400_000);
+}
+
+function reminderStatus(nextBillingDate: string, reminderEnabled: boolean, reminderDaysBefore: number) {
+  if (!reminderEnabled) return "Off";
+  const days = daysUntil(nextBillingDate);
+  if (days === null) return "No date";
+  if (days < 0) return "Overdue";
+  if (days === 0) return "Due today";
+  if (days <= reminderDaysBefore) return `Due in ${days} day${days === 1 ? "" : "s"}`;
+  return `${reminderDaysBefore} day${reminderDaysBefore === 1 ? "" : "s"} before`;
+}
+
+function normalizeReminderEnabled(rowValue: boolean | null | undefined, metadataValue: unknown) {
+  if (typeof rowValue === "boolean") return rowValue;
+  if (typeof metadataValue === "boolean") return metadataValue;
+  return true;
+}
+
+function normalizeReminderDays(value: unknown) {
+  const days = numericValue(value, 3);
+  return Math.min(30, Math.max(0, Math.round(days)));
+}
+
+function exchangeRateLabel(currency: string, exchangeRate: number) {
+  if (currency === SYSTEM_CURRENCY) return "No conversion";
+  return `1 ${currency} = ${formatMmk(exchangeRate)}`;
+}
+
 function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>): SubscriptionRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
   const amountValue = numericValue(row.amount) || numericValue(metadata.amount);
+  const billingCurrency = normalizeCurrency(metadata.billing_currency);
+  const billedAmountValue = numericValue(metadata.billed_amount, amountValue);
+  const exchangeRate = billingCurrency === SYSTEM_CURRENCY ? 1 : numericValue(metadata.exchange_rate, amountValue > 0 && billedAmountValue > 0 ? amountValue / billedAmountValue : 0);
   const nextBillingDateValue = row.next_billing_date ?? (typeof metadata.next_billing_date === "string" ? metadata.next_billing_date : "");
+  const reminderEnabled = normalizeReminderEnabled(row.reminder_enabled, metadata.reminder_enabled);
+  const reminderDaysBefore = normalizeReminderDays(row.reminder_days_before ?? metadata.reminder_days_before);
 
   return {
     accountId,
     amount: formatMmk(amountValue),
     amountValue,
     bg: category?.bg ?? "bg-[#eff6ff]",
+    billedAmount: formatCurrencyAmount(billedAmountValue, billingCurrency),
+    billedAmountValue,
     billingCycle: normalizeCycle(row.billing_cycle ?? metadata.billing_cycle),
+    billingCurrency,
     category: category?.name ?? (typeof metadata.category_name === "string" ? metadata.category_name : "Uncategorized"),
     categoryId,
     icon: category?.icon ?? "subscriptions",
@@ -88,7 +147,11 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     nextBillingDate: formatDate(nextBillingDateValue),
     nextBillingDateValue,
     paymentAccount: accounts.get(accountId)?.name ?? "No account selected",
-    reminderEnabled: row.reminder_enabled ?? Boolean(metadata.reminder_enabled),
+    exchangeRate,
+    exchangeRateLabel: exchangeRateLabel(billingCurrency, exchangeRate),
+    reminderDaysBefore,
+    reminderEnabled,
+    reminderStatus: reminderStatus(nextBillingDateValue, reminderEnabled, reminderDaysBefore),
     status: normalizeStatus(row.status ?? metadata.status),
     tone: category?.tone ?? "text-[#0058be]",
   };
@@ -116,13 +179,26 @@ export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithVa
 }
 
 export function getUpcomingSubscriptionBillings(subscriptions: SubscriptionRecordWithValues[]): UpcomingSubscriptionBilling[] {
-  return subscriptions.filter((s) => s.nextBillingDateValue).slice(0, 8).map((subscription, index) => ({
-    amount: subscription.amount,
-    billingCycle: subscription.billingCycle,
-    dateLabel: subscription.nextBillingDate,
-    icon: subscription.icon,
-    id: subscription.id,
-    isNext: index === 0,
-    name: subscription.name,
-  }));
+  return subscriptions
+    .filter((s) => s.nextBillingDateValue)
+    .sort((first, second) => (dateOnly(first.nextBillingDateValue)?.getTime() ?? 0) - (dateOnly(second.nextBillingDateValue)?.getTime() ?? 0))
+    .slice(0, 8)
+    .map((subscription, index) => {
+      const days = daysUntil(subscription.nextBillingDateValue);
+      const reminderDue = subscription.reminderEnabled && days !== null && days >= 0 && days <= subscription.reminderDaysBefore;
+
+      return {
+        amount: subscription.amount,
+        billedAmount: subscription.billedAmount,
+        billingCycle: subscription.billingCycle,
+        dateLabel: subscription.nextBillingDate,
+        exchangeRateLabel: subscription.exchangeRateLabel,
+        icon: subscription.icon,
+        id: subscription.id,
+        isNext: index === 0,
+        name: subscription.name,
+        reminderDue,
+        reminderLabel: subscription.reminderStatus,
+      };
+    });
 }

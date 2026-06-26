@@ -14,6 +14,50 @@ const statusStyles: Record<SubscriptionStatus, string> = {
   Expiring: "bg-[#ffdad6] text-[#93000a]",
 };
 
+function ReminderStatusBadge({ status }: { status: string }) {
+  const urgent = status === "Overdue" || status === "Due today" || status.startsWith("Due in");
+
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded px-2 py-1 text-xs font-bold uppercase ${urgent ? "bg-[#fff1f0] text-[#991b1b]" : status === "Off" ? "bg-[#f3f4f6] text-[#45464d]" : "bg-[#eef2ff] text-[#3730a3]"}`}>
+      {status}
+    </span>
+  );
+}
+
+function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
+  const reminderItems = subscriptions.filter((subscription) => subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in")).slice(0, 4);
+
+  return (
+    <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-[#0b1c30]">Subscription Reminders</h2>
+          <p className="mt-1 text-sm font-medium text-[#45464d]">{reminderItems.length ? "Renewals that need attention based on reminder settings." : "No subscriptions are inside the active reminder window."}</p>
+        </div>
+        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">
+          <Icon name="bell" />
+        </span>
+      </div>
+      {reminderItems.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {reminderItems.map((subscription) => (
+            <article className="rounded-md border border-[#fecaca] bg-[#fffafa] p-4" key={subscription.id}>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
+                <ReminderStatusBadge status={subscription.reminderStatus} />
+              </div>
+              <p className="text-xs font-bold uppercase text-[#45464d]">Next billing</p>
+              <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{subscription.nextBillingDate}</p>
+              <p className="mt-3 amount-value text-sm font-bold text-[#0b1c30]">{subscription.amount}</p>
+              <p className="mt-1 text-xs font-semibold text-[#45464d]">{subscription.billedAmount}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[] }) {
   return (
     <section className="mb-6">
@@ -25,14 +69,18 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
             key={billing.id}
           >
             <div className={`absolute bottom-0 left-0 top-0 w-1 rounded-l-lg ${billing.isNext ? "bg-[#0058be]" : "bg-[#c6c6cd]"}`} />
-            <p className={`pl-2 text-xs font-bold ${billing.isNext ? "text-[#0058be]" : "text-[#45464d]"}`}>{billing.dateLabel}</p>
+            <div className="flex items-center justify-between gap-3 pl-2">
+              <p className={`text-xs font-bold ${billing.isNext ? "text-[#0058be]" : "text-[#45464d]"}`}>{billing.dateLabel}</p>
+              {billing.reminderDue ? <span className="rounded bg-[#fff1f0] px-2 py-1 text-[11px] font-bold uppercase text-[#991b1b]">Reminder</span> : null}
+            </div>
             <div className="flex items-center gap-3 pl-2">
               <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#eff4ff] text-[#45464d]">
                 <Icon className="size-5" name={billing.icon} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{billing.name}</p>
-                <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle}</p>
+                <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle} · {billing.reminderLabel}</p>
+                <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{billing.billedAmount}</p>
               </div>
               <p className="amount-value text-lg font-semibold text-[#0b1c30]">{billing.amount}</p>
             </div>
@@ -49,15 +97,18 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
       <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">All Subscriptions</h2>
       <div className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] border-collapse text-left">
+          <table className="w-full min-w-[1280px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold text-[#45464d]">
                 <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3 text-right">Amount</th>
+                <th className="px-4 py-3 text-right">MMK Amount</th>
+                <th className="px-4 py-3">Billed Amount</th>
+                <th className="px-4 py-3">Exchange Rate</th>
                 <th className="px-4 py-3">Billing Cycle</th>
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Payment Account</th>
                 <th className="px-4 py-3">Next Billing</th>
+                <th className="px-4 py-3">Reminder</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="w-24 px-4 py-3 text-right">Actions</th>
               </tr>
@@ -74,10 +125,13 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{subscription.amount}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0058be]">{subscription.billedAmount}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{subscription.exchangeRateLabel}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{subscription.billingCycle}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{subscription.category}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#0b1c30]">{subscription.paymentAccount}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{subscription.nextBillingDate}</td>
+                  <td className="px-4 py-4"><ReminderStatusBadge status={subscription.reminderStatus} /></td>
                   <td className="px-4 py-4">
                     <span className={`inline-flex rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[subscription.status]}`}>
                       {subscription.status}
@@ -119,7 +173,7 @@ export function SubscriptionsPageContent({
   const filteredSubscriptions = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleSubscriptions.filter((subscription) => {
-      const searchable = `${subscription.name} ${subscription.amount} ${subscription.billingCycle} ${subscription.category} ${subscription.paymentAccount} ${subscription.nextBillingDate} ${subscription.status}`.toLowerCase();
+      const searchable = `${subscription.name} ${subscription.amount} ${subscription.billedAmount} ${subscription.exchangeRateLabel} ${subscription.billingCycle} ${subscription.category} ${subscription.paymentAccount} ${subscription.nextBillingDate} ${subscription.reminderStatus} ${subscription.status}`.toLowerCase();
       return normalizedSearch === "" || searchable.includes(normalizedSearch);
     });
   }, [search, visibleSubscriptions]);
@@ -140,6 +194,7 @@ export function SubscriptionsPageContent({
     <>
       {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating subscriptions…</p> : null}
+      <ReminderPanel subscriptions={filteredSubscriptions} />
       <BillingTimeline billings={billings} />
       <SubscriptionsTable
         onDelete={handleDelete}
