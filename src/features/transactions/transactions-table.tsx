@@ -101,6 +101,26 @@ function compareTransactions(first: Transaction, second: Transaction, key: SortK
   return compareSortValues(firstValue, secondValue, direction);
 }
 
+function accountMovementLabel(transaction: Transaction) {
+  if (transaction.type !== "Transfer") return transaction.account;
+  if (transaction.transferFromAccount && transaction.transferToAccount) {
+    return `${transaction.transferFromAccount} → ${transaction.transferToAccount}`;
+  }
+  return transaction.transferAccount ? `${transaction.account} → ${transaction.transferAccount}` : transaction.account;
+}
+
+function amountTypeMovementLabel(transaction: Transaction) {
+  if (transaction.type !== "Transfer") return transaction.accountAmountType;
+  if (transaction.transferDirection === "Credit") {
+    return transaction.transferAccountAmountType
+      ? `${transaction.transferAccountAmountType} → ${transaction.accountAmountType}`
+      : transaction.accountAmountType;
+  }
+  return transaction.transferAccountAmountType
+    ? `${transaction.accountAmountType} → ${transaction.transferAccountAmountType}`
+    : transaction.accountAmountType;
+}
+
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
   const { showError, showSuccess } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -205,9 +225,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       return;
     }
 
-    setDeletedTransactionIds((ids) => [...ids, deletingTransaction.id]);
-    setSelectedTransactionIds((currentIds) => currentIds.filter((id) => id !== deletingTransaction.id));
-    setViewedTransaction((currentTransaction) => (currentTransaction?.id === deletingTransaction.id ? null : currentTransaction));
+    const deletedIds = result.transactionIds?.length ? result.transactionIds : [deletingTransaction.id];
+    setDeletedTransactionIds((ids) => [...ids, ...deletedIds]);
+    setSelectedTransactionIds((currentIds) => currentIds.filter((id) => !deletedIds.includes(id)));
+    setViewedTransaction((currentTransaction) => (currentTransaction && deletedIds.includes(currentTransaction.id) ? null : currentTransaction));
     setDeletingTransaction(null);
     showSuccess("Transaction deleted successfully.");
   }
@@ -247,13 +268,18 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
 
     setIsDeleting(true);
     const deletedIds: string[] = [];
+    const deletedIdSet = new Set<string>();
     for (const transaction of selectedVisibleTransactions) {
+      if (deletedIdSet.has(transaction.id)) continue;
       const result = await deleteTransaction(transaction.id);
       if (result.error) {
         showError(result.error);
         break;
       }
-      deletedIds.push(transaction.id);
+      for (const deletedId of result.transactionIds?.length ? result.transactionIds : [transaction.id]) {
+        deletedIdSet.add(deletedId);
+        deletedIds.push(deletedId);
+      }
     }
     setIsDeleting(false);
     if (deletedIds.length === 0) return;
@@ -366,7 +392,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">{transaction.date}</td>
                   <td className="px-4 py-4">
-                    <TransactionTypeBadge type={transaction.type} />
+                    <TransactionTypeBadge transferDirection={transaction.transferDirection} type={transaction.type} />
                   </td>
                   <td className="w-40 px-4 py-4 align-middle">
                     <div className="flex max-w-36 items-center">
@@ -375,13 +401,12 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">
                     {transaction.account}
-                    {transaction.transferAccount ? <span className="block text-xs font-medium text-[#76777d]">to {transaction.transferAccount}</span> : null}
+                    {transaction.type === "Transfer" && transaction.transferDirection ? <span className="block text-xs font-medium text-[#76777d]">{transaction.transferDirection === "Credit" ? "credit side" : "debit side"}</span> : null}
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">
-                    {transaction.accountAmountType}
-                    {transaction.transferAccountAmountType ? <span className="block text-xs font-medium text-[#76777d]">to {transaction.transferAccountAmountType}</span> : null}
+                    {amountTypeMovementLabel(transaction)}
                   </td>
-                  <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${amountClass(transaction.type)}`}>
+                  <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`}>
                     {transaction.amount}
                   </td>
                   <td className="max-w-52 truncate px-4 py-4 text-[#45464d]" title={transaction.note}>
@@ -451,17 +476,17 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className={`amount-value text-sm font-semibold ${amountClass(transaction.type)}`}>{transaction.amount}</p>
+                  <p className={`amount-value text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`}>{transaction.amount}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <TransactionTypeBadge type={transaction.type} />
+                <TransactionTypeBadge transferDirection={transaction.transferDirection} type={transaction.type} />
                 <CategoryBadge category={transaction.category} />
                 <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {transaction.transferAccount ? `${transaction.account} → ${transaction.transferAccount}` : transaction.account}
+                  {accountMovementLabel(transaction)}
                 </span>
                 <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {transaction.transferAccountAmountType ? `${transaction.accountAmountType} → ${transaction.transferAccountAmountType}` : transaction.accountAmountType}
+                  {amountTypeMovementLabel(transaction)}
                 </span>
               </div>
               <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
@@ -596,17 +621,19 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <TransactionTypeBadge type={viewedTransaction.type} />
+                <TransactionTypeBadge transferDirection={viewedTransaction.transferDirection} type={viewedTransaction.type} />
                 <CategoryBadge category={viewedTransaction.category} />
               </div>
-              <p className={`amount-value text-lg font-bold ${amountClass(viewedTransaction.type)}`}>{viewedTransaction.amount}</p>
+              <p className={`amount-value text-lg font-bold ${amountClass(viewedTransaction.type, viewedTransaction.transferDirection)}`}>{viewedTransaction.amount}</p>
             </div>
             <DetailModalSection title="Transaction information">
               <DetailModalField label="Date" value={viewedTransaction.date} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
               <DetailModalField label="Amount type" value={viewedTransaction.accountAmountType} />
-              {viewedTransaction.transferAccount ? <DetailModalField label="To account" value={viewedTransaction.transferAccount} /> : null}
-              {viewedTransaction.transferAccountAmountType ? <DetailModalField label="To amount type" value={viewedTransaction.transferAccountAmountType} /> : null}
+              {viewedTransaction.transferDirection ? <DetailModalField label="Transfer side" value={viewedTransaction.transferDirection} /> : null}
+              {viewedTransaction.transferFromAccount ? <DetailModalField label="From account" value={viewedTransaction.transferFromAccount} /> : null}
+              {viewedTransaction.transferToAccount ? <DetailModalField label="To account" value={viewedTransaction.transferToAccount} /> : null}
+              {viewedTransaction.transferAccountAmountType ? <DetailModalField label="Transfer amount type" value={amountTypeMovementLabel(viewedTransaction)} /> : null}
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
               <DetailModalField label="Reflects to" value={getImpactLabel(viewedTransaction)} />
             </DetailModalSection>

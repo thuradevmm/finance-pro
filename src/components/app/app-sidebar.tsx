@@ -1,6 +1,6 @@
 "use client";
 
-import Link, { useLinkStatus } from "next/link";
+import Link from "next/link";
 
 import { Icon } from "@/components/ui/icon";
 import { navGroups, type NavItem } from "@/lib/app-navigation";
@@ -13,17 +13,6 @@ type AppSidebarProps = {
   onToggleCollapse?: () => void;
   variant?: "desktop" | "mobile";
 };
-
-function NavLinkPendingHint() {
-  const { pending } = useLinkStatus();
-
-  return (
-    <span
-      aria-hidden="true"
-      className={`absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-current transition-opacity duration-200 ${pending ? "opacity-60" : "opacity-0"}`}
-    />
-  );
-}
 
 export function AppSidebar({
   activeLabel,
@@ -97,7 +86,6 @@ export function AppSidebar({
                   >
                     <Icon className="size-5 shrink-0" name={item.icon} />
                     {!isCompact ? <span className="truncate">{item.label}</span> : null}
-                    <NavLinkPendingHint />
                   </Link>
                 );
               })}

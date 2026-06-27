@@ -1,5 +1,5 @@
 import type { IconName } from "@/components/ui/icon";
-import type { TransactionCategoryName, TransactionType } from "@/types/finance";
+import type { Transaction, TransactionCategoryName, TransactionType } from "@/types/finance";
 
 export const categoryStyles: Partial<Record<TransactionCategoryName | string, string>> = {
   Food: "border-[#bae6fd] bg-[#e0f2fe] text-[#0369a1]",
@@ -35,12 +35,12 @@ export function transactionTypeIcon(type: TransactionType): IconName {
   return "sync";
 }
 
-export function amountClass(type: TransactionType) {
-  if (type === "Income") {
+export function amountClass(type: TransactionType, transferDirection?: Transaction["transferDirection"]) {
+  if (type === "Income" || transferDirection === "Credit") {
     return "text-[#047857]";
   }
 
-  if (type === "Expense") {
+  if (type === "Expense" || transferDirection === "Debit") {
     return "text-[#b42318]";
   }
 

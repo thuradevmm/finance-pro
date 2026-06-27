@@ -66,6 +66,7 @@ type DebtRow = {
 type LinkedTransactionRow = {
   account_id: string | null;
   amount: number | string | null;
+  metadata: unknown;
   transfer_account_id: string | null;
   type: string | null;
   related_entity_id: string | null;
@@ -90,6 +91,15 @@ function metadataRecord(metadata: unknown) {
 function numericValue(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function transferDirection(metadata: Record<string, unknown>) {
+  const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
+  if (direction === "debit" || direction === "credit") return direction;
+  const legacyRole = typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role.toLowerCase() : "";
+  if (legacyRole === "out") return "debit";
+  if (legacyRole === "in") return "credit";
+  return "";
 }
 
 function normalizeInterestRatePeriod(value: unknown): DebtInterestRatePeriod {
@@ -175,7 +185,7 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
 
   const [debtsResult, transactionsResult, accountsResult] = await Promise.all([
     debtsQuery,
-    supabase.from("transactions").select("related_entity_id,account_id,transfer_account_id,type,amount").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
+    supabase.from("transactions").select("related_entity_id,account_id,transfer_account_id,type,amount,metadata").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
     supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
   ]);
   const error = debtsResult.error ?? transactionsResult.error ?? accountsResult.error;
@@ -190,11 +200,22 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
     if (!transaction.related_entity_id) continue;
     const amount = Math.abs(numericValue(transaction.amount));
     const type = String(transaction.type ?? "").toLowerCase();
+    const direction = transferDirection(metadataRecord(transaction.metadata));
     const usesCreditCardAccount = transaction.account_id ? creditCardAccountIds.has(transaction.account_id) : false;
     const paysCreditCardAccount = transaction.transfer_account_id ? creditCardAccountIds.has(transaction.transfer_account_id) : false;
-    const isCreditCardCharge = usesCreditCardAccount && (type === "expense" || type === "transfer");
-    const isCreditCardPayment = paysCreditCardAccount || (usesCreditCardAccount && type === "income");
-    const targetMap = isCreditCardCharge && !isCreditCardPayment ? linkedChargesByDebtId : linkedRepaymentsByDebtId;
+    let targetMap = linkedRepaymentsByDebtId;
+
+    if (type === "transfer" && direction) {
+      if (!usesCreditCardAccount) continue;
+      targetMap = direction === "debit" ? linkedChargesByDebtId : linkedRepaymentsByDebtId;
+    } else if (usesCreditCardAccount && (type === "expense" || (type === "transfer" && !direction))) {
+      targetMap = linkedChargesByDebtId;
+    } else if (usesCreditCardAccount && type === "income") {
+      targetMap = linkedRepaymentsByDebtId;
+    } else if (type === "transfer" && !direction && paysCreditCardAccount) {
+      targetMap = linkedRepaymentsByDebtId;
+    }
+
     targetMap.set(transaction.related_entity_id, (targetMap.get(transaction.related_entity_id) ?? 0) + amount);
   }
   return (debtsResult.data as DebtRow[])

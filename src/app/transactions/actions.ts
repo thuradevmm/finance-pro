@@ -8,7 +8,7 @@ import type { TransactionFormData } from "@/lib/transactions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
-type ActionResult = { error?: string };
+type ActionResult = { error?: string; transactionIds?: string[] };
 
 type AccountRow = {
   id: string;
@@ -59,24 +59,24 @@ function revalidateTransactionLinkedPaths(extraPaths: string[] = []) {
   }
 }
 
-function payload(input: TransactionFormData) {
+function singleTransactionPayload(input: TransactionFormData) {
   return {
     account_id: input.accountId || null,
     amount: input.amount,
-    category_id: input.type === "Transfer" ? null : input.categoryId || null,
+    category_id: input.categoryId || null,
     description: input.note.trim() || null,
     note: input.note.trim() || null,
     payment_method: null,
     metadata: {
       account_amount_type: input.accountAmountType,
-      transfer_account_amount_type: input.type === "Transfer" ? input.transferAccountAmountType : null,
+      transfer_account_amount_type: null,
     },
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
     status: input.status.toLowerCase(),
     title: input.title.trim() || `${input.type} transaction`,
     transaction_date: input.date,
-    transfer_account_id: input.type === "Transfer" ? input.transferAccountId || null : null,
+    transfer_account_id: null,
     type: input.type.toLowerCase(),
   };
 }
@@ -108,27 +108,38 @@ function transactionMutationError(message: string) {
   return message;
 }
 
-function isSameAccountAmountTypeTransfer(input: TransactionFormData) {
-  return input.type === "Transfer"
-    && input.accountId === input.transferAccountId
-    && normalizeAmountType(input.accountAmountType) !== normalizeAmountType(input.transferAccountAmountType);
+function transferGroupId(metadata: Record<string, unknown>) {
+  if (typeof metadata.transfer_group_id === "string" && metadata.transfer_group_id) return metadata.transfer_group_id;
+  if (typeof metadata.same_account_transfer_group_id === "string" && metadata.same_account_transfer_group_id) return metadata.same_account_transfer_group_id;
+  return "";
 }
 
-function sameAccountTransferPairPayload(input: TransactionFormData, userId: string) {
-  const groupId = randomUUID();
+function transferDirection(metadata: Record<string, unknown>) {
+  const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
+  if (direction === "debit" || direction === "credit") return direction;
+  const legacyRole = typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role.toLowerCase() : "";
+  if (legacyRole === "out") return "debit";
+  if (legacyRole === "in") return "credit";
+  return "";
+}
+
+function transferPairPayload(input: TransactionFormData, userId: string, groupId: string = randomUUID()) {
   const title = input.title.trim() || "Transfer transaction";
   const note = input.note.trim() || null;
+  const relatedEntityId = input.relatedEntityType === "none" ? null : input.relatedEntityId || null;
+  const relatedEntityType = input.relatedEntityType === "none" ? null : input.relatedEntityType;
   const base = {
     amount: input.amount,
     category_id: null,
     description: note,
     note,
     payment_method: null,
-    related_entity_id: null,
-    related_entity_type: null,
+    related_entity_id: relatedEntityId,
+    related_entity_type: relatedEntityType,
     status: input.status.toLowerCase(),
     transaction_date: input.date,
-    transfer_account_id: null,
+    title,
+    type: "transfer",
     user_id: userId,
   };
 
@@ -136,41 +147,33 @@ function sameAccountTransferPairPayload(input: TransactionFormData, userId: stri
     {
       ...base,
       account_id: input.accountId || null,
+      transfer_account_id: input.transferAccountId || null,
       metadata: {
         account_amount_type: input.accountAmountType,
-        same_account_transfer_group_id: groupId,
-        same_account_transfer_role: "out",
+        counter_account_amount_type: input.transferAccountAmountType,
+        counter_account_id: input.transferAccountId,
+        transfer_direction: "debit",
+        transfer_group_id: groupId,
         transfer_account_amount_type: input.transferAccountAmountType,
-        transfer_account_id: input.transferAccountId,
       },
-      title,
-      type: "expense",
     },
     {
       ...base,
       account_id: input.transferAccountId || null,
+      transfer_account_id: input.accountId || null,
       metadata: {
         account_amount_type: input.transferAccountAmountType,
-        same_account_transfer_group_id: groupId,
-        same_account_transfer_role: "in",
+        counter_account_amount_type: input.accountAmountType,
+        counter_account_id: input.accountId,
+        transfer_direction: "credit",
+        transfer_group_id: groupId,
         transfer_account_amount_type: input.accountAmountType,
-        transfer_account_id: input.accountId,
       },
-      title,
-      type: "income",
     },
   ];
 }
 
-async function createSameAccountTransferPair(input: TransactionFormData, userId: string): Promise<ActionResult> {
-  const { supabase } = await authenticatedClient();
-  const { error } = await supabase.from("transactions").insert(sameAccountTransferPairPayload(input, userId));
-  if (error) return { error: error.message };
-  revalidateTransactionLinkedPaths();
-  return {};
-}
-
-async function validateAvailableAmount(input: TransactionFormData, userId: string, ignoredTransactionId?: string) {
+async function validateAvailableAmount(input: TransactionFormData, userId: string, ignoredTransactionIds: string[] = []) {
   if (input.type !== "Expense" && input.type !== "Transfer") return null;
 
   const { supabase } = await authenticatedClient();
@@ -196,20 +199,25 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
   if (transactionsError) return transactionsError.message;
 
   let availableAmount = 0;
+  const ignoredIds = new Set(ignoredTransactionIds);
   for (const transaction of transactions as TransactionRow[]) {
-    if (transaction.id === ignoredTransactionId) continue;
+    if (ignoredIds.has(transaction.id)) continue;
 
     const transactionType = String(transaction.type ?? "").toLowerCase();
     const metadata = metadataRecord(transaction.metadata);
     const transactionAmountType = normalizeAmountType(metadata.account_amount_type);
     const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
+    const direction = transferDirection(metadata);
 
     const amount = numericValue(transaction.amount);
     if (transaction.account_id === input.accountId && transactionAmountType === amountType) {
       if (transactionType === "income") availableAmount += amount;
-      if (transactionType === "expense" || transactionType === "transfer") availableAmount -= amount;
+      if (transactionType === "expense") availableAmount -= amount;
+      if (transactionType === "transfer") {
+        availableAmount += direction === "credit" ? amount : -amount;
+      }
     }
-    if (transactionType === "transfer" && transaction.transfer_account_id === input.accountId && transferAmountType === amountType) {
+    if (transactionType === "transfer" && !direction && transaction.transfer_account_id === input.accountId && transferAmountType === amountType) {
       availableAmount += amount;
     }
   }
@@ -245,6 +253,48 @@ async function validateCreditCardDebtLink(input: TransactionFormData, userId: st
   return null;
 }
 
+async function getLinkedTransactionIds(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transaction: Pick<TransactionRow, "id" | "metadata">) {
+  const metadata = metadataRecord(transaction.metadata);
+  const groupId = transferGroupId(metadata);
+  if (!groupId) return [transaction.id];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .or(`metadata->>transfer_group_id.eq.${groupId},metadata->>same_account_transfer_group_id.eq.${groupId}`);
+
+  if (error) throw new Error(error.message);
+  const ids = (data as Pick<TransactionRow, "id">[]).map((row) => row.id);
+  return ids.length > 0 ? ids : [transaction.id];
+}
+
+async function fetchTransactionForMutation(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transactionId: string) {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id,metadata,type")
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data as Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+}
+
+async function archiveLinkedTransactions(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transaction: Pick<TransactionRow, "id" | "metadata">) {
+  const linkedIds = await getLinkedTransactionIds(supabase, userId, transaction);
+  const { error } = await supabase
+    .from("transactions")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .in("id", linkedIds);
+
+  if (error) throw new Error(error.message);
+  return linkedIds;
+}
+
 export async function createTransaction(input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
@@ -252,12 +302,12 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
   if (creditCardLinkError) return { error: creditCardLinkError };
   const validationError = await validateAvailableAmount(input, user.id);
   if (validationError) return { error: validationError };
-  const { error } = await supabase.from("transactions").insert({ ...payload(input), user_id: user.id });
-  if (error) {
-    if (error.message.includes("chk_transaction_transfer_accounts") && isSameAccountAmountTypeTransfer(input)) {
-      return createSameAccountTransferPair(input, user.id);
-    }
-    return { error: transactionMutationError(error.message) };
+  if (input.type === "Transfer") {
+    const { error } = await supabase.from("transactions").insert(transferPairPayload(input, user.id));
+    if (error) return { error: transactionMutationError(error.message) };
+  } else {
+    const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(input), user_id: user.id });
+    if (error) return { error: transactionMutationError(error.message) };
   }
   revalidateTransactionLinkedPaths();
   return {};
@@ -266,11 +316,44 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
 export async function updateTransaction(transactionId: string, input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
+  let existingTransaction: Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+  let ignoredTransactionIds: string[];
+  try {
+    existingTransaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
+    if (!existingTransaction) return { error: "Transaction not found." };
+    ignoredTransactionIds = await getLinkedTransactionIds(supabase, user.id, existingTransaction);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Unable to load transaction." };
+  }
+
   const creditCardLinkError = await validateCreditCardDebtLink(input, user.id);
   if (creditCardLinkError) return { error: creditCardLinkError };
-  const validationError = await validateAvailableAmount(input, user.id, transactionId);
+  const validationError = await validateAvailableAmount(input, user.id, ignoredTransactionIds);
   if (validationError) return { error: validationError };
-  const { data, error } = await supabase.from("transactions").update(payload(input)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
+
+  const existingGroupId = transferGroupId(metadataRecord(existingTransaction.metadata));
+  const existingType = String(existingTransaction.type ?? "").toLowerCase();
+  const shouldReplaceRows = input.type === "Transfer" || existingGroupId || existingType === "transfer";
+
+  if (shouldReplaceRows) {
+    try {
+      await archiveLinkedTransactions(supabase, user.id, existingTransaction);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "Unable to update transaction." };
+    }
+
+    if (input.type === "Transfer") {
+      const { error } = await supabase.from("transactions").insert(transferPairPayload(input, user.id, existingGroupId || randomUUID()));
+      if (error) return { error: transactionMutationError(error.message) };
+    } else {
+      const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(input), user_id: user.id });
+      if (error) return { error: transactionMutationError(error.message) };
+    }
+    revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
+    return {};
+  }
+
+  const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(input)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: transactionMutationError(error.message) };
   if (!data) return { error: "Transaction not found." };
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
@@ -281,34 +364,16 @@ export async function deleteTransaction(transactionId: string): Promise<ActionRe
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
 
-  const { data: transaction, error: fetchError } = await supabase
-    .from("transactions")
-    .select("id,metadata")
-    .eq("id", transactionId)
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (fetchError) return { error: fetchError.message };
-  if (!transaction) return { error: "Transaction not found." };
-
-  const groupId = metadataRecord((transaction as Pick<TransactionRow, "metadata">).metadata).same_account_transfer_group_id;
-  if (typeof groupId === "string" && groupId) {
-    const { error } = await supabase
-      .from("transactions")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("user_id", user.id)
-      .filter("metadata->>same_account_transfer_group_id", "eq", groupId);
-    if (error) return { error: error.message };
+  let transaction: Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+  try {
+    transaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
+    if (!transaction) return { error: "Transaction not found." };
+    const transactionIds = await archiveLinkedTransactions(supabase, user.id, transaction);
     revalidateTransactionLinkedPaths();
-    return {};
+    return { transactionIds };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Unable to delete transaction." };
   }
-
-  const { data, error } = await supabase.from("transactions").update({ deleted_at: new Date().toISOString() }).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
-  if (error) return { error: error.message };
-  if (!data) return { error: "Transaction not found." };
-  revalidateTransactionLinkedPaths();
-  return {};
 }
 
 export async function reverseTransaction(transactionId: string): Promise<ActionResult> {
@@ -329,8 +394,51 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
   const source = data as TransactionRow;
   const sourceType = String(source.type ?? "").toLowerCase();
   const metadata = metadataRecord(source.metadata);
+  const groupId = transferGroupId(metadata);
   const reversalType = sourceType === "income" ? "expense" : sourceType === "expense" ? "income" : "transfer";
   const reversalNote = `Reversal of ${source.title || source.note || source.id}`;
+
+  if (sourceType === "transfer") {
+    let debitRow = source;
+    let creditRow: TransactionRow | null = null;
+
+    if (groupId) {
+      const { data: groupRows, error: groupError } = await supabase
+        .from("transactions")
+        .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
+        .eq("user_id", user.id)
+        .is("deleted_at", null)
+        .or(`metadata->>transfer_group_id.eq.${groupId},metadata->>same_account_transfer_group_id.eq.${groupId}`);
+
+      if (groupError) return { error: groupError.message };
+      const rows = groupRows as TransactionRow[];
+      debitRow = rows.find((row) => transferDirection(metadataRecord(row.metadata)) === "debit") ?? source;
+      creditRow = rows.find((row) => transferDirection(metadataRecord(row.metadata)) === "credit") ?? null;
+    }
+
+    const debitMetadata = metadataRecord(debitRow.metadata);
+    const creditMetadata = metadataRecord(creditRow?.metadata);
+    const reverseInput: TransactionFormData = {
+      accountId: creditRow?.account_id ?? debitRow.transfer_account_id ?? "",
+      accountAmountType: normalizeAmountType(creditMetadata.account_amount_type ?? debitMetadata.transfer_account_amount_type ?? debitMetadata.account_amount_type),
+      amount: numericValue(debitRow.amount),
+      categoryId: "",
+      date: new Date().toISOString().slice(0, 10),
+      note: reversalNote,
+      relatedEntityId: debitRow.related_entity_id ?? "",
+      relatedEntityType: normalizeRelatedTypeForAction(debitRow.related_entity_type),
+      status: "cleared",
+      title: reversalNote,
+      transferAccountId: debitRow.account_id ?? "",
+      transferAccountAmountType: normalizeAmountType(debitMetadata.account_amount_type),
+      type: "Transfer",
+    };
+
+    const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id));
+    if (error) return { error: transactionMutationError(error.message) };
+    revalidateTransactionLinkedPaths();
+    return {};
+  }
 
   const { error } = await supabase.from("transactions").insert({
     account_id: sourceType === "transfer" ? source.transfer_account_id : source.account_id,
@@ -359,4 +467,9 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
   if (error) return { error: transactionMutationError(error.message) };
   revalidateTransactionLinkedPaths();
   return {};
+}
+
+function normalizeRelatedTypeForAction(value: string | null): TransactionFormData["relatedEntityType"] {
+  if (value === "asset" || value === "budget" || value === "debt" || value === "savings_goal" || value === "subscription") return value;
+  return "none";
 }

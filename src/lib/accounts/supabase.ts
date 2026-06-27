@@ -164,6 +164,21 @@ function isCreditCardType(type: string | null | undefined) {
   return String(type ?? "").toLowerCase() === "credit_card";
 }
 
+function transferDirection(metadata: Record<string, unknown>) {
+  const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
+  if (direction === "debit" || direction === "credit") return direction;
+
+  const legacyRole = typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role.toLowerCase() : "";
+  if (legacyRole === "out") return "debit";
+  if (legacyRole === "in") return "credit";
+  return "";
+}
+
+function signedAccountDelta(amount: number, isCreditCard: boolean, direction: "credit" | "debit") {
+  if (direction === "credit") return isCreditCard ? -amount : amount;
+  return isCreditCard ? amount : -amount;
+}
+
 function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
   if (Array.isArray(metadata.amount_types)) {
     const amountTypes = metadata.amount_types
@@ -205,6 +220,7 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
     const amountType = normalizeAmountType(metadata.account_amount_type);
     const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
     const type = transaction.type.toLowerCase();
+    const direction = transferDirection(metadata);
 
     if (transaction.account_id) {
       const activity = getActivity(transaction.account_id);
@@ -217,12 +233,17 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
         activity.outflow += amount;
         addActivityDelta(activity, amountType, isCreditCard ? amount : -amount);
       } else if (type === "transfer") {
-        activity.outflow += amount;
-        addActivityDelta(activity, amountType, isCreditCard ? amount : -amount);
+        if (direction === "credit") {
+          activity.inflow += amount;
+          addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "credit"));
+        } else {
+          activity.outflow += amount;
+          addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "debit"));
+        }
       }
     }
 
-    if (type === "transfer" && transaction.transfer_account_id) {
+    if (type === "transfer" && !direction && transaction.transfer_account_id) {
       const transferActivity = getActivity(transaction.transfer_account_id);
       const isCreditCard = isCreditCardType(accountTypes.get(transaction.transfer_account_id));
       transferActivity.transactionCount += 1;

@@ -12,12 +12,13 @@ import type { Transaction, TransactionFilterOptions, TransactionType } from "@/t
 type TransactionTab = "All" | TransactionType;
 
 type TransactionFiltersState = {
-  amount: string;
   account: string;
+  amount: string;
   category: string;
   dateFrom: string;
   dateTo: string;
   fromAccount: string;
+  relatedAccount: string;
   toAccount: string;
   type: string;
 };
@@ -60,12 +61,13 @@ function getInitialFilters(
   const range = defaultDateRange();
 
   return {
-    amount: filterOptions.amount[0],
     account: accountFilter,
+    amount: filterOptions.amount[0],
     category: categoryFilter,
     dateFrom: range.dateFrom,
     dateTo: range.dateTo,
     fromAccount: filterOptions.account[0],
+    relatedAccount: accountFilter,
     toAccount: filterOptions.account[0],
     type: filterOptions.type[0],
   };
@@ -113,17 +115,25 @@ function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: s
 }
 
 function filterTransactions(transactions: Transaction[], filters: TransactionFiltersState) {
+  function matchesAffectedAccount(transaction: Transaction, accountFilter: string) {
+    if (accountFilter === "Account") return true;
+    if (transaction.type === "Transfer" && transaction.transferDirection) return transaction.account === accountFilter;
+    return transaction.account === accountFilter || transaction.transferAccount === accountFilter;
+  }
+
   return transactions.filter((transaction) => {
+    const matchesAccount = matchesAffectedAccount(transaction, filters.account);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
-    const matchesAccount = filters.account === "Account" || transaction.account === filters.account || transaction.transferAccount === filters.account;
-    const matchesFromAccount = filters.fromAccount === "Account" || (transaction.type === "Transfer" && transaction.account === filters.fromAccount);
-    const matchesToAccount = filters.toAccount === "Account" || (transaction.type === "Transfer" && transaction.transferAccount === filters.toAccount);
+    const matchesFromAccount = filters.fromAccount === "Account" || (transaction.type === "Transfer" && transaction.transferFromAccount === filters.fromAccount);
+    const matchesRelatedAccount = matchesAffectedAccount(transaction, filters.relatedAccount);
+    const matchesToAccount = filters.toAccount === "Account" || (transaction.type === "Transfer" && transaction.transferToAccount === filters.toAccount);
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
     return (
-      matchesCategory &&
       matchesAccount &&
+      matchesCategory &&
       matchesFromAccount &&
+      matchesRelatedAccount &&
       matchesToAccount &&
       matchesType &&
       matchesDateFilter(transaction, filters.dateFrom, filters.dateTo) &&
@@ -143,46 +153,46 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
     () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter),
     [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter],
   );
-  const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
-  const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
-  const [activeTab, setActiveTab] = useState<TransactionTab>("All");
+  const [filters, setFilters] = useState<TransactionFiltersState>(initialFilters);
+  const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));
 
-  const filteredTransactions = useMemo(() => filterTransactions(transactions, appliedFilters), [appliedFilters, transactions]);
+  const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
   const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
-  const tableKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
+  const tableKey = useMemo(() => JSON.stringify(filters), [filters]);
 
-  function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
-    setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
-  }
+  function updateFilter(key: keyof TransactionFiltersState, value: string) {
+    const normalizedValue = key === "dateFrom" || key === "dateTo" ? toDateInputValue(value) : value;
 
-  function applyFilters() {
-    const nextFilters = {
-      ...draftFilters,
-      dateFrom: toDateInputValue(draftFilters.dateFrom),
-      dateTo: toDateInputValue(draftFilters.dateTo),
-    };
-
-    setAppliedFilters(nextFilters);
-    setDraftFilters(nextFilters);
-    setActiveTab(nextFilters.type === "Type" ? "All" : (nextFilters.type as TransactionTab));
-  }
-
-  function clearFilters() {
-    const clearedFilters = getInitialFilters(effectiveFilterOptions);
-
-    setDraftFilters(clearedFilters);
-    setAppliedFilters(clearedFilters);
-    setActiveTab("All");
+    setFilters((currentFilters) => {
+      const nextFilters = { ...currentFilters, [key]: normalizedValue };
+      if (key === "type") {
+        setActiveTab(normalizedValue === "Type" ? "All" : (normalizedValue as TransactionTab));
+        if (normalizedValue !== "Transfer") {
+          nextFilters.fromAccount = effectiveFilterOptions.account[0];
+          nextFilters.toAccount = effectiveFilterOptions.account[0];
+        } else {
+          nextFilters.fromAccount = currentFilters.account === effectiveFilterOptions.account[0] ? currentFilters.fromAccount : currentFilters.account;
+          nextFilters.account = effectiveFilterOptions.account[0];
+        }
+      }
+      return nextFilters;
+    });
   }
 
   function handleTabChange(tab: string) {
     const nextTab = tab as TransactionTab;
     const nextType = nextTab === "All" ? "Type" : nextTab;
-    const nextFilters = { ...appliedFilters, type: nextType };
 
     setActiveTab(nextTab);
-    setDraftFilters((currentFilters) => ({ ...currentFilters, type: nextType }));
-    setAppliedFilters(nextFilters);
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      account: nextType === "Transfer" ? effectiveFilterOptions.account[0] : currentFilters.account,
+      fromAccount: nextType === "Transfer"
+        ? currentFilters.account === effectiveFilterOptions.account[0] ? currentFilters.fromAccount : currentFilters.account
+        : effectiveFilterOptions.account[0],
+      toAccount: nextType === "Transfer" ? currentFilters.toAccount : effectiveFilterOptions.account[0],
+      type: nextType,
+    }));
   }
 
   return (
@@ -191,10 +201,8 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
       <SummaryCards summaries={filteredSummaries} />
       <TransactionsFilters
         filterOptions={effectiveFilterOptions}
-        filters={draftFilters}
-        onApply={applyFilters}
-        onClear={clearFilters}
-        onFilterChange={updateDraftFilter}
+        filters={filters}
+        onFilterChange={updateFilter}
       />
       <TransactionsTable key={tableKey} totalResults={filteredTransactions.length} transactions={filteredTransactions} />
     </>

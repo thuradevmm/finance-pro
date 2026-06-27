@@ -17,8 +17,10 @@ export type TransactionRecord = Transaction & {
   relatedEntityType: TransactionRelatedEntityType;
   status: string;
   title: string;
+  transferFromAccountId: string;
   transferAccountId: string;
   transferAccountAmountType: AccountAmountType;
+  transferToAccountId: string;
 };
 
 export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
@@ -91,29 +93,61 @@ function formatTransactionAmount(value: number, type: TransactionType) {
   return formatMmk(value);
 }
 
-function pairedTransferRole(metadata: Record<string, unknown>) {
-  return typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role : "";
+function transferDirection(metadata: Record<string, unknown>): Transaction["transferDirection"] | undefined {
+  const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
+  if (direction === "debit") return "Debit";
+  if (direction === "credit") return "Credit";
+
+  const legacyRole = typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role.toLowerCase() : "";
+  if (legacyRole === "out") return "Debit";
+  if (legacyRole === "in") return "Credit";
+  return undefined;
+}
+
+function transferGroupId(metadata: Record<string, unknown>, rowId: string, type: TransactionType) {
+  if (typeof metadata.transfer_group_id === "string" && metadata.transfer_group_id) return metadata.transfer_group_id;
+  if (typeof metadata.same_account_transfer_group_id === "string" && metadata.same_account_transfer_group_id) return metadata.same_account_transfer_group_id;
+  return type === "Transfer" ? rowId : "";
+}
+
+function formatTransferAmount(value: number, direction: Transaction["transferDirection"] | undefined) {
+  if (direction === "Debit") return formatMmkPreview(value, "negative");
+  if (direction === "Credit") return formatMmkPreview(value, "positive");
+  return formatMmk(value);
 }
 
 function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
-  const pairRole = pairedTransferRole(metadata);
-  if (pairRole === "in") return null;
-
-  const type = pairRole === "out" ? "Transfer" : normalizeType(row.type);
+  const direction = transferDirection(metadata);
+  const type = direction ? "Transfer" : normalizeType(row.type);
   const amountValue = Number(row.amount) || 0;
   const account = row.account_id ? accounts.get(row.account_id) : undefined;
   const metadataTransferAccountId = typeof metadata.transfer_account_id === "string" ? metadata.transfer_account_id : "";
-  const transferAccountId = row.transfer_account_id ?? metadataTransferAccountId;
+  const counterAccountId = typeof metadata.counter_account_id === "string" ? metadata.counter_account_id : "";
+  const transferAccountId = row.transfer_account_id ?? (counterAccountId || metadataTransferAccountId);
   const transferAccount = transferAccountId ? accounts.get(transferAccountId) : undefined;
+  const accountLabel = account ? getAccountOptionLabel(account, accountList) : "Unknown account";
+  const transferAccountLabel = transferAccount ? getAccountOptionLabel(transferAccount, accountList) : "";
+  const transferFromAccount = type === "Transfer"
+    ? direction === "Credit" ? transferAccountLabel : accountLabel
+    : undefined;
+  const transferToAccount = type === "Transfer"
+    ? direction === "Credit" ? accountLabel : transferAccountLabel
+    : undefined;
+  const transferFromAccountId = type === "Transfer"
+    ? direction === "Credit" ? transferAccountId : row.account_id ?? ""
+    : "";
+  const transferToAccountId = type === "Transfer"
+    ? direction === "Credit" ? row.account_id ?? "" : transferAccountId
+    : "";
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
 
   return {
-    account: account ? getAccountOptionLabel(account, accountList) : "Unknown account",
+    account: accountLabel,
     accountAmountType: normalizeAccountAmountType(metadata.account_amount_type),
     accountId: row.account_id ?? "",
-    amount: formatTransactionAmount(amountValue, type),
+    amount: type === "Transfer" ? formatTransferAmount(amountValue, direction) : formatTransactionAmount(amountValue, type),
     amountValue,
     category: type === "Transfer" ? "Transfer" : category?.name ?? "Uncategorized",
     categoryId: row.category_id ?? "",
@@ -127,15 +161,21 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     status: row.status ?? "cleared",
     title: row.title ?? note,
     transferAccountId,
-    transferAccount: transferAccount ? getAccountOptionLabel(transferAccount, accountList) : "",
+    transferAccount: transferAccountLabel,
     transferAccountAmountType: normalizeAccountAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type),
+    transferDirection: direction,
+    transferFromAccount,
+    transferFromAccountId,
+    transferGroupId: transferGroupId(metadata, row.id, type),
+    transferToAccount,
+    transferToAccountId,
     type,
     ...(row.related_entity_type === "asset" ? { linkedAssetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "budget" ? { linkedBudgetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "debt" ? { linkedDebtId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "savings_goal" ? { linkedSavingsGoalId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "subscription" ? { linkedSubscriptionId: row.related_entity_id ?? undefined } : {}),
-    ...(type === "Transfer" && transferAccount ? { note: `${note} → ${transferAccount.name}` } : {}),
+    ...(type === "Transfer" && transferFromAccount && transferToAccount ? { note: `${note} · ${transferFromAccount} → ${transferToAccount}` } : {}),
   } as TransactionRecord;
 }
 
@@ -182,7 +222,16 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
 export function getTransactionSummaries(transactions: Transaction[]): SummaryMetric[] {
   const income = transactions.filter((t) => t.type === "Income").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
   const expenses = transactions.filter((t) => t.type === "Expense").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
-  const transfers = transactions.filter((t) => t.type === "Transfer").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
+  const transferGroups = new Set<string>();
+  const transfers = transactions
+    .filter((transaction) => {
+      if (transaction.type !== "Transfer") return false;
+      const groupId = transaction.transferGroupId ?? transaction.id;
+      if (transferGroups.has(groupId)) return false;
+      transferGroups.add(groupId);
+      return true;
+    })
+    .reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
   return [
     { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },

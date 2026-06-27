@@ -91,10 +91,18 @@ export function AddTransactionForm({
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? "Expense");
   const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : "");
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? new Date().toISOString().slice(0, 10));
-  const [accountId, setAccountId] = useState(transaction?.accountId ?? accounts[0]?.id ?? "");
-  const [accountAmountType, setAccountAmountType] = useState(transaction?.accountAmountType ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
-  const [transferToAccountId, setTransferToAccountId] = useState(transaction?.transferAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
-  const [transferAccountAmountType, setTransferAccountAmountType] = useState(transaction?.transferAccountAmountType ?? accounts.find((account) => account.id !== accountId)?.balanceBreakdowns[0]?.type ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
+  const initialTransferFromAccountId = transaction?.type === "Transfer" ? transaction.transferFromAccountId || transaction.accountId : transaction?.accountId;
+  const initialTransferToAccountId = transaction?.type === "Transfer" ? transaction.transferToAccountId || transaction.transferAccountId : transaction?.transferAccountId;
+  const initialTransferFromAmountType = transaction?.type === "Transfer" && transaction.transferDirection === "Credit"
+    ? transaction.transferAccountAmountType
+    : transaction?.accountAmountType;
+  const initialTransferToAmountType = transaction?.type === "Transfer" && transaction.transferDirection === "Credit"
+    ? transaction.accountAmountType
+    : transaction?.transferAccountAmountType;
+  const [accountId, setAccountId] = useState(initialTransferFromAccountId ?? accounts[0]?.id ?? "");
+  const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
+  const [transferToAccountId, setTransferToAccountId] = useState(initialTransferToAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
+  const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? accounts.find((account) => account.id !== accountId)?.balanceBreakdowns[0]?.type ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");

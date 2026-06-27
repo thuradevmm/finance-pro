@@ -160,6 +160,10 @@ export type Transaction = {
   accountAmountType: AccountAmountType;
   transferAccount?: string;
   transferAccountAmountType?: AccountAmountType;
+  transferDirection?: "Credit" | "Debit";
+  transferFromAccount?: string;
+  transferGroupId?: string;
+  transferToAccount?: string;
   amount: string;
   amountValue?: number;
   note: string;
