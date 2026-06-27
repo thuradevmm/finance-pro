@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
+import { SummaryCards } from "@/components/app/summary-cards";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
+import { getTransactionSummaries } from "@/lib/transactions/supabase";
 import type { Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 type TransactionTab = "All" | TransactionType;
@@ -16,6 +17,8 @@ type TransactionFiltersState = {
   category: string;
   dateFrom: string;
   dateTo: string;
+  fromAccount: string;
+  toAccount: string;
   type: string;
 };
 
@@ -26,11 +29,24 @@ type TransactionsPageContentProps = {
   transactions: Transaction[];
 };
 
-type SearchableTransactionFiltersState = TransactionFiltersState & {
-  search: string;
-};
-
 const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
+
+function formatDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function defaultDateRange() {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  return {
+    dateFrom: formatDateInput(monthStart),
+    dateTo: formatDateInput(today),
+  };
+}
 
 function getInitialFilters(
   filterOptions: TransactionFilterOptions,
@@ -41,13 +57,16 @@ function getInitialFilters(
     initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
   const categoryFilter =
     initialCategoryFilter && filterOptions.category.includes(initialCategoryFilter) ? initialCategoryFilter : filterOptions.category[0];
+  const range = defaultDateRange();
 
   return {
     amount: filterOptions.amount[0],
     account: accountFilter,
     category: categoryFilter,
-    dateFrom: "",
-    dateTo: "",
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    fromAccount: filterOptions.account[0],
+    toAccount: filterOptions.account[0],
     type: filterOptions.type[0],
   };
 }
@@ -57,7 +76,7 @@ function parseAmount(value: string) {
 }
 
 function matchesAmountFilter(transaction: Transaction, amountFilter: string) {
-  const amount = Math.abs(parseAmount(transaction.amount));
+  const amount = Math.abs(transaction.amountValue ?? parseAmount(transaction.amount));
 
   if (amountFilter === "> MMK 100") {
     return amount > 100;
@@ -74,28 +93,38 @@ function matchesAmountFilter(transaction: Transaction, amountFilter: string) {
   return true;
 }
 
-function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: string) {
-  const transactionTime = new Date(`${transaction.dateValue ?? transaction.date}T00:00:00`).getTime();
-  const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
-  const toTime = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : Number.POSITIVE_INFINITY;
+function toDateInputValue(value: string | undefined) {
+  if (!value) return "";
+  const trimmedValue = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) return trimmedValue;
 
-  return transactionTime >= fromTime && transactionTime <= toTime;
+  const parsedDate = new Date(trimmedValue);
+  return Number.isNaN(parsedDate.getTime()) ? "" : formatDateInput(parsedDate);
 }
 
-function filterTransactions(transactions: Transaction[], filters: SearchableTransactionFiltersState) {
-  const normalizedSearch = filters.search.trim().toLowerCase();
+function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: string) {
+  const transactionDate = toDateInputValue(transaction.dateValue ?? transaction.date);
+  if (!transactionDate) return false;
 
+  const fromDate = toDateInputValue(dateFrom);
+  const toDate = toDateInputValue(dateTo);
+
+  return (!fromDate || transactionDate >= fromDate) && (!toDate || transactionDate <= toDate);
+}
+
+function filterTransactions(transactions: Transaction[], filters: TransactionFiltersState) {
   return transactions.filter((transaction) => {
-    const searchable = `${transaction.date} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.accountAmountType} ${transaction.transferAccount ?? ""} ${transaction.transferAccountAmountType ?? ""} ${transaction.amount} ${transaction.note}`.toLowerCase();
-    const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
     const matchesAccount = filters.account === "Account" || transaction.account === filters.account || transaction.transferAccount === filters.account;
+    const matchesFromAccount = filters.fromAccount === "Account" || (transaction.type === "Transfer" && transaction.account === filters.fromAccount);
+    const matchesToAccount = filters.toAccount === "Account" || (transaction.type === "Transfer" && transaction.transferAccount === filters.toAccount);
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
     return (
-      matchesSearch &&
       matchesCategory &&
       matchesAccount &&
+      matchesFromAccount &&
+      matchesToAccount &&
       matchesType &&
       matchesDateFilter(transaction, filters.dateFrom, filters.dateTo) &&
       matchesAmountFilter(transaction, filters.amount)
@@ -104,8 +133,6 @@ function filterTransactions(transactions: Transaction[], filters: SearchableTran
 }
 
 export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
-  const searchParams = useSearchParams();
-  const shellSearch = searchParams.get("q") ?? "";
   const effectiveFilterOptions = useMemo(() => ({
     ...filterOptions,
     category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
@@ -120,22 +147,24 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
   const [appliedFilters, setAppliedFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>("All");
 
-  const filteredTransactions = useMemo(() => filterTransactions(transactions, { ...appliedFilters, search: shellSearch }), [appliedFilters, shellSearch, transactions]);
+  const filteredTransactions = useMemo(() => filterTransactions(transactions, appliedFilters), [appliedFilters, transactions]);
+  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
+  const tableKey = useMemo(() => JSON.stringify(appliedFilters), [appliedFilters]);
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     setDraftFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
-    setAppliedFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
-    if (key === "type") {
-      setActiveTab(value === "Type" ? "All" : (value as TransactionTab));
-    }
   }
 
   function applyFilters() {
-    const nextType = draftFilters.type === "Type" ? activeTab : draftFilters.type;
-    const nextFilters = { ...draftFilters, type: nextType };
+    const nextFilters = {
+      ...draftFilters,
+      dateFrom: toDateInputValue(draftFilters.dateFrom),
+      dateTo: toDateInputValue(draftFilters.dateTo),
+    };
 
     setAppliedFilters(nextFilters);
-    setActiveTab(nextType === "Type" ? "All" : (nextType as TransactionTab));
+    setDraftFilters(nextFilters);
+    setActiveTab(nextFilters.type === "Type" ? "All" : (nextFilters.type as TransactionTab));
   }
 
   function clearFilters() {
@@ -159,6 +188,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
   return (
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={transactionTabs} />
+      <SummaryCards summaries={filteredSummaries} />
       <TransactionsFilters
         filterOptions={effectiveFilterOptions}
         filters={draftFilters}
@@ -166,7 +196,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
         onClear={clearFilters}
         onFilterChange={updateDraftFilter}
       />
-      <TransactionsTable totalResults={filteredTransactions.length} transactions={filteredTransactions} />
+      <TransactionsTable key={tableKey} totalResults={filteredTransactions.length} transactions={filteredTransactions} />
     </>
   );
 }

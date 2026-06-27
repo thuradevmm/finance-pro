@@ -14,6 +14,7 @@ import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -347,6 +348,7 @@ function AccountsTable({
 }
 
 export default function AccountsPage() {
+  const { showError, showSuccess } = useToast();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -422,7 +424,9 @@ export default function AccountsPage() {
         supabase = createClient();
       } catch {
         if (isMounted) {
-          setError("Supabase is not configured. Check the environment variables.");
+          const message = "Supabase is not configured. Check the environment variables.";
+          setError(message);
+          showError(message);
           setIsLoading(false);
         }
         return;
@@ -430,17 +434,23 @@ export default function AccountsPage() {
       const { user, error: userError } = await getUserSafely(supabase);
       if (userError || !user) {
         if (isMounted) {
-          setError("You must be signed in to view accounts.");
+          const message = "You must be signed in to view accounts.";
+          setError(message);
+          showError(message);
           setIsLoading(false);
         }
         return;
       }
 
       try {
-        const accounts = await getAccounts(supabase, user.id);
+        const accounts = await getAccounts(supabase, user.id, { limit: 200 });
         if (isMounted) setVisibleAccounts(accounts);
       } catch (loadError) {
-        if (isMounted) setError(loadError instanceof Error ? loadError.message : "Unable to load accounts.");
+        if (isMounted) {
+          const message = loadError instanceof Error ? loadError.message : "Unable to load accounts.";
+          setError(message);
+          showError(message);
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -448,7 +458,7 @@ export default function AccountsPage() {
 
     loadAccounts();
     return () => { isMounted = false; };
-  }, []);
+  }, [showError]);
 
   async function deleteAccount(id: string) {
     setError("");
@@ -456,11 +466,12 @@ export default function AccountsPage() {
     const result = await deleteAccountAction(id);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleAccounts((items) => items.filter((item) => item.id !== id));
     setViewedAccount((account) => (account?.id === id ? null : account));
+    showSuccess("Account deleted successfully.");
   }
 
   return (

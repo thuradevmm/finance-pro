@@ -11,6 +11,7 @@ import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/c
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
@@ -185,6 +186,7 @@ function calculateRepaymentSchedule(principal: number, repaidAmount: number, int
 }
 
 export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountRecord[]; categories: CategoryRecord[]; debt?: DebtRecordWithValues }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [name, setName] = useState(debt?.name ?? "");
@@ -254,6 +256,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
     if (addAnother && !debt) {
@@ -264,8 +267,10 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       setRepaidAmount("");
       setDurationMonths("12");
       setNotes("");
+      showSuccess("Debt saved successfully.");
       return;
     }
+    showSuccess(debt ? "Debt updated successfully." : "Debt saved successfully.");
     beginLoading();
     router.push("/debts");
     router.refresh();

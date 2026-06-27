@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import type { BudgetFormData, BudgetRecord } from "@/lib/budgets/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
@@ -57,6 +58,7 @@ function CategoryOption({
 }
 
 export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; categories: CategoryRecord[] }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
@@ -98,6 +100,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -107,9 +110,11 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
       setEndDate("");
       setDescription("");
       setShowErrors(false);
+      showSuccess("Budget saved successfully.");
       return;
     }
 
+    showSuccess(budget ? "Budget updated successfully." : "Budget saved successfully.");
     beginLoading();
     router.push("/budgets");
     router.refresh();

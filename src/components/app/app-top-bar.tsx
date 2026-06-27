@@ -1,27 +1,12 @@
 import Link from "next/link";
 
 import { Icon } from "@/components/ui/icon";
-import { SearchField } from "@/components/ui/search-field";
 import { ProfileMenu } from "@/components/app/profile-menu";
 
-type AppTopBarProps = {
-  onSearchChange?: (value: string) => void;
-  searchValue?: string;
-  searchLabel?: string;
-  searchPlaceholder?: string;
-};
-
-export function AppTopBar({
-  onSearchChange,
-  searchValue,
-  searchLabel = "Search",
-  searchPlaceholder = "Search...",
-}: AppTopBarProps) {
+export function AppTopBar() {
   return (
     <header className="sticky top-0 z-20 hidden h-16 items-center justify-between border-b border-[#c6c6cd]/70 bg-white/95 px-8 backdrop-blur md:flex">
-      <div className="flex w-full max-w-xl items-center gap-3">
-        <SearchField label={searchLabel} onChange={onSearchChange} placeholder={searchPlaceholder} value={searchValue} />
-      </div>
+      <div className="min-w-0" />
       <div className="flex items-center gap-2">
         <Link
           aria-label="Notifications"

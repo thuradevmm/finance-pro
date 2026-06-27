@@ -7,6 +7,7 @@ import { deleteSavingsGoal } from "@/app/savings-goals/actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { RecordActions } from "@/components/ui/record-actions";
+import { useToast } from "@/components/ui/toast-provider";
 import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
@@ -65,9 +66,9 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
 }
 
 export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [visibleGoals, setVisibleGoals] = useState(goals);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
   const filteredGoals = useMemo(() => {
@@ -79,20 +80,19 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
   }, [search, visibleGoals]);
 
   async function handleDelete(goalId: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteSavingsGoal(goalId);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleGoals((items) => items.filter((item) => item.id !== goalId));
+    showSuccess("Savings goal deleted successfully.");
   }
 
   return (
     <>
-      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating savings goals…</p> : null}
 
       {filteredGoals.length === 0 ? (

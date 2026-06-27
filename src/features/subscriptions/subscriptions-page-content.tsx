@@ -7,6 +7,7 @@ import { deleteSubscription } from "@/app/subscriptions/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { dateTimeSortValue } from "@/lib/date-format";
 import type { SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 
@@ -197,9 +198,9 @@ export function SubscriptionsPageContent({
   billings: UpcomingSubscriptionBilling[];
   subscriptions: SubscriptionRecord[];
 }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
   const filteredSubscriptions = useMemo(() => {
@@ -211,20 +212,19 @@ export function SubscriptionsPageContent({
   }, [search, visibleSubscriptions]);
 
   async function handleDelete(subscriptionId: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteSubscription(subscriptionId);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleSubscriptions((items) => items.filter((item) => item.id !== subscriptionId));
+    showSuccess("Subscription deleted successfully.");
   }
 
   return (
     <>
-      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating subscriptions…</p> : null}
       <ReminderPanel subscriptions={filteredSubscriptions} />
       <BillingTimeline billings={billings} />

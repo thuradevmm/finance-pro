@@ -8,6 +8,7 @@ import { deleteBudget } from "@/app/budgets/actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmk } from "@/lib/currency";
 import type { BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
@@ -215,10 +216,10 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
 }
 
 export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
   const filteredBudgets = useMemo(
@@ -233,21 +234,20 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
   );
 
   async function handleDelete(id: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteBudget(id);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleBudgets((items) => items.filter((item) => item.id !== id));
+    showSuccess("Budget deleted successfully.");
   }
 
   return (
     <>
       <BudgetPeriodControls activePeriod={activePeriod} onPeriodChange={setActivePeriod} />
-      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating budgets…</p> : null}
       <OverallBudgetUsage budgets={filteredBudgets} />
       {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (

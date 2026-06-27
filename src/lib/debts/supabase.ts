@@ -169,9 +169,12 @@ function mapDebt(
   };
 }
 
-export async function getDebts(supabase: SupabaseClient, userId: string, categories: CategoryRecord[]) {
+export async function getDebts(supabase: SupabaseClient, userId: string, categories: CategoryRecord[], options: { limit?: number } = {}) {
+  let debtsQuery = supabase.from("debts").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
+  if (options.limit) debtsQuery = debtsQuery.limit(options.limit);
+
   const [debtsResult, transactionsResult, accountsResult] = await Promise.all([
-    supabase.from("debts").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
+    debtsQuery,
     supabase.from("transactions").select("related_entity_id,account_id,transfer_account_id,type,amount").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
     supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
   ]);

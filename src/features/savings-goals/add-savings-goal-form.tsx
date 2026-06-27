@@ -11,6 +11,7 @@ import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
@@ -39,6 +40,7 @@ export function AddSavingsGoalForm({
   categories: CategoryRecord[];
   goal?: SavingsGoalRecord;
 }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const accountOptions = useMemo(
@@ -91,6 +93,7 @@ export function AddSavingsGoalForm({
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -102,9 +105,11 @@ export function AddSavingsGoalForm({
       setMonthlyContribution("");
       setDescription("");
       setShowErrors(false);
+      showSuccess("Savings goal saved successfully.");
       return;
     }
 
+    showSuccess(goal ? "Savings goal updated successfully." : "Savings goal saved successfully.");
     beginLoading();
     router.push("/savings-goals");
     router.refresh();

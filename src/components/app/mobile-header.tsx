@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { ProfileMenu } from "@/components/app/profile-menu";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { SearchField } from "@/components/ui/search-field";
 
 type MobileHeaderAction = {
   label: string;
@@ -25,10 +24,6 @@ type MobileHeaderProps = {
 export function MobileHeader({
   title = "FinancePro",
   subtitle,
-  searchLabel = "Search on mobile",
-  searchPlaceholder = "Search...",
-  searchValue,
-  onSearchChange,
   action,
   onOpenNavigation,
 }: MobileHeaderProps) {
@@ -65,9 +60,6 @@ export function MobileHeader({
           ) : null}
           <ProfileMenu compact />
         </div>
-      </div>
-      <div className="mt-4">
-        <SearchField label={searchLabel} onChange={onSearchChange} placeholder={searchPlaceholder} value={searchValue} />
       </div>
     </header>
   );

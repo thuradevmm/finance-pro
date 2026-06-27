@@ -8,6 +8,7 @@ import { createCategory, updateCategory } from "@/app/categories/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { Icon } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
+import { useToast } from "@/components/ui/toast-provider";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
@@ -18,6 +19,7 @@ import type { CategoryType } from "@/types/finance";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
 export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
@@ -55,6 +57,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -64,9 +67,11 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       setDescription("");
       setSelectedType("Expense");
       setShowErrors(false);
+      showSuccess("Category saved successfully.");
       return;
     }
 
+    showSuccess(category ? "Category updated successfully." : "Category saved successfully.");
     beginLoading();
     router.push("/categories");
     router.refresh();

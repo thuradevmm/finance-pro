@@ -99,10 +99,13 @@ function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStat
   return "Under Budget";
 }
 
-export async function getBudgets(supabase: SupabaseClient, userId: string): Promise<BudgetRecord[]> {
+export async function getBudgets(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}): Promise<BudgetRecord[]> {
+  let itemsQuery = supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,metadata").eq("user_id", userId);
+  if (options.limit) itemsQuery = itemsQuery.limit(options.limit);
+
   const [plansResult, itemsResult, categoriesResult, transactionsResult] = await Promise.all([
     supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata,created_at").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
-    supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,metadata").eq("user_id", userId),
+    itemsQuery,
     supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
     supabase.from("transactions").select("category_id,transaction_date,type,amount").eq("user_id", userId).is("deleted_at", null),
   ]);

@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
@@ -360,9 +361,9 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
 }
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithValues[]; payments: UpcomingDebtPayment[] }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [visibleDebts, setVisibleDebts] = useState(debts);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
@@ -378,21 +379,20 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   const calendarEntries = useMemo(() => buildCalendarEntries(visibleDebts), [visibleDebts]);
 
   async function handleDelete(debtId: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteDebt(debtId);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleDebts((items) => items.filter((item) => item.id !== debtId));
+    showSuccess("Debt deleted successfully.");
   }
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="xl:col-span-9">
-        {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
         {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
         {filteredDebts.length > 0 ? (
           <DebtsTable

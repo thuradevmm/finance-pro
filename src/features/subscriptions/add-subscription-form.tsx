@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
@@ -37,6 +38,7 @@ function defaultNextBillingDate() {
 }
 
 export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Subscription"), [categories]);
@@ -91,14 +93,17 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
     if (addAnother && !subscription) {
       setIsSaving(false);
       setServiceName("");
       setBilledAmount("");
+      showSuccess("Subscription saved successfully.");
       return;
     }
+    showSuccess(subscription ? "Subscription updated successfully." : "Subscription saved successfully.");
     beginLoading();
     router.push("/subscriptions");
     router.refresh();

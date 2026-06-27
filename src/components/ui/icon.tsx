@@ -6,6 +6,7 @@ export type IconName =
   | "calendar"
   | "category"
   | "chart"
+  | "check"
   | "chevronDown"
   | "chevronLeft"
   | "chevronRight"
@@ -73,6 +74,7 @@ const iconPaths: Record<IconName, string[]> = {
   ],
   category: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
   chart: ["M4 19V5", "M4 19h16", "M8 16v-5", "M12 16V8", "M16 16v-8"],
+  check: ["M20 6 9 17l-5-5"],
   chevronDown: ["M6 9l6 6 6-6"],
   chevronLeft: ["M15 18 9 12l6-6"],
   chevronRight: ["M9 18l6-6-6-6"],

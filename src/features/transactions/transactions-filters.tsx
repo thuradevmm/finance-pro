@@ -10,6 +10,8 @@ type TransactionsFiltersProps = {
     category: string;
     dateFrom: string;
     dateTo: string;
+    fromAccount: string;
+    toAccount: string;
     type: string;
   };
   onApply: () => void;
@@ -51,6 +53,8 @@ export function TransactionsFilters({ filterOptions, filters, onApply, onClear, 
         <SelectFilter label="Account filter" onChange={(value) => onFilterChange("account", value)} options={filterOptions.account} value={filters.account} />
         <SelectFilter label="Type filter" onChange={(value) => onFilterChange("type", value)} options={filterOptions.type} value={filters.type} />
         <SelectFilter label="Amount filter" onChange={(value) => onFilterChange("amount", value)} options={filterOptions.amount} value={filters.amount} />
+        <SelectFilter label="From account filter" onChange={(value) => onFilterChange("fromAccount", value)} options={filterOptions.account} value={filters.fromAccount} />
+        <SelectFilter label="To account filter" onChange={(value) => onFilterChange("toAccount", value)} options={filterOptions.account} value={filters.toAccount} />
         <div className="flex min-w-0 items-center justify-end gap-2 sm:col-span-2 xl:col-span-6">
           <button
             className="inline-flex h-10 min-w-20 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"

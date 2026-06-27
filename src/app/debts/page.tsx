@@ -13,8 +13,8 @@ import { createClient } from "@/lib/supabase/server";
 export default async function DebtsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const categories = user ? await getCategories() : [];
-  const debts = user ? await getDebts(supabase, user.id, categories) : [];
+  const categories = user ? await getCategories({ limit: 200 }) : [];
+  const debts = user ? await getDebts(supabase, user.id, categories, { limit: 200 }) : [];
   const summaries = getDebtSummaries(debts);
   const payments = getUpcomingDebtPayments(debts);
 

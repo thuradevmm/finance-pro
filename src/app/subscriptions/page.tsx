@@ -14,9 +14,9 @@ import { createClient } from "@/lib/supabase/server";
 export default async function SubscriptionsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const accounts = user ? await getAccounts(supabase, user.id) : [];
-  const categories = user ? await getCategories() : [];
-  const subscriptions = user ? await getSubscriptions(supabase, user.id, accounts, categories) : [];
+  const accounts = user ? await getAccounts(supabase, user.id, { limit: 200 }) : [];
+  const categories = user ? await getCategories({ limit: 200 }) : [];
+  const subscriptions = user ? await getSubscriptions(supabase, user.id, accounts, categories, { limit: 200 }) : [];
   const billings = getUpcomingSubscriptionBillings(subscriptions);
   const summaries = getSubscriptionSummaries(subscriptions);
 

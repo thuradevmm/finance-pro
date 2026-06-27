@@ -8,6 +8,7 @@ import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-di
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
 import { dateTimeSortValue } from "@/lib/date-format";
@@ -101,6 +102,7 @@ function compareTransactions(first: Transaction, second: Transaction, key: SortK
 }
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
+  const { showError, showSuccess } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [sortKey, setSortKey] = useState<SortKey>("date");
@@ -110,8 +112,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [viewedTransaction, setViewedTransaction] = useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
-  const [deleteError, setDeleteError] = useState("");
-  const [reverseError, setReverseError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [reversingTransactionId, setReversingTransactionId] = useState("");
   const visibleTransactions = useMemo(
@@ -182,14 +182,14 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
 
   async function confirmReverseTransaction(transaction: Transaction) {
     setReversingTransactionId(transaction.id);
-    setReverseError("");
     const result = await reverseTransaction(transaction.id);
     setReversingTransactionId("");
     if (result.error) {
-      setReverseError(result.error);
+      showError(result.error);
       return;
     }
     setReversedTransactionIds((ids) => [...ids, transaction.id]);
+    showSuccess("Transaction reversed successfully.");
   }
 
   async function confirmDeleteTransaction() {
@@ -198,11 +198,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     }
 
     setIsDeleting(true);
-    setDeleteError("");
     const result = await deleteTransaction(deletingTransaction.id);
     setIsDeleting(false);
     if (result.error) {
-      setDeleteError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -210,6 +209,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     setSelectedTransactionIds((currentIds) => currentIds.filter((id) => id !== deletingTransaction.id));
     setViewedTransaction((currentTransaction) => (currentTransaction?.id === deletingTransaction.id ? null : currentTransaction));
     setDeletingTransaction(null);
+    showSuccess("Transaction deleted successfully.");
   }
 
   function csvCell(value: string) {
@@ -246,12 +246,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     if (selectedVisibleTransactions.length === 0) return;
 
     setIsDeleting(true);
-    setDeleteError("");
     const deletedIds: string[] = [];
     for (const transaction of selectedVisibleTransactions) {
       const result = await deleteTransaction(transaction.id);
       if (result.error) {
-        setDeleteError(result.error);
+        showError(result.error);
         break;
       }
       deletedIds.push(transaction.id);
@@ -262,6 +261,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     setDeletedTransactionIds((ids) => [...ids, ...deletedIds]);
     setSelectedTransactionIds((currentIds) => currentIds.filter((id) => !deletedIds.includes(id)));
     setViewedTransaction((currentTransaction) => (currentTransaction && deletedIds.includes(currentTransaction.id) ? null : currentTransaction));
+    showSuccess(`${deletedIds.length} transaction${deletedIds.length === 1 ? "" : "s"} deleted successfully.`);
   }
 
   function toggleTransactionSelection(transactionId: string) {
@@ -288,8 +288,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
 
   return (
     <section className="space-y-3 lg:overflow-hidden lg:rounded-lg lg:border lg:border-[#c6c6cd]/70 lg:bg-white lg:shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      {deleteError ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{deleteError}</div> : null}
-      {reverseError ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{reverseError}</div> : null}
       <div
         className={`flex min-h-14 flex-col gap-3 rounded-lg border px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-t-0 ${
           hasSelectedTransactions

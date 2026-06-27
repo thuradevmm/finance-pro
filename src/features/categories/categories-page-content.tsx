@@ -9,6 +9,7 @@ import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryType } from "@/types/finance";
@@ -72,10 +73,10 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
 }
 
 export function CategoriesPageContent({ categories }: { categories: CategoryRecord[] }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("Expense Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
   const search = searchParams.get("q") ?? "";
@@ -88,22 +89,21 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
   }, [activeType, search, visibleCategories]);
 
   async function handleDelete(categoryId: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteCategory(categoryId);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleCategories((items) => items.filter((item) => item.id !== categoryId));
+    showSuccess("Category deleted successfully.");
   }
 
   return (
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
 
-      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating categories…</p> : null}
 
       {filteredCategories.length === 0 ? (

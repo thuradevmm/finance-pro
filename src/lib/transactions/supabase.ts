@@ -139,14 +139,24 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   } as TransactionRecord;
 }
 
-export async function getTransactions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
-  const { data, error } = await supabase
+export async function getTransactions(
+  supabase: SupabaseClient,
+  userId: string,
+  accounts: AccountRecord[],
+  categories: CategoryRecord[],
+  options: { limit?: number } = {},
+) {
+  let query = supabase
     .from("transactions")
     .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata,created_at")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false });
+
+  if (options.limit) query = query.limit(options.limit);
+
+  const { data, error } = await query;
 
   if (error) throw new Error(error.message);
   return (data as TransactionRow[]).flatMap((row) => {
@@ -164,15 +174,15 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
   return {
     account: ["Account", ...getAccountOptionLabels(accounts)],
     amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
-    category: ["Category", "Transfer", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
+    category: ["Category", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     type: ["Type", "Income", "Expense", "Transfer"],
   };
 }
 
-export function getTransactionSummaries(transactions: TransactionRecord[]): SummaryMetric[] {
-  const income = transactions.filter((t) => t.type === "Income").reduce((sum, t) => sum + t.amountValue, 0);
-  const expenses = transactions.filter((t) => t.type === "Expense").reduce((sum, t) => sum + t.amountValue, 0);
-  const transfers = transactions.filter((t) => t.type === "Transfer").reduce((sum, t) => sum + t.amountValue, 0);
+export function getTransactionSummaries(transactions: Transaction[]): SummaryMetric[] {
+  const income = transactions.filter((t) => t.type === "Income").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
+  const expenses = transactions.filter((t) => t.type === "Expense").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
+  const transfers = transactions.filter((t) => t.type === "Transfer").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
   return [
     { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },

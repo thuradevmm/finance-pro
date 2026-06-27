@@ -13,8 +13,8 @@ import { createClient } from "@/lib/supabase/server";
 export default async function AssetsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const categories = user ? await getCategories() : [];
-  const assets = user ? await getAssets(supabase, user.id, categories) : [];
+  const categories = user ? await getCategories({ limit: 200 }) : [];
+  const assets = user ? await getAssets(supabase, user.id, categories, { limit: 200 }) : [];
   const summaries = getAssetSummaries(assets);
 
   return (

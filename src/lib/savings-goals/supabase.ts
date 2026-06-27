@@ -145,14 +145,19 @@ export async function getSavingsGoals(
   userId: string,
   accounts: AccountRecord[],
   categories: CategoryRecord[],
+  options: { limit?: number } = {},
 ) {
+  let goalsQuery = supabase
+    .from("savings_goals")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (options.limit) goalsQuery = goalsQuery.limit(options.limit);
+
   const [goalsResult, transactionsResult] = await Promise.all([
-    supabase
-      .from("savings_goals")
-      .select("*")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false }),
+    goalsQuery,
     supabase
       .from("transactions")
       .select("related_entity_id,amount")

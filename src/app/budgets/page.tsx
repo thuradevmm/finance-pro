@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 export default async function BudgetsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const budgets = user ? await getBudgets(supabase, user.id) : [];
+  const budgets = user ? await getBudgets(supabase, user.id, { limit: 200 }) : [];
   const summaries = getBudgetSummaries(budgets);
 
   return (

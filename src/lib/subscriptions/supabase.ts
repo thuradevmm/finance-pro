@@ -159,8 +159,11 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
   };
 }
 
-export async function getSubscriptions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[]) {
-  const { data, error } = await supabase.from("subscriptions").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
+export async function getSubscriptions(supabase: SupabaseClient, userId: string, accounts: AccountRecord[], categories: CategoryRecord[], options: { limit?: number } = {}) {
+  let query = supabase.from("subscriptions").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
+  if (options.limit) query = query.limit(options.limit);
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data as SubscriptionRow[])
     .map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c]))))

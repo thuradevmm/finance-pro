@@ -103,9 +103,12 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   };
 }
 
-export async function getAssets(supabase: SupabaseClient, userId: string, categories: CategoryRecord[]) {
+export async function getAssets(supabase: SupabaseClient, userId: string, categories: CategoryRecord[], options: { limit?: number } = {}) {
+  let assetsQuery = supabase.from("assets").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
+  if (options.limit) assetsQuery = assetsQuery.limit(options.limit);
+
   const [assetsResult, transactionsResult] = await Promise.all([
-    supabase.from("assets").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
+    assetsQuery,
     supabase.from("transactions").select("related_entity_id,amount").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
   ]);
   if (assetsResult.error) throw new Error(assetsResult.error.message);

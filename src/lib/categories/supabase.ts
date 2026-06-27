@@ -134,20 +134,24 @@ function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRec
   };
 }
 
-export async function getCategories() {
+export async function getCategories(options: { limit?: number } = {}) {
   const supabase = await createClient();
   const { user, error: userError } = await getUserSafely(supabase);
   if (userError || !user) throw new Error(userError ?? "You must be signed in to view categories.");
 
+  let categoriesQuery = supabase
+    .from("categories")
+    .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+
+  if (options.limit) categoriesQuery = categoriesQuery.limit(options.limit);
+
   const [categoriesResult, transactionsResult] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
-      .eq("user_id", user.id)
-      .is("deleted_at", null)
-      .order("is_default", { ascending: false })
-      .order("sort_order", { ascending: true })
-      .order("name", { ascending: true }),
+    categoriesQuery,
     supabase
       .from("transactions")
       .select("category_id,amount,transaction_date,type")

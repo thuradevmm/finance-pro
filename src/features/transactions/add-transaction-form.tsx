@@ -10,6 +10,7 @@ import { useInteractionLoading } from "@/components/app/interaction-loading-prov
 import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
@@ -84,6 +85,7 @@ export function AddTransactionForm({
   relatedOptions: TransactionRelatedOption[];
   transaction?: TransactionRecord;
 }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? "Expense");
@@ -197,6 +199,7 @@ export function AddTransactionForm({
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -205,9 +208,11 @@ export function AddTransactionForm({
       setAmount("");
       setNote("");
       setShowErrors(false);
+      showSuccess("Transaction saved successfully.");
       return;
     }
 
+    showSuccess(transaction ? "Transaction updated successfully." : "Transaction saved successfully.");
     beginLoading();
     router.push("/transactions");
     router.refresh();

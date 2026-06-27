@@ -10,6 +10,7 @@ import { useInteractionLoading } from "@/components/app/interaction-loading-prov
 import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
@@ -167,6 +168,7 @@ function createAmountTypeDraft(type = defaultAmountTypeName): AmountTypeDraft {
 }
 
 export function AddAccountForm({ account, categories, returnTo = "/accounts" }: { account?: AccountRecord; categories: CategoryRecord[]; returnTo?: string }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<AccountType>(account?.type ?? "Bank Account");
@@ -258,6 +260,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
 
@@ -275,9 +278,11 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       setMonthlyBudgetLimit("");
       setNotes("");
       setShowErrors(false);
+      showSuccess("Account saved successfully.");
       return;
     }
 
+    showSuccess(account ? "Account updated successfully." : "Account saved successfully.");
     beginLoading();
     router.push(returnTo);
     router.refresh();

@@ -4,6 +4,7 @@ import { appFontVariables } from "@/lib/app-fonts";
 import { InteractionLoadingProvider } from "@/components/app/interaction-loading-provider";
 import { SidebarStateProvider } from "@/components/app/sidebar-state-provider";
 import { SessionTimeoutProvider } from "@/components/auth/session-timeout-provider";
+import { ToastProvider } from "@/components/ui/toast-provider";
 import { sidebarCollapsedCookieName } from "@/lib/sidebar-state";
 import "./globals.css";
 
@@ -33,7 +34,9 @@ export default async function RootLayout({
       <body className="flex min-h-full flex-col bg-[#f8f9ff]">
         <SessionTimeoutProvider>
           <SidebarStateProvider initialCollapsed={initialSidebarCollapsed}>
-            <InteractionLoadingProvider>{children}</InteractionLoadingProvider>
+            <InteractionLoadingProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </InteractionLoadingProvider>
           </SidebarStateProvider>
         </SessionTimeoutProvider>
       </body>

@@ -300,15 +300,19 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
   };
 }
 
-export async function getAccounts(supabase: SupabaseClient, userId: string) {
+export async function getAccounts(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}) {
+  let accountsQuery = supabase
+    .from("accounts")
+    .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (options.limit) accountsQuery = accountsQuery.limit(options.limit);
+
   const [accountsResult, transactionsResult] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true }),
+    accountsQuery,
     supabase
       .from("transactions")
       .select("account_id,transfer_account_id,amount,type,metadata")

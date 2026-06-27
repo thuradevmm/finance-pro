@@ -8,7 +8,7 @@ import { CategoriesPageContent } from "@/features/categories/categories-page-con
 import { getCategories, getCategorySummaries } from "@/lib/categories/supabase";
 
 export default async function CategoriesPage() {
-  const categories = await getCategories();
+  const categories = await getCategories({ limit: 200 });
   const categorySummaries = getCategorySummaries(categories);
   return (
     <AppShell

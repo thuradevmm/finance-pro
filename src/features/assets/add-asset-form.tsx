@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
+import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -21,6 +22,7 @@ const conditions: AssetRecord["condition"][] = ["Excellent", "Good", "Fair", "Ne
 const statuses: AssetStatus[] = ["Active", "Sold", "Archived"];
 
 export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithValues; categories: CategoryRecord[] }) {
+  const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Asset"), [categories]);
@@ -64,6 +66,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
     if (result.error) {
       setIsSaving(false);
       setFormError(result.error);
+      showError(result.error);
       return;
     }
     if (addAnother && !asset) {
@@ -72,8 +75,10 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
       setPurchaseAmount("");
       setCurrentValue("");
       setNote("");
+      showSuccess("Asset saved successfully.");
       return;
     }
+    showSuccess(asset ? "Asset updated successfully." : "Asset saved successfully.");
     beginLoading();
     router.push("/assets");
     router.refresh();

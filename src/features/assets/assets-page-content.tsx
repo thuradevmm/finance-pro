@@ -8,6 +8,7 @@ import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
+import { useToast } from "@/components/ui/toast-provider";
 import { calculateUsageDuration } from "@/lib/date-duration";
 import { dateTimeSortValue } from "@/lib/date-format";
 import type { AssetRecordWithValues } from "@/lib/assets/supabase";
@@ -303,9 +304,9 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
 }
 
 export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] }) {
+  const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [visibleAssets, setVisibleAssets] = useState(assets);
-  const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
   const filteredAssets = useMemo(() => {
@@ -317,15 +318,15 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
   }, [search, visibleAssets]);
   const activeAssets = filteredAssets.filter((asset) => asset.status === "Active");
   async function deleteAsset(id: string) {
-    setError("");
     setIsPending(true);
     const result = await deleteAssetAction(id);
     setIsPending(false);
     if (result.error) {
-      setError(result.error);
+      showError(result.error);
       return;
     }
     setVisibleAssets((items) => items.filter((item) => item.id !== id));
+    showSuccess("Asset deleted successfully.");
   }
 
   return (
@@ -351,7 +352,6 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
           </div>
         </div>
       </section>
-      {error ? <div className="mb-4 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating assets…</p> : null}
       <AssetsTable assets={filteredAssets} onDelete={deleteAsset} />
       <AssetHistorySection assets={filteredAssets} />
