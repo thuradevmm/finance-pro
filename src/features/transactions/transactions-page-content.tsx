@@ -6,8 +6,9 @@ import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
-import { getTransactionSummaries } from "@/lib/transactions/supabase";
-import type { Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
+import type { AccountRecord } from "@/lib/accounts/supabase";
+import { getTransactionSummaries, type TransactionRecord } from "@/lib/transactions/supabase";
+import type { TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 type TransactionTab = "All" | TransactionType;
 
@@ -24,10 +25,11 @@ type TransactionFiltersState = {
 };
 
 type TransactionsPageContentProps = {
+  accounts: AccountRecord[];
   filterOptions: TransactionFilterOptions;
   initialAccountFilter?: string;
   initialCategoryFilter?: string;
-  transactions: Transaction[];
+  transactions: TransactionRecord[];
 };
 
 const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
@@ -40,12 +42,9 @@ function formatDateInput(date: Date) {
 }
 
 function defaultDateRange() {
-  const today = new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-
   return {
-    dateFrom: formatDateInput(monthStart),
-    dateTo: formatDateInput(today),
+    dateFrom: "",
+    dateTo: "",
   };
 }
 
@@ -77,7 +76,7 @@ function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
 }
 
-function matchesAmountFilter(transaction: Transaction, amountFilter: string) {
+function matchesAmountFilter(transaction: TransactionRecord, amountFilter: string) {
   const amount = Math.abs(transaction.amountValue ?? parseAmount(transaction.amount));
 
   if (amountFilter === "> MMK 100") {
@@ -104,7 +103,7 @@ function toDateInputValue(value: string | undefined) {
   return Number.isNaN(parsedDate.getTime()) ? "" : formatDateInput(parsedDate);
 }
 
-function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: string) {
+function matchesDateFilter(transaction: TransactionRecord, dateFrom: string, dateTo: string) {
   const transactionDate = toDateInputValue(transaction.dateValue ?? transaction.date);
   if (!transactionDate) return false;
 
@@ -114,8 +113,8 @@ function matchesDateFilter(transaction: Transaction, dateFrom: string, dateTo: s
   return (!fromDate || transactionDate >= fromDate) && (!toDate || transactionDate <= toDate);
 }
 
-function filterTransactions(transactions: Transaction[], filters: TransactionFiltersState) {
-  function matchesAffectedAccount(transaction: Transaction, accountFilter: string) {
+function filterTransactions(transactions: TransactionRecord[], filters: TransactionFiltersState) {
+  function matchesAffectedAccount(transaction: TransactionRecord, accountFilter: string) {
     if (accountFilter === "Account") return true;
     if (transaction.type === "Transfer" && transaction.transferDirection) return transaction.account === accountFilter;
     return transaction.account === accountFilter || transaction.transferAccount === accountFilter;
@@ -142,7 +141,7 @@ function filterTransactions(transactions: Transaction[], filters: TransactionFil
   });
 }
 
-export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
+export function TransactionsPageContent({ accounts, filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
   const effectiveFilterOptions = useMemo(() => ({
     ...filterOptions,
     category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
@@ -157,7 +156,7 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
   const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
-  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
+  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions, accounts), [accounts, filteredTransactions]);
   const tableKey = useMemo(() => JSON.stringify(filters), [filters]);
 
   function updateFilter(key: keyof TransactionFiltersState, value: string) {

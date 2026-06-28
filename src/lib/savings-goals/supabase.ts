@@ -48,6 +48,7 @@ type SavingsGoalRow = {
 type LinkedTransactionRow = {
   amount: number | string | null;
   related_entity_id: string | null;
+  status: string | null;
 };
 
 const fallbackAppearance: Pick<SavingsGoal, "bg" | "icon" | "tone"> = {
@@ -160,7 +161,7 @@ export async function getSavingsGoals(
     goalsQuery,
     supabase
       .from("transactions")
-      .select("related_entity_id,amount")
+      .select("related_entity_id,amount,status")
       .eq("user_id", userId)
       .eq("related_entity_type", "savings_goal")
       .is("deleted_at", null),
@@ -174,6 +175,7 @@ export async function getSavingsGoals(
   const linkedSavingsByGoalId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
+    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
     linkedSavingsByGoalId.set(
       transaction.related_entity_id,
       (linkedSavingsByGoalId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),

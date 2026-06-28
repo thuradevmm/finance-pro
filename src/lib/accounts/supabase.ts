@@ -9,6 +9,16 @@ export type AccountRecord = FinancialAccount & {
   amountTypeValues: { amountValue: number; type: string }[];
   availableBalanceValue: number;
   balanceValue: number;
+  creditAvailable: string;
+  creditAvailableValue: number;
+  creditLimit: string;
+  creditLimitValue: number;
+  creditMinimumPayment: string;
+  creditMinimumPaymentValue: number;
+  creditPaymentDueDay: number | null;
+  creditStatementDay: number | null;
+  creditUsed: string;
+  creditUsedValue: number;
   initialBalanceValue: number;
   monthlyBudgetLimit: number | null;
   notes: string;
@@ -27,6 +37,10 @@ export type AccountFormData = {
   category: string;
   currency: string;
   institution: string;
+  creditLimit: number | null;
+  creditMinimumPayment: number | null;
+  creditPaymentDueDay: number | null;
+  creditStatementDay: number | null;
   monthlyBudgetLimit: number | null;
   name: string;
   notes: string;
@@ -95,11 +109,13 @@ type AccountTransactionRow = {
   account_id: string | null;
   amount: number | string;
   metadata: unknown;
+  status: string | null;
   transfer_account_id: string | null;
   type: string;
 };
 
 type AccountActivity = {
+  creditUsed: number;
   inflow: number;
   outflow: number;
   deltas: Map<string, number>;
@@ -124,6 +140,15 @@ const appearances: Record<AccountType, { bg: string; icon: IconName; tone: strin
   Savings: { bg: "bg-[#ecfdf5]", icon: "savings", tone: "text-[#047857]" },
 };
 
+function normalizeTypeKey(type: string | null | undefined) {
+  const key = String(type ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (key === "bankaccount") return "bank_account";
+  if (key === "cashwallet") return "cash_wallet";
+  if (key === "creditcard") return "credit_card";
+  if (key === "digitalwallet") return "digital_wallet";
+  return key;
+}
+
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
@@ -133,6 +158,19 @@ function metadataRecord(metadata: unknown) {
 function numericValue(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function optionalNumericValue(value: unknown) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function dayOfMonthValue(value: unknown) {
+  const number = optionalNumericValue(value);
+  if (number == null) return null;
+  const day = Math.trunc(number);
+  return day >= 1 && day <= 31 ? day : null;
 }
 
 function roundCurrencyValue(value: number) {
@@ -149,7 +187,7 @@ function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
 }
 
 function emptyActivity(): AccountActivity {
-  return { deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
+  return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
 }
 
 function normalizeAmountType(value: unknown): AccountAmountType {
@@ -161,7 +199,11 @@ function addActivityDelta(activity: AccountActivity, amountType: AccountAmountTy
 }
 
 function isCreditCardType(type: string | null | undefined) {
-  return String(type ?? "").toLowerCase() === "credit_card";
+  return normalizeTypeKey(type) === "credit_card";
+}
+
+function transactionStatusAffectsBalance(value: unknown) {
+  return String(value ?? "cleared").toLowerCase() !== "scheduled";
 }
 
 function transferDirection(metadata: Record<string, unknown>) {
@@ -177,6 +219,10 @@ function transferDirection(metadata: Record<string, unknown>) {
 function signedAccountDelta(amount: number, isCreditCard: boolean, direction: "credit" | "debit") {
   if (direction === "credit") return isCreditCard ? -amount : amount;
   return isCreditCard ? amount : -amount;
+}
+
+function addCreditUsed(activity: AccountActivity, delta: number) {
+  activity.creditUsed = roundCurrencyValue(activity.creditUsed + delta);
 }
 
 function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
@@ -215,6 +261,8 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
   }
 
   for (const transaction of transactions) {
+    if (!transactionStatusAffectsBalance(transaction.status)) continue;
+
     const amount = numericValue(transaction.amount);
     const metadata = metadataRecord(transaction.metadata);
     const amountType = normalizeAmountType(metadata.account_amount_type);
@@ -228,17 +276,33 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
       activity.transactionCount += 1;
       if (type === "income") {
         activity.inflow += amount;
-        addActivityDelta(activity, amountType, isCreditCard ? -amount : amount);
+        if (isCreditCard) {
+          addCreditUsed(activity, -amount);
+        } else {
+          addActivityDelta(activity, amountType, amount);
+        }
       } else if (type === "expense") {
         activity.outflow += amount;
-        addActivityDelta(activity, amountType, isCreditCard ? amount : -amount);
+        if (isCreditCard) {
+          addCreditUsed(activity, amount);
+        } else {
+          addActivityDelta(activity, amountType, -amount);
+        }
       } else if (type === "transfer") {
         if (direction === "credit") {
           activity.inflow += amount;
-          addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "credit"));
+          if (isCreditCard) {
+            addCreditUsed(activity, -amount);
+          } else {
+            addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "credit"));
+          }
         } else {
           activity.outflow += amount;
-          addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "debit"));
+          if (isCreditCard) {
+            addCreditUsed(activity, amount);
+          } else {
+            addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "debit"));
+          }
         }
       }
     }
@@ -248,7 +312,11 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
       const isCreditCard = isCreditCardType(accountTypes.get(transaction.transfer_account_id));
       transferActivity.transactionCount += 1;
       transferActivity.inflow += amount;
-      addActivityDelta(transferActivity, transferAmountType, isCreditCard ? -amount : amount);
+      if (isCreditCard) {
+        addCreditUsed(transferActivity, -amount);
+      } else {
+        addActivityDelta(transferActivity, transferAmountType, amount);
+      }
     }
   }
 
@@ -257,7 +325,8 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
 
 function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()): AccountRecord {
   const metadata = metadataRecord(row.metadata);
-  const type = typeMap[row.type.toLowerCase()] ?? "Bank Account";
+  const type = typeMap[normalizeTypeKey(row.type)] ?? "Bank Account";
+  const isCreditCard = type === "Credit Card";
   const appearance = appearances[type];
   const initialBalanceValue = numericValue(row.initial_balance);
   const bankBookAccountNumber = typeof metadata.bank_book_account_number === "string" ? metadata.bank_book_account_number : "";
@@ -274,9 +343,26 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
   for (const [amountType, delta] of activity.deltas) {
     displayAmountTypes.set(amountType, (displayAmountTypes.get(amountType) ?? 0) + delta);
   }
-  const balanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
-  const availableBalanceValue = balanceValue;
+  const storedMonthlyBudgetLimit = optionalNumericValue(metadata.monthly_budget_limit);
+  const storedCreditLimit = optionalNumericValue(metadata.credit_limit);
+  const monthlyBudgetLimit = isCreditCard ? (storedCreditLimit ?? storedMonthlyBudgetLimit) : storedMonthlyBudgetLimit;
+  const cashBalanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
+  const creditLimitValue = isCreditCard ? roundCurrencyValue(monthlyBudgetLimit ?? 0) : 0;
+  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(activity.creditUsed, 0)) : 0;
+  const creditAvailableValue = isCreditCard ? roundCurrencyValue(Math.max(creditLimitValue - creditUsedValue, 0)) : 0;
+  const creditMinimumPaymentValue = isCreditCard ? roundCurrencyValue(Math.max(numericValue(metadata.credit_minimum_payment), 0)) : 0;
+  const creditStatementDay = isCreditCard ? dayOfMonthValue(metadata.credit_statement_day) : null;
+  const creditPaymentDueDay = isCreditCard ? dayOfMonthValue(metadata.credit_payment_due_day) : null;
+  const balanceValue = isCreditCard ? creditAvailableValue : cashBalanceValue;
+  const availableBalanceValue = isCreditCard ? creditAvailableValue : cashBalanceValue;
   const balanceBreakdowns = Array.from(displayAmountTypes, ([amountType, amountValue]) => amountTypeBreakdown(amountType, amountValue));
+  const availableBreakdowns = isCreditCard
+    ? [
+      amountTypeBreakdown("Credit Limit", creditLimitValue),
+      amountTypeBreakdown("Credit Used", creditUsedValue),
+      amountTypeBreakdown("Available Credit", creditAvailableValue),
+    ]
+    : balanceBreakdowns;
   const metadataStatus = metadata.status;
   const status: AccountStatus = !row.is_active
     ? "Archived"
@@ -289,7 +375,7 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
     accountNumber: [accountIdentifier, phoneNumber, cardNumber].filter(Boolean).join(" / "),
     amountTypeValues,
     availableBalance: formatMmk(availableBalanceValue),
-    availableBreakdowns: balanceBreakdowns,
+    availableBreakdowns,
     availableBalanceValue,
     balance: formatMmk(balanceValue),
     balanceBreakdowns,
@@ -301,13 +387,23 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
     cardExpiryCode,
     cardType,
     category: typeof metadata.category === "string" ? metadata.category : "",
+    creditAvailable: formatMmk(creditAvailableValue),
+    creditAvailableValue,
+    creditLimit: formatMmk(creditLimitValue),
+    creditLimitValue,
+    creditMinimumPayment: formatMmk(creditMinimumPaymentValue),
+    creditMinimumPaymentValue,
+    creditPaymentDueDay,
+    creditStatementDay,
+    creditUsed: formatMmk(creditUsedValue),
+    creditUsedValue,
     currency: row.currency_code,
     icon: appearance.icon,
     id: row.id,
     institution: typeof metadata.institution === "string" ? metadata.institution : "",
     initialBalanceValue,
     lastUpdated: formatDisplayDate(new Date(row.updated_at ?? row.created_at)),
-    monthlyBudgetLimit: metadata.monthly_budget_limit == null ? null : numericValue(metadata.monthly_budget_limit),
+    monthlyBudgetLimit,
     monthlyInflow: formatMmk(activity.inflow),
     monthlyOutflow: formatMmk(activity.outflow),
     mobileBankingAccountNumber,
@@ -336,7 +432,7 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
     accountsQuery,
     supabase
       .from("transactions")
-      .select("account_id,transfer_account_id,amount,type,metadata")
+      .select("account_id,transfer_account_id,amount,type,metadata,status")
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
@@ -356,8 +452,10 @@ export async function getAccount(supabase: SupabaseClient, userId: string, accou
 
 export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] {
   const activeAccounts = accounts.filter((account) => account.status === "Active");
+  const activeCashAccounts = activeAccounts.filter((account) => account.type !== "Credit Card");
+  const activeCreditCards = activeAccounts.filter((account) => account.type === "Credit Card");
   const amountTypeTotals = new Map<string, number>();
-  for (const account of activeAccounts) {
+  for (const account of activeCashAccounts) {
     for (const breakdown of account.balanceBreakdowns) {
       amountTypeTotals.set(breakdown.type, roundCurrencyValue((amountTypeTotals.get(breakdown.type) ?? 0) + breakdown.amountValue));
     }
@@ -375,6 +473,17 @@ export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] 
     value: formatMmk(amountValue),
     ...summaryStyles[index % summaryStyles.length],
   }));
+
+  if (activeCreditCards.length > 0) {
+    const creditLimit = activeCreditCards.reduce((sum, account) => sum + account.creditLimitValue, 0);
+    const creditUsed = activeCreditCards.reduce((sum, account) => sum + account.creditUsedValue, 0);
+    const creditAvailable = activeCreditCards.reduce((sum, account) => sum + account.creditAvailableValue, 0);
+    summaries.push(
+      { label: "Credit Used", value: formatMmk(creditUsed), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+      { label: "Available Credit", value: formatMmk(creditAvailable), icon: "credit", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+      { label: "Credit Limit", value: formatMmk(creditLimit), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    );
+  }
 
   return summaries.length > 0
     ? summaries

@@ -12,6 +12,8 @@ type ActionResult = { error?: string; transactionIds?: string[] };
 
 type AccountRow = {
   id: string;
+  metadata?: unknown;
+  name?: string | null;
   type: string | null;
 };
 
@@ -30,6 +32,13 @@ type TransactionRow = {
   transaction_date: string | null;
   transfer_account_id: string | null;
   type: string | null;
+};
+
+type DebtRow = {
+  id: string;
+  metadata: unknown;
+  payment_account_id: string | null;
+  status: string | null;
 };
 
 const transactionLinkedPaths = [
@@ -92,12 +101,75 @@ function numericValue(value: unknown, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function optionalNumericValue(value: unknown) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function dayOfMonthValue(value: unknown) {
+  const number = optionalNumericValue(value);
+  if (number == null) return null;
+  const day = Math.trunc(number);
+  return day >= 1 && day <= 31 ? day : null;
+}
+
 function normalizeAmountType(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "General";
 }
 
+function normalizeAccountType(value: unknown) {
+  const key = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (key === "creditcard") return "credit_card";
+  return key;
+}
+
+function formatDateInput(value: Date) {
+  if (Number.isNaN(value.getTime())) return "";
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function parseDateInput(value: string | null | undefined) {
+  if (!value) return null;
+  const dateValue = value.includes("T") ? value.slice(0, 10) : value;
+  const date = new Date(`${dateValue}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addMonths(date: Date, monthCount: number) {
+  const next = new Date(date);
+  const day = next.getDate();
+  next.setMonth(next.getMonth() + monthCount);
+  if (next.getDate() !== day) next.setDate(0);
+  return next;
+}
+
+function daysInMonth(year: number, monthIndex: number) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function dateForDay(year: number, monthIndex: number, day: number) {
+  return new Date(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex)));
+}
+
+function nextMonthlyDateForDay(day: number, fromDate: Date) {
+  const today = new Date(fromDate);
+  today.setHours(0, 0, 0, 0);
+  const candidate = dateForDay(today.getFullYear(), today.getMonth(), day);
+  return candidate < today ? dateForDay(today.getFullYear(), today.getMonth() + 1, day) : candidate;
+}
+
+function creditLimitFromMetadata(metadata: Record<string, unknown>) {
+  return numericValue(metadata.credit_limit ?? metadata.monthly_budget_limit);
+}
+
 function isCreditCardAccount(account: AccountRow | null) {
-  return String(account?.type ?? "").toLowerCase() === "credit_card";
+  return normalizeAccountType(account?.type) === "credit_card";
+}
+
+function isActiveDebt(row: DebtRow) {
+  const status = String(row.status ?? metadataRecord(row.metadata).status ?? "").toLowerCase();
+  return status !== "paid" && status !== "archived";
 }
 
 function transactionMutationError(message: string) {
@@ -175,12 +247,13 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
 
 async function validateAvailableAmount(input: TransactionFormData, userId: string, ignoredTransactionIds: string[] = []) {
   if (input.type !== "Expense" && input.type !== "Transfer") return null;
+  if (input.status.toLowerCase() === "scheduled") return null;
 
   const { supabase } = await authenticatedClient();
   const amountType = normalizeAmountType(input.accountAmountType);
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id,type")
+    .select("id,type,metadata")
     .eq("id", input.accountId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -188,20 +261,44 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
 
   if (accountError) return accountError.message;
   if (!account) return "Account not found.";
-  if (isCreditCardAccount(account as AccountRow)) return null;
 
   const { data: transactions, error: transactionsError } = await supabase
     .from("transactions")
-    .select("id,account_id,transfer_account_id,amount,type,metadata")
+    .select("id,account_id,transfer_account_id,amount,type,metadata,status")
     .eq("user_id", userId)
     .is("deleted_at", null);
 
   if (transactionsError) return transactionsError.message;
 
+  if (isCreditCardAccount(account as AccountRow)) {
+    const creditLimit = creditLimitFromMetadata(metadataRecord((account as AccountRow).metadata));
+    if (creditLimit <= 0) return null;
+
+    let usedAmount = 0;
+    const ignoredIds = new Set(ignoredTransactionIds);
+    for (const transaction of transactions as TransactionRow[]) {
+      if (ignoredIds.has(transaction.id) || transaction.account_id !== input.accountId) continue;
+      if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
+
+      const transactionType = String(transaction.type ?? "").toLowerCase();
+      const direction = transferDirection(metadataRecord(transaction.metadata));
+      const amount = numericValue(transaction.amount);
+      if (transactionType === "expense") usedAmount += amount;
+      if (transactionType === "income") usedAmount -= amount;
+      if (transactionType === "transfer") usedAmount += direction === "credit" ? -amount : amount;
+    }
+
+    const availableLimit = Math.max(creditLimit - usedAmount, 0);
+    return input.amount > availableLimit
+      ? `Insufficient credit card limit. Available limit is ${formatMmk(availableLimit)}.`
+      : null;
+  }
+
   let availableAmount = 0;
   const ignoredIds = new Set(ignoredTransactionIds);
   for (const transaction of transactions as TransactionRow[]) {
     if (ignoredIds.has(transaction.id)) continue;
+    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
 
     const transactionType = String(transaction.type ?? "").toLowerCase();
     const metadata = metadataRecord(transaction.metadata);
@@ -227,30 +324,139 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
     : null;
 }
 
-async function validateCreditCardDebtLink(input: TransactionFormData, userId: string) {
-  if (input.type !== "Expense" && input.type !== "Transfer") return null;
-
+async function getCreditCardAccountForTransaction(input: TransactionFormData, userId: string) {
   const { supabase } = await authenticatedClient();
   const accountIds = [input.accountId, input.transferAccountId].filter(Boolean);
-  if (accountIds.length === 0) return null;
+  if (accountIds.length === 0) return { account: null as AccountRow | null };
 
   const { data: accounts, error } = await supabase
     .from("accounts")
-    .select("id,type")
+    .select("id,name,type,metadata")
     .eq("user_id", userId)
     .in("id", accountIds)
     .is("deleted_at", null);
 
-  if (error) return error.message;
+  if (error) return { error: error.message };
 
-  const accountTypes = new Map((accounts as Pick<AccountRow, "id" | "type">[]).map((account) => [account.id, account.type]));
-  const usesCreditCard = String(accountTypes.get(input.accountId) ?? "").toLowerCase() === "credit_card";
-  const paysCreditCard = input.type === "Transfer" && String(accountTypes.get(input.transferAccountId) ?? "").toLowerCase() === "credit_card";
-  if ((usesCreditCard || paysCreditCard) && input.relatedEntityType !== "debt") {
-    return "Credit card charges and payments must be linked to a debt record.";
-  }
+  const accountRows = accounts as AccountRow[];
+  const accountById = new Map(accountRows.map((account) => [account.id, account]));
+  const primaryAccount = accountById.get(input.accountId) ?? null;
+  if (isCreditCardAccount(primaryAccount)) return { account: primaryAccount };
 
-  return null;
+  const transferAccount = input.type === "Transfer" ? accountById.get(input.transferAccountId) ?? null : null;
+  return { account: isCreditCardAccount(transferAccount) ? transferAccount : null };
+}
+
+async function findCreditCardDebtId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  account: AccountRow,
+  referenceDateValue?: string,
+) {
+  const { data: debts, error: debtsError } = await supabase
+    .from("debts")
+    .select("id,status,payment_account_id,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (debtsError) return { error: debtsError.message };
+
+  const debtRows = (debts as DebtRow[]).filter(isActiveDebt);
+  const explicitDebt = debtRows.find((debt) => {
+    const metadata = metadataRecord(debt.metadata);
+    return metadata.credit_card_account_id === account.id || metadata.auto_credit_card_account_id === account.id;
+  });
+  if (explicitDebt) return { debtId: explicitDebt.id };
+
+  const { data: linkedTransactions, error: linkedError } = await supabase
+    .from("transactions")
+    .select("related_entity_id")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "debt")
+    .or(`account_id.eq.${account.id},transfer_account_id.eq.${account.id}`)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (linkedError) return { error: linkedError.message };
+
+  const activeDebtIds = new Set(debtRows.map((debt) => debt.id));
+  const linkedDebt = (linkedTransactions as Pick<TransactionRow, "related_entity_id">[])
+    .find((transaction) => transaction.related_entity_id && activeDebtIds.has(transaction.related_entity_id));
+  if (linkedDebt?.related_entity_id) return { debtId: linkedDebt.related_entity_id };
+
+  const metadata = metadataRecord(account.metadata);
+  const creditLimit = creditLimitFromMetadata(metadata);
+  const creditStatementDay = dayOfMonthValue(metadata.credit_statement_day);
+  const creditPaymentDueDay = dayOfMonthValue(metadata.credit_payment_due_day);
+  const creditMinimumPayment = Math.max(numericValue(metadata.credit_minimum_payment), 0);
+  const startDate = parseDateInput(referenceDateValue) ?? new Date();
+  const startDateValue = formatDateInput(startDate);
+  const nextPaymentDateValue = creditPaymentDueDay
+    ? formatDateInput(nextMonthlyDateForDay(creditPaymentDueDay, startDate))
+    : formatDateInput(addMonths(startDate, 1));
+  const debtPayload = {
+    description: `Automatically tracks credit card transactions for ${account.name ?? "Credit Card"}.`,
+    lender: account.name ?? "Credit Card",
+    metadata: {
+      auto_credit_card_account_id: account.id,
+      credit_card_account_id: account.id,
+      credit_minimum_payment: creditMinimumPayment,
+      credit_payment_due_day: creditPaymentDueDay,
+      credit_statement_day: creditStatementDay,
+      duration_months: 0,
+      interest_rate: 0,
+      interest_rate_period: "yearly",
+      lender: account.name ?? "Credit Card",
+      monthly_payment: creditMinimumPayment,
+      next_payment_date: nextPaymentDateValue,
+      notes: `Automatically tracks credit card transactions for ${account.name ?? "Credit Card"}.`,
+      payment_account_id: account.id,
+      repaid_amount: 0,
+      start_date: startDateValue,
+      status: "active",
+      total_amount: 0,
+      type: "Credit Card",
+      ...(creditLimit > 0 ? { credit_limit: creditLimit } : {}),
+    },
+    monthly_payment: creditMinimumPayment,
+    name: `${account.name ?? "Credit Card"} Credit Card Debt`,
+    next_payment_date: nextPaymentDateValue,
+    payment_account_id: account.id,
+    repaid_amount: 0,
+    start_date: startDateValue,
+    status: "active",
+    total_amount: 0,
+    type: "Credit Card",
+    user_id: userId,
+  };
+
+  const { data: createdDebt, error: createError } = await supabase
+    .from("debts")
+    .insert(debtPayload)
+    .select("id")
+    .single();
+
+  if (createError) return { error: createError.message };
+  return { debtId: createdDebt.id as string };
+}
+
+async function resolveCreditCardDebtLink(input: TransactionFormData, userId: string) {
+  const accountResult = await getCreditCardAccountForTransaction(input, userId);
+  if ("error" in accountResult) return { error: accountResult.error };
+  if (!accountResult.account) return input;
+
+  const { supabase } = await authenticatedClient();
+  const debtResult = await findCreditCardDebtId(supabase, userId, accountResult.account, input.date);
+  if ("error" in debtResult) return { error: debtResult.error };
+  if (!debtResult.debtId) return { error: "Unable to link a credit card debt record." };
+
+  return {
+    ...input,
+    relatedEntityId: debtResult.debtId,
+    relatedEntityType: "debt" as const,
+  };
 }
 
 async function getLinkedTransactionIds(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transaction: Pick<TransactionRow, "id" | "metadata">) {
@@ -298,15 +504,15 @@ async function archiveLinkedTransactions(supabase: Awaited<ReturnType<typeof cre
 export async function createTransaction(input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const creditCardLinkError = await validateCreditCardDebtLink(input, user.id);
-  if (creditCardLinkError) return { error: creditCardLinkError };
-  const validationError = await validateAvailableAmount(input, user.id);
+  const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
+  if ("error" in resolvedInput) return { error: resolvedInput.error };
+  const validationError = await validateAvailableAmount(resolvedInput, user.id);
   if (validationError) return { error: validationError };
-  if (input.type === "Transfer") {
-    const { error } = await supabase.from("transactions").insert(transferPairPayload(input, user.id));
+  if (resolvedInput.type === "Transfer") {
+    const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id));
     if (error) return { error: transactionMutationError(error.message) };
   } else {
-    const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(input), user_id: user.id });
+    const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
     if (error) return { error: transactionMutationError(error.message) };
   }
   revalidateTransactionLinkedPaths();
@@ -326,14 +532,14 @@ export async function updateTransaction(transactionId: string, input: Transactio
     return { error: error instanceof Error ? error.message : "Unable to load transaction." };
   }
 
-  const creditCardLinkError = await validateCreditCardDebtLink(input, user.id);
-  if (creditCardLinkError) return { error: creditCardLinkError };
-  const validationError = await validateAvailableAmount(input, user.id, ignoredTransactionIds);
+  const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
+  if ("error" in resolvedInput) return { error: resolvedInput.error };
+  const validationError = await validateAvailableAmount(resolvedInput, user.id, ignoredTransactionIds);
   if (validationError) return { error: validationError };
 
   const existingGroupId = transferGroupId(metadataRecord(existingTransaction.metadata));
   const existingType = String(existingTransaction.type ?? "").toLowerCase();
-  const shouldReplaceRows = input.type === "Transfer" || existingGroupId || existingType === "transfer";
+  const shouldReplaceRows = resolvedInput.type === "Transfer" || existingGroupId || existingType === "transfer";
 
   if (shouldReplaceRows) {
     try {
@@ -342,18 +548,18 @@ export async function updateTransaction(transactionId: string, input: Transactio
       return { error: error instanceof Error ? error.message : "Unable to update transaction." };
     }
 
-    if (input.type === "Transfer") {
-      const { error } = await supabase.from("transactions").insert(transferPairPayload(input, user.id, existingGroupId || randomUUID()));
+    if (resolvedInput.type === "Transfer") {
+      const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, existingGroupId || randomUUID()));
       if (error) return { error: transactionMutationError(error.message) };
     } else {
-      const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(input), user_id: user.id });
+      const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
       if (error) return { error: transactionMutationError(error.message) };
     }
     revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
     return {};
   }
 
-  const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(input)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
+  const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(resolvedInput)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: transactionMutationError(error.message) };
   if (!data) return { error: "Transaction not found." };
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);

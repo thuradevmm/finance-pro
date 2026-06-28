@@ -9,7 +9,6 @@ import { ModalShell } from "@/components/ui/modal-shell";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
-import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
 import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
@@ -69,100 +68,22 @@ function formatMonthLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(date);
 }
 
-function addMonths(date: Date, monthCount: number) {
-  const next = new Date(date);
-  const day = next.getDate();
-  next.setMonth(next.getMonth() + monthCount);
-  if (next.getDate() !== day) next.setDate(0);
-  return next;
-}
+function buildCalendarEntries(payments: UpcomingDebtPayment[]) {
+  const entries = payments.flatMap((payment) => {
+    const dueDateValue = payment.dueDateTimeValue?.slice(0, 10) ?? "";
+    const dueDate = parseDateInput(dueDateValue);
+    if (!dueDate) return [];
 
-function addMonthsPreservingDay(startDate: string, monthCount: number) {
-  const start = parseDateInput(startDate);
-  if (!start || !Number.isFinite(monthCount) || monthCount <= 0) return null;
-  return addMonths(start, monthCount);
-}
-
-function daysBetween(startDate: Date, endDate: Date) {
-  return Math.max(Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000), 0);
-}
-
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function calculateTotalRepayment(debt: DebtRecordWithValues) {
-  const principal = debt.totalAmountValue;
-  const interestRate = debt.interestRateValue;
-  const numberOfMonths = debt.durationMonths;
-  const regularInstallment = debt.monthlyPaymentValue;
-  const startedAt = parseDateInput(debt.startDate);
-
-  if (!Number.isFinite(principal) || principal <= 0 || numberOfMonths <= 0 || !regularInstallment || !startedAt) {
-    return roundMoney(regularInstallment * Math.max(numberOfMonths, 0));
-  }
-
-  let balance = principal;
-  let previousDate = startedAt;
-  let totalInterest = 0;
-  let totalPrincipal = 0;
-
-  for (let month = 1; month <= numberOfMonths; month += 1) {
-    const dueDate = addMonthsPreservingDay(debt.startDate, month);
-    if (!dueDate) break;
-    dueDate.setDate(dueDate.getDate() - 1);
-
-    const rawInterestAmount = debt.interestRatePeriod === "Monthly"
-      ? balance * (interestRate / 100)
-      : balance * (interestRate / 100) * (daysBetween(previousDate, dueDate) / 365);
-    const interestAmount = roundMoney(rawInterestAmount);
-    const installmentAmount = month === numberOfMonths ? roundMoney(balance + interestAmount) : regularInstallment;
-    const principalAmount = month === numberOfMonths ? balance : roundMoney(installmentAmount - interestAmount);
-
-    balance = roundMoney(balance - principalAmount);
-    totalInterest += rawInterestAmount;
-    totalPrincipal = roundMoney(totalPrincipal + principalAmount);
-    previousDate = dueDate;
-  }
-
-  return roundMoney(totalPrincipal + totalInterest);
-}
-
-function paymentAmountForMonth(debt: DebtRecordWithValues, monthIndex: number, entryCount: number, totalRepayment: number) {
-  if (monthIndex !== entryCount - 1) return debt.monthlyPaymentValue;
-  const previousPayments = debt.monthlyPaymentValue * Math.max(entryCount - 1, 0);
-  const finalPayment = roundMoney(totalRepayment - previousPayments);
-  return finalPayment > 0 ? finalPayment : debt.monthlyPaymentValue;
-}
-
-function buildCalendarEntries(debts: DebtRecordWithValues[]) {
-  const today = Date.now();
-  const entries = debts.flatMap((debt) => {
-    if (debt.status === "Paid" || !debt.nextPaymentDateValue) return [];
-
-    const firstPaymentDate = parseDateInput(debt.nextPaymentDateValue);
-    if (!firstPaymentDate) return [];
-
-    const payoffDate = debt.payoffDate ? parseDateInput(debt.payoffDate) : null;
-    const entryCount = Math.max(Math.min(debt.durationMonths || 12, 60), 1);
-    const totalRepayment = calculateTotalRepayment(debt);
-
-    return Array.from({ length: entryCount }, (_, index) => {
-      const paymentDate = addMonths(firstPaymentDate, index);
-      if (payoffDate && paymentDate > payoffDate) return null;
-      const paymentAmount = paymentAmountForMonth(debt, index, entryCount, totalRepayment);
-
-      return {
-        amount: formatMmk(paymentAmount),
-        dateLabel: formatDateLabel(paymentDate),
-        debtName: debt.name,
-        id: `${debt.id}-${formatMonthKey(paymentDate)}-${paymentDate.getDate()}`,
-        isOverdue: paymentDate.getTime() < today,
-        monthKey: formatMonthKey(paymentDate),
-        monthLabel: formatMonthLabel(paymentDate),
-        timestamp: paymentDate.getTime(),
-      };
-    }).filter((entry): entry is CalendarEntry => entry != null);
+    return [{
+      amount: payment.amount,
+      dateLabel: formatDateLabel(dueDate),
+      debtName: payment.debtName,
+      id: payment.id,
+      isOverdue: Boolean(payment.isOverdue),
+      monthKey: formatMonthKey(dueDate),
+      monthLabel: formatMonthLabel(dueDate),
+      timestamp: dueDate.getTime(),
+    }];
   });
 
   return entries.sort((first, second) => first.timestamp - second.timestamp);
@@ -274,11 +195,13 @@ function DebtsTable({
 }
 
 function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => void; payments: UpcomingDebtPayment[] }) {
+  const visiblePayments = payments.slice(0, 5);
+
   return (
     <aside className="rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-sm">
       <h2 className="mb-5 text-xl font-semibold text-[#0b1c30]">Upcoming Payments</h2>
       <div className="space-y-4">
-        {payments.length > 0 ? payments.map((payment) => (
+        {visiblePayments.length > 0 ? visiblePayments.map((payment) => (
           <div className="flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0" key={payment.id}>
             <div>
               <p className="text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>
@@ -292,14 +215,16 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
           </div>
         )}
       </div>
-      <button
-        className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#c6c6cd] text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
-        onClick={onViewCalendar}
-        type="button"
-      >
-        View Full Calendar
-        <Icon className="size-4" name="chevronRight" />
-      </button>
+      {payments.length > 0 ? (
+        <button
+          className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#c6c6cd] text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+          onClick={onViewCalendar}
+          type="button"
+        >
+          View Full Calendar
+          <Icon className="size-4" name="chevronRight" />
+        </button>
+      ) : null}
     </aside>
   );
 }
@@ -376,7 +301,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
       return statusMatches && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [search, showActiveOnly, visibleDebts]);
-  const calendarEntries = useMemo(() => buildCalendarEntries(visibleDebts), [visibleDebts]);
+  const calendarEntries = useMemo(() => buildCalendarEntries(payments), [payments]);
 
   async function handleDelete(debtId: string) {
     setIsPending(true);

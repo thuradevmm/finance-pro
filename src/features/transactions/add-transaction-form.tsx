@@ -35,6 +35,12 @@ const transactionTypes: TransactionTypeOption[] = [
   { type: "Transfer", description: "Move money between accounts", icon: "sync", previewIcon: "sync", accent: "text-[#4f46e5]", activeClassName: "border-[#c7d2fe] bg-[#eef2ff] text-[#3730a3] shadow-sm", previewClassName: "bg-[#4f46e5] text-white" },
 ];
 
+const automaticCreditCardDebtOption: TransactionRelatedOption = {
+  label: "Automatic Credit Card Debt",
+  type: "debt",
+  value: "",
+};
+
 function FieldLabel({ children }: { children: string }) {
   return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{children}</label>;
 }
@@ -74,6 +80,18 @@ function formatPreviewAmount(amount: string, type: TransactionType) {
   return formatMmkPreview(value);
 }
 
+function isCreditCardAccount(account: AccountRecord | undefined) {
+  if (!account) return false;
+  const normalizedType = account.type.toLowerCase().replace(/[\s_-]+/g, "");
+  return normalizedType === "creditcard" || Boolean(account.cardNumber || account.cardType);
+}
+
+function accountAmountTypeOptionsFor(account: AccountRecord | undefined) {
+  if (!account) return [];
+  if (isCreditCardAccount(account)) return ["Credit Card"];
+  return account.balanceBreakdowns.map((breakdown) => breakdown.type);
+}
+
 export function AddTransactionForm({
   accounts,
   categories,
@@ -100,9 +118,9 @@ export function AddTransactionForm({
     ? transaction.accountAmountType
     : transaction?.transferAccountAmountType;
   const [accountId, setAccountId] = useState(initialTransferFromAccountId ?? accounts[0]?.id ?? "");
-  const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
+  const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accountAmountTypeOptionsFor(accounts[0])[0] ?? "Operation");
   const [transferToAccountId, setTransferToAccountId] = useState(initialTransferToAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
-  const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? accounts.find((account) => account.id !== accountId)?.balanceBreakdowns[0]?.type ?? accounts[0]?.balanceBreakdowns[0]?.type ?? "Operation");
+  const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? accountAmountTypeOptionsFor(accounts.find((account) => account.id !== accountId) ?? accounts[0])[0] ?? "Operation");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
@@ -118,7 +136,7 @@ export function AddTransactionForm({
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const accountAmountTypeOptions = useMemo(() => {
-    const optionNames = selectedAccount?.balanceBreakdowns.map((breakdown) => breakdown.type) ?? [];
+    const optionNames = accountAmountTypeOptionsFor(selectedAccount);
     return accountAmountType && !optionNames.includes(accountAmountType) ? [accountAmountType, ...optionNames] : optionNames;
   }, [accountAmountType, selectedAccount]);
   const effectiveAccountAmountType = accountAmountTypeOptions.includes(accountAmountType) ? accountAmountType : accountAmountTypeOptions[0] ?? "General";
@@ -126,7 +144,7 @@ export function AddTransactionForm({
   const selectedTransferAccount = transferAccountOptions.find((account) => account.id === transferToAccountId) ?? transferAccountOptions[0];
   const effectiveTransferToAccountId = selectedTransferAccount?.id ?? "";
   const transferAccountAmountTypeOptions = useMemo(() => {
-    const optionNames = selectedTransferAccount?.balanceBreakdowns.map((breakdown) => breakdown.type) ?? [];
+    const optionNames = accountAmountTypeOptionsFor(selectedTransferAccount);
     return transferAccountAmountType && !optionNames.includes(transferAccountAmountType) ? [transferAccountAmountType, ...optionNames] : optionNames;
   }, [selectedTransferAccount, transferAccountAmountType]);
   const effectiveTransferAccountAmountType = transferAccountAmountTypeOptions.includes(transferAccountAmountType)
@@ -135,12 +153,16 @@ export function AddTransactionForm({
   const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
-  const isCreditCardCharge = selectedAccount?.type === "Credit Card" && (selectedType === "Expense" || selectedType === "Transfer");
-  const isCreditCardPayment = isTransfer && selectedTransferAccount?.type === "Credit Card";
-  const requiresDebtLink = isCreditCardCharge || isCreditCardPayment;
+  const isCreditCardCharge = isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
+  const isCreditCardPayment = isTransfer && isCreditCardAccount(selectedTransferAccount);
+  const autoLinksCreditCardDebt = isCreditCardCharge || isCreditCardPayment;
   const debtRelatedOptions = useMemo(() => relatedOptions.filter((option) => option.type === "debt"), [relatedOptions]);
-  const effectiveRelatedOption = requiresDebtLink && selectedRelatedOption?.type !== "debt"
-    ? debtRelatedOptions[0] ?? selectedRelatedOption
+  const impactOptions = useMemo(() => {
+    if (!autoLinksCreditCardDebt) return relatedOptions;
+    return [automaticCreditCardDebtOption, ...debtRelatedOptions];
+  }, [autoLinksCreditCardDebt, debtRelatedOptions, relatedOptions]);
+  const effectiveRelatedOption = autoLinksCreditCardDebt && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
+    ? impactOptions[0] ?? selectedRelatedOption
     : selectedRelatedOption;
   const amountNumber = Number(amount);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
@@ -148,10 +170,9 @@ export function AddTransactionForm({
   const accountHasError = showErrors && !accountId;
   const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
   const categoryHasError = showErrors && !isTransfer && !categoryId;
-  const debtLinkHasError = showErrors && requiresDebtLink && effectiveRelatedOption?.type !== "debt";
   const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
   const availableAmountValue = selectedAvailableBreakdown?.amountValue ?? 0;
-  const shouldValidateAvailableAmount = selectedAccount?.type !== "Credit Card" && (selectedType === "Expense" || selectedType === "Transfer");
+  const shouldValidateAvailableAmount = !isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
   const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
 
   function handleTypeChange(type: TransactionType) {
@@ -161,27 +182,26 @@ export function AddTransactionForm({
   }
 
   function handleRelatedOptionChange(label: string) {
-    const nextOption = relatedOptions.find((option) => option.label === label) ?? relatedOptions[0];
+    const nextOption = impactOptions.find((option) => option.label === label) ?? impactOptions[0] ?? relatedOptions[0];
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
   }
 
   function handleAccountChange(name: string) {
     const nextAccount = findAccountByOptionLabel(accounts, name);
     setAccountId(nextAccount?.id ?? "");
-    setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
+    setAccountAmountType(accountAmountTypeOptionsFor(nextAccount)[0] ?? "General");
   }
 
   function handleTransferAccountChange(name: string) {
     const nextAccount = findAccountByOptionLabel(transferAccountOptions, name);
     setTransferToAccountId(nextAccount?.id ?? "");
-    setTransferAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
+    setTransferAccountAmountType(accountAmountTypeOptionsFor(nextAccount)[0] ?? "General");
   }
 
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
-    const hasMissingDebtLink = requiresDebtLink && effectiveRelatedOption?.type !== "debt";
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasMissingDebtLink || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -318,12 +338,11 @@ export function AddTransactionForm({
 
           <FormCard title="Transaction Impact">
             <SelectInput
-              label={requiresDebtLink ? "Credit Card Debt" : "Reflect To Page"}
+              label={autoLinksCreditCardDebt ? "Credit Card Debt" : "Reflect To Page"}
               onChange={handleRelatedOptionChange}
-              options={(requiresDebtLink && debtRelatedOptions.length > 0 ? debtRelatedOptions : relatedOptions).map((option) => option.label)}
+              options={impactOptions.map((option) => option.label)}
               value={effectiveRelatedOption?.label ?? "No linked record"}
             />
-            {debtLinkHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Credit card charges and payments must be linked to a debt record.</p> : null}
           </FormCard>
 
           {formError ? (

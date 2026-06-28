@@ -61,6 +61,7 @@ type CategoryRow = {
 type TransactionRow = {
   amount: number | string;
   category_id: string | null;
+  status: string | null;
   transaction_date: string;
   type: string;
 };
@@ -107,7 +108,7 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
     supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata,created_at").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
     itemsQuery,
     supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("transactions").select("category_id,transaction_date,type,amount").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("transactions").select("category_id,transaction_date,type,amount,status").eq("user_id", userId).is("deleted_at", null),
   ]);
 
   const error = plansResult.error ?? itemsResult.error ?? categoriesResult.error ?? transactionsResult.error;
@@ -128,6 +129,7 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
     const actualValue = transactions
       .filter((transaction) => transaction.category_id === item.category_id
         && transaction.type.toLowerCase() === "expense"
+        && String(transaction.status ?? "cleared").toLowerCase() !== "scheduled"
         && transaction.transaction_date >= plan.start_date
         && (!plan.end_date || transaction.transaction_date <= plan.end_date))
       .reduce((total, transaction) => total + Math.abs(numericValue(transaction.amount)), 0);

@@ -167,6 +167,19 @@ function createAmountTypeDraft(type = defaultAmountTypeName): AmountTypeDraft {
   return { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type };
 }
 
+function optionalNumberInput(value: string) {
+  if (value.trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function optionalDayInput(value: string) {
+  const number = optionalNumberInput(value);
+  if (number == null) return null;
+  if (!Number.isInteger(number)) return null;
+  return number >= 1 && number <= 31 ? number : null;
+}
+
 export function AddAccountForm({ account, categories, returnTo = "/accounts" }: { account?: AccountRecord; categories: CategoryRecord[]; returnTo?: string }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
@@ -196,18 +209,31 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
     : baseCategoryOptions;
   const [selectedCategory, setSelectedCategory] = useState(account?.category ?? accountCategoryOptions[0] ?? "");
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState(account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
+  const [creditLimit, setCreditLimit] = useState(account?.creditLimitValue ? String(account.creditLimitValue) : account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
+  const [creditStatementDay, setCreditStatementDay] = useState(account?.creditStatementDay == null ? "" : String(account.creditStatementDay));
+  const [creditPaymentDueDay, setCreditPaymentDueDay] = useState(account?.creditPaymentDueDay == null ? "" : String(account.creditPaymentDueDay));
+  const [creditMinimumPayment, setCreditMinimumPayment] = useState(account?.creditMinimumPaymentValue ? String(account.creditMinimumPaymentValue) : "");
   const [notes, setNotes] = useState(account?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
+  const isCreditCard = selectedType === "Credit Card";
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
-  const amountTypesHaveError = showErrors && amountTypes.some((item) => item.type.trim() === "");
-  const hasCard = cardType !== "No Card";
+  const amountTypesHaveError = showErrors && !isCreditCard && amountTypes.some((item) => item.type.trim() === "");
+  const hasCard = isCreditCard || cardType !== "No Card";
+  const cardTypeHasError = showErrors && isCreditCard && cardType === "No Card";
   const cardHasError = showErrors && hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
+  const creditLimitValue = Number(creditLimit);
+  const creditLimitHasError = showErrors && isCreditCard && (!Number.isFinite(creditLimitValue) || creditLimitValue <= 0);
+  const creditStatementDayHasError = showErrors && isCreditCard && creditStatementDay.trim() !== "" && optionalDayInput(creditStatementDay) == null;
+  const creditPaymentDueDayHasError = showErrors && isCreditCard && creditPaymentDueDay.trim() !== "" && optionalDayInput(creditPaymentDueDay) == null;
+  const creditMinimumPaymentValue = optionalNumberInput(creditMinimumPayment);
+  const creditMinimumPaymentHasError = showErrors && isCreditCard && creditMinimumPayment.trim() !== "" && (creditMinimumPaymentValue == null || creditMinimumPaymentValue < 0);
   const effectiveSelectedCategory = accountCategoryOptions.includes(selectedCategory) ? selectedCategory : accountCategoryOptions[0] ?? "";
-  const transactionTotal = account?.balanceValue ?? 0;
+  const creditLimitPreview = creditLimit.trim() === "" ? account?.creditLimitValue ?? 0 : Number(creditLimit);
+  const transactionTotal = isCreditCard ? Math.max((Number.isFinite(creditLimitPreview) ? creditLimitPreview : 0) - (account?.creditUsedValue ?? 0), 0) : account?.balanceValue ?? 0;
 
   function updateAmountType(id: string, value: string) {
     setAmountTypes((items) => items.map((item) => (item.id === id ? { ...item, type: value } : item)));
@@ -228,25 +254,43 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
   async function handleSaveAccount(addAnother = false) {
     const normalizedAmountTypes = amountTypes.map((item) => ({ type: item.type.trim() }));
-    const hasInvalidAmountTypes = normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === "");
+    const effectiveAmountTypes = isCreditCard ? [{ type: defaultAmountTypeName }] : normalizedAmountTypes;
+    const hasInvalidAmountTypes = !isCreditCard && (normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === ""));
     const hasInvalidCard = hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
-    const hasErrors = accountName.trim() === "" || institution.trim() === "" || hasInvalidAmountTypes || hasInvalidCard;
+    const hasInvalidCreditLimit = isCreditCard && (!Number.isFinite(creditLimitValue) || creditLimitValue <= 0);
+    const hasInvalidCreditStatementDay = isCreditCard && creditStatementDay.trim() !== "" && optionalDayInput(creditStatementDay) == null;
+    const hasInvalidCreditPaymentDueDay = isCreditCard && creditPaymentDueDay.trim() !== "" && optionalDayInput(creditPaymentDueDay) == null;
+    const hasInvalidCreditMinimumPayment = isCreditCard && creditMinimumPayment.trim() !== "" && (creditMinimumPaymentValue == null || creditMinimumPaymentValue < 0);
+    const hasErrors = accountName.trim() === ""
+      || institution.trim() === ""
+      || hasInvalidAmountTypes
+      || hasInvalidCard
+      || hasInvalidCreditLimit
+      || hasInvalidCreditStatementDay
+      || hasInvalidCreditPaymentDueDay
+      || hasInvalidCreditMinimumPayment
+      || (isCreditCard && cardType === "No Card");
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
 
+    const parsedCreditLimit = isCreditCard ? creditLimitValue : null;
     const input: AccountFormData = {
       accountNumber: accountIdentifier,
-      amountTypes: normalizedAmountTypes,
+      amountTypes: effectiveAmountTypes,
       bankBookAccountNumber: accountIdentifier,
       cardNumber,
       cardSecurityCode,
       cardExpiryCode,
       cardType,
       category: effectiveSelectedCategory,
+      creditLimit: parsedCreditLimit,
+      creditMinimumPayment: isCreditCard ? creditMinimumPaymentValue : null,
+      creditPaymentDueDay: isCreditCard ? optionalDayInput(creditPaymentDueDay) : null,
+      creditStatementDay: isCreditCard ? optionalDayInput(creditStatementDay) : null,
       currency,
       institution,
-      monthlyBudgetLimit: monthlyBudgetLimit.trim() === "" ? null : Number(monthlyBudgetLimit),
+      monthlyBudgetLimit: isCreditCard ? parsedCreditLimit : optionalNumberInput(monthlyBudgetLimit),
       mobileBankingAccountNumber: accountIdentifier,
       name: accountName,
       notes,
@@ -276,6 +320,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       setCardExpiryCode("");
       setAmountTypes([createAmountTypeDraft(defaultAmountTypeName)]);
       setMonthlyBudgetLimit("");
+      setCreditLimit("");
+      setCreditStatementDay("");
+      setCreditPaymentDueDay("");
+      setCreditMinimumPayment("");
       setNotes("");
       setShowErrors(false);
       showSuccess("Account saved successfully.");
@@ -339,7 +387,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <FieldLabel>Total Amount</FieldLabel>
+                <FieldLabel>{isCreditCard ? "Available Credit" : "Total Amount"}</FieldLabel>
                 <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-xl font-semibold text-[#0b1c30]">
                   <ResponsiveAmount maxSizeRem={1.25}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
                 </div>
@@ -355,41 +403,67 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
               <TextInput label="Security Code" onChange={setCardSecurityCode} placeholder={cardType === "Visa" ? "CVV" : "Security code"} value={cardSecurityCode} />
               <TextInput label="Expired Code" onChange={(value) => setCardExpiryCode(formatExpiryCode(value))} placeholder="MM/YY" value={cardExpiryCode} />
             </div>
+            {cardTypeHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select a card type for credit card accounts.</p> : null}
             {cardHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Card number, security code, and expired code are required when a card type is selected.</p> : null}
           </FormCard>
 
-          <FormCard title="Amount Types">
-            <div className="space-y-3">
-              {amountTypes.map((amountType) => (
-                <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 md:grid-cols-[minmax(0,1fr)_auto]" key={amountType.id}>
-                  <TextInput label="Type Name" onChange={(value) => updateAmountType(amountType.id, value)} placeholder="Operation, Saving, Emergency..." value={amountType.type} />
-                  <div className="flex items-end">
-                    <button
-                      aria-label={`Remove ${amountType.type || "amount type"}`}
-                      className="grid h-12 w-full place-items-center rounded-lg border border-[#fecaca] bg-white text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50 md:w-12"
-                      disabled={amountTypes.length === 1}
-                      onClick={() => removeAmountType(amountType.id)}
-                      type="button"
-                    >
-                      <Icon className="size-4" name="trash" />
-                    </button>
-                  </div>
+          {isCreditCard ? (
+            <FormCard title="Credit Card Terms">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <TextInput label="Credit Limit" onChange={setCreditLimit} placeholder="Maximum usable amount" type="number" value={creditLimit} />
+                  {creditLimitHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Credit limit must be greater than zero.</p> : null}
                 </div>
-              ))}
-            </div>
-            {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name.</p> : null}
-            <div className="mt-4 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 text-sm font-semibold text-[#45464d]">
-              Amount values are calculated from transaction activity.
-            </div>
-            <button
-              className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
-              onClick={addAmountType}
-              type="button"
-            >
-              <Icon className="size-4" name="plus" />
-              Add Amount Type
-            </button>
-          </FormCard>
+                <div>
+                  <TextInput label="Minimum Payment Amount" onChange={setCreditMinimumPayment} placeholder="Optional" type="number" value={creditMinimumPayment} />
+                  {creditMinimumPaymentHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Minimum payment cannot be negative.</p> : null}
+                </div>
+                <div>
+                  <TextInput label="Statement Closing Day" onChange={setCreditStatementDay} placeholder="1-31" type="number" value={creditStatementDay} />
+                  {creditStatementDayHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Statement day must be between 1 and 31.</p> : null}
+                </div>
+                <div>
+                  <TextInput label="Payment Due Day" onChange={setCreditPaymentDueDay} placeholder="1-31" type="number" value={creditPaymentDueDay} />
+                  {creditPaymentDueDayHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Payment due day must be between 1 and 31.</p> : null}
+                </div>
+              </div>
+            </FormCard>
+          ) : null}
+
+          {!isCreditCard ? (
+            <FormCard title="Amount Types">
+              <div className="space-y-3">
+                {amountTypes.map((amountType) => (
+                  <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 md:grid-cols-[minmax(0,1fr)_auto]" key={amountType.id}>
+                    <TextInput label="Type Name" onChange={(value) => updateAmountType(amountType.id, value)} placeholder="Operation, Saving, Emergency..." value={amountType.type} />
+                    <div className="flex items-end">
+                      <button
+                        aria-label={`Remove ${amountType.type || "amount type"}`}
+                        className="grid h-12 w-full place-items-center rounded-lg border border-[#fecaca] bg-white text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50 md:w-12"
+                        disabled={amountTypes.length === 1}
+                        onClick={() => removeAmountType(amountType.id)}
+                        type="button"
+                      >
+                        <Icon className="size-4" name="trash" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name.</p> : null}
+              <div className="mt-4 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 text-sm font-semibold text-[#45464d]">
+                Amount values are calculated from transaction activity.
+              </div>
+              <button
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+                onClick={addAmountType}
+                type="button"
+              >
+                <Icon className="size-4" name="plus" />
+                Add Amount Type
+              </button>
+            </FormCard>
+          ) : null}
 
           <FormCard title="Account Settings">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -397,9 +471,11 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
               <SelectInput label="Account Category" onChange={setSelectedCategory} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory || "No account categories"} />
             </div>
 
-            <div className="mt-5">
-              <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="number" value={monthlyBudgetLimit} />
-            </div>
+            {!isCreditCard ? (
+              <div className="mt-5">
+                <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="number" value={monthlyBudgetLimit} />
+              </div>
+            ) : null}
 
             <div className="mt-5">
               <FieldLabel>Notes</FieldLabel>
@@ -473,16 +549,32 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
               <span className="text-xs font-bold uppercase text-[#45464d]">Card</span>
               <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{cardNumber || "Not set"}</span>
             </div>
+            {isCreditCard ? (
+              <>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs font-bold uppercase text-[#45464d]">Credit Limit</span>
+                  <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{formatMmkPreview(Number.isFinite(creditLimitValue) ? creditLimitValue : 0)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs font-bold uppercase text-[#45464d]">Payment Due Day</span>
+                  <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{creditPaymentDueDay || "Not set"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs font-bold uppercase text-[#45464d]">Statement Day</span>
+                  <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{creditStatementDay || "Not set"}</span>
+                </div>
+              </>
+            ) : null}
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Currency</span>
               <span className="text-sm font-semibold text-[#0b1c30]">{currency}</span>
             </div>
-            {amountTypes.map((amountType) => (
+            {!isCreditCard ? amountTypes.map((amountType) => (
               <div className="flex items-center justify-between gap-4" key={`preview-${amountType.id}`}>
                 <span className="max-w-32 truncate text-xs font-bold uppercase text-[#45464d]">{amountType.type || "Amount Type"}</span>
                 <span className="text-right text-sm font-semibold text-[#0b1c30]">Transaction based</span>
               </div>
-            ))}
+            )) : null}
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Status</span>
               <span className="text-sm font-semibold text-[#0b1c30]">{status}</span>

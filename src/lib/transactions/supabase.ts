@@ -116,6 +116,18 @@ function formatTransferAmount(value: number, direction: Transaction["transferDir
   return formatMmk(value);
 }
 
+function isPostedTransaction(transaction: Pick<TransactionRecord, "status">) {
+  return String(transaction.status ?? "cleared").toLowerCase() !== "scheduled";
+}
+
+function isCreditCardAccount(account: AccountRecord | undefined) {
+  return account?.type === "Credit Card";
+}
+
+function roundCurrencyValue(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
@@ -219,12 +231,45 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
   };
 }
 
-export function getTransactionSummaries(transactions: Transaction[]): SummaryMetric[] {
-  const income = transactions.filter((t) => t.type === "Income").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
-  const expenses = transactions.filter((t) => t.type === "Expense").reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
+export function getTransactionSummaries(transactions: TransactionRecord[], accounts: AccountRecord[] = []): SummaryMetric[] {
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  let income = 0;
+  let expenses = 0;
+  let net = 0;
+
+  for (const transaction of transactions) {
+    if (!isPostedTransaction(transaction)) continue;
+
+    const amount = transaction.amountValue ?? 0;
+    const account = accountsById.get(transaction.accountId);
+    const transferAccount = accountsById.get(transaction.transferAccountId);
+
+    if (transaction.type === "Income") {
+      if (!isCreditCardAccount(account)) {
+        income = roundCurrencyValue(income + amount);
+        net = roundCurrencyValue(net + amount);
+      }
+    } else if (transaction.type === "Expense") {
+      if (!isCreditCardAccount(account)) {
+        expenses = roundCurrencyValue(expenses + amount);
+        net = roundCurrencyValue(net - amount);
+      }
+    } else if (transaction.type === "Transfer") {
+      if (transaction.transferDirection === "Credit") {
+        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net + amount);
+      } else if (transaction.transferDirection === "Debit") {
+        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net - amount);
+      } else {
+        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net - amount);
+        if (!isCreditCardAccount(transferAccount)) net = roundCurrencyValue(net + amount);
+      }
+    }
+  }
+
   const transferGroups = new Set<string>();
   const transfers = transactions
     .filter((transaction) => {
+      if (!isPostedTransaction(transaction)) return false;
       if (transaction.type !== "Transfer") return false;
       const groupId = transaction.transferGroupId ?? transaction.id;
       if (transferGroups.has(groupId)) return false;
@@ -236,6 +281,6 @@ export function getTransactionSummaries(transactions: Transaction[]): SummaryMet
     { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
     { label: "Transfers", value: formatMmk(transfers), icon: "sync", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
-    { label: "Net", value: formatMmk(income - expenses), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
+    { label: "Net", value: formatMmk(net), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
   ];
 }

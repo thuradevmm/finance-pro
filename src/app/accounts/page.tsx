@@ -80,6 +80,10 @@ function StatusBadge({ status }: { status: AccountStatus }) {
   );
 }
 
+function isCreditCardAccount(account: Pick<AccountRecord, "type">) {
+  return account.type === "Credit Card";
+}
+
 function AccountCard({
   account,
   accounts,
@@ -93,6 +97,11 @@ function AccountCard({
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
+  const isCreditCard = isCreditCardAccount(account);
+  const primaryAmountLabel = isCreditCard ? "Available Credit" : "Total Amount";
+  const primaryAmountClassName = isCreditCard ? "text-[#0058be]" : account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]";
+  const breakdowns = isCreditCard ? account.availableBreakdowns : account.balanceBreakdowns;
+
   return (
     <article className="flex h-full flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-4">
@@ -112,24 +121,24 @@ function AccountCard({
       </div>
 
       <div className="mt-5">
-        <p className="text-xs font-bold uppercase text-[#45464d]">Total Amount</p>
-        <ResponsiveAmount className={`mt-2 font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+        <p className="text-xs font-bold uppercase text-[#45464d]">{primaryAmountLabel}</p>
+        <ResponsiveAmount className={`mt-2 font-semibold ${primaryAmountClassName}`}>
           {account.balance}
         </ResponsiveAmount>
       </div>
 
       <dl className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">Inflow</dt>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Payments" : "Inflow"}</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.monthlyInflow}</ResponsiveAmount></dd>
         </div>
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">Outflow</dt>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Charges" : "Outflow"}</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.monthlyOutflow}</ResponsiveAmount></dd>
         </div>
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">Net Amount</dt>
-          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{account.availableBalance}</ResponsiveAmount></dd>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Credit Used" : "Net Amount"}</dt>
+          <dd><ResponsiveAmount className={`mt-1 font-semibold ${isCreditCard ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={0.875}>{isCreditCard ? account.creditUsed : account.availableBalance}</ResponsiveAmount></dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Transactions</dt>
@@ -137,10 +146,10 @@ function AccountCard({
         </div>
       </dl>
       <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
-        {account.balanceBreakdowns.map((breakdown) => (
+        {breakdowns.map((breakdown) => (
           <div key={breakdown.type}>
-            <dt className="text-xs font-bold uppercase text-[#45464d]">{breakdown.type} Total</dt>
-            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{breakdown.amount}</ResponsiveAmount></dd>
+            <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? breakdown.type : `${breakdown.type} Total`}</dt>
+            <dd><ResponsiveAmount className={`mt-1 font-semibold ${breakdown.type === "Credit Used" ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={0.875}>{breakdown.amount}</ResponsiveAmount></dd>
           </div>
         ))}
       </dl>
@@ -170,77 +179,114 @@ function AccountCard({
 }
 
 function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] }) {
+  const ledgerAccounts = accounts.filter((account) => account.type !== "Credit Card");
+  const creditAccounts = accounts.filter((account): account is AccountRecord => account.type === "Credit Card");
   const amountTypes = Array.from(
-    accounts.reduce((types, account) => {
+    ledgerAccounts.reduce((types, account) => {
       for (const breakdown of account.balanceBreakdowns) types.add(breakdown.type);
       return types;
     }, new Set<string>()),
   );
   const totalColumns = amountTypes.map((amountType) => ({
     amountType,
-    total: sumScaledAmounts(accounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
+    total: sumScaledAmounts(ledgerAccounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
   }));
-  const grandTotal = sumScaledAmounts(accounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)));
+  const grandTotal = sumScaledAmounts(ledgerAccounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)));
 
   return (
-    <section className="mb-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
-        <h2 className="text-sm font-bold uppercase text-[#45464d]">Amount Type Lookup</h2>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse text-left">
-          <thead>
-            <tr className="border-b border-[#c6c6cd]/50">
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Source</th>
-              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-              {amountTypes.map((amountType) => (
-                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
-              ))}
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-            {accounts.map((account) => {
-              const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
-              const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
+    <div className="space-y-6">
+      <section className="mb-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+        <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+          <h2 className="text-sm font-bold uppercase text-[#45464d]">Amount Type Lookup</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1040px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-[#c6c6cd]/50">
+                <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Source</th>
+                <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
+                {amountTypes.map((amountType) => (
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
+                ))}
+                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+              {ledgerAccounts.map((account) => {
+                const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
+                const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
 
-              return (
-                <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
-                        <Icon className="size-5" name={account.icon} />
-                      </span>
-                      <div>
-                        <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
-                        <p className="mt-1 text-xs font-medium text-[#45464d]">{account.category || "Uncategorized"}</p>
+                return (
+                  <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                          <Icon className="size-5" name={account.icon} />
+                        </span>
+                        <div>
+                          <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
+                          <p className="mt-1 text-xs font-medium text-[#45464d]">{account.category || "Uncategorized"}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
-                  {amountTypes.map((amountType) => (
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
-                      {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
                     </td>
-                  ))}
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
+                    {amountTypes.map((amountType) => (
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                        {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
+                  </tr>
+                );
+              })}
+              <tr className="transition hover:bg-[#f8f9ff]">
+                <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">TOTAL</td>
+                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Total</td>
+                {totalColumns.map(({ amountType, total }) => (
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                    {formatScaledAuditAmount(total.value, total.scale)}
+                  </td>
+                ))}
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(grandTotal.value, grandTotal.scale)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {creditAccounts.length > 0 ? (
+        <section className="mb-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+          <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+            <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Limits</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-[#c6c6cd]/50">
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Limit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Used</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available Credit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
                 </tr>
-              );
-            })}
-            <tr className="transition hover:bg-[#f8f9ff]">
-              <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">TOTAL</td>
-              <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Total</td>
-              {totalColumns.map(({ amountType, total }) => (
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
-                  {formatScaledAuditAmount(total.value, total.scale)}
-                </td>
-              ))}
-              <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(grandTotal.value, grandTotal.scale)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+              </thead>
+              <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+                {creditAccounts.map((account) => (
+                  <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
+                    <td className="px-4 py-4 font-semibold text-[#0b1c30]">{account.name}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditPaymentDueDay ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -291,7 +337,7 @@ function AccountsTable({
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("account")} sortDirection={sortKey === "account" ? sortDirection : undefined}>Account</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("type")} sortDirection={sortKey === "type" ? sortDirection : undefined}>Type</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
-              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("balance")} sortDirection={sortKey === "balance" ? sortDirection : undefined}>Total Amount</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("balance")} sortDirection={sortKey === "balance" ? sortDirection : undefined}>Balance / Credit</SortHeader></th>
               <th className="w-32 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
           </thead>
@@ -315,7 +361,7 @@ function AccountsTable({
                 <td className="px-4 py-4">
                   <StatusBadge status={account.status} />
                 </td>
-                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${isCreditCardAccount(account) ? "text-[#0058be]" : account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
                   {account.balance}
                 </td>
                 <td className="px-4 py-4">
@@ -388,7 +434,14 @@ export default function AccountsPage() {
         account.category,
         account.balance,
         account.availableBalance,
+        account.creditLimit,
+        account.creditUsed,
+        account.creditAvailable,
+        account.creditMinimumPayment,
+        account.creditPaymentDueDay,
+        account.creditStatementDay,
         ...account.balanceBreakdowns.map((item) => `${item.type} ${item.amount}`),
+        ...account.availableBreakdowns.map((item) => `${item.type} ${item.amount}`),
       ].join(" ").toLowerCase();
       const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
       const matchesCategory = categoryFilter === "All categories" || (account.category || "Uncategorized") === categoryFilter;
@@ -582,8 +635,8 @@ export default function AccountsPage() {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div>
-                <p className="text-xs font-bold uppercase text-[#45464d]">Total Amount</p>
-                <ResponsiveAmount className={`mt-1 font-bold ${viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
+                <p className="text-xs font-bold uppercase text-[#45464d]">{isCreditCardAccount(viewedAccount) ? "Available Credit" : "Total Amount"}</p>
+                <ResponsiveAmount className={`mt-1 font-bold ${isCreditCardAccount(viewedAccount) ? "text-[#0058be]" : viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
                   {viewedAccount.balance}
                 </ResponsiveAmount>
               </div>
@@ -600,17 +653,24 @@ export default function AccountsPage() {
               <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode || "-"} />
               <DetailModalField label="Expired code" value={viewedAccount.cardExpiryCode || "-"} />
               <DetailModalField label="Currency" value={viewedAccount.currency} />
-              <DetailModalField label="Net amount" value={viewedAccount.availableBalance} />
+              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Available credit" : "Net amount"} value={viewedAccount.availableBalance} />
+              {isCreditCardAccount(viewedAccount) ? (
+                <>
+                  <DetailModalField label="Payment due day" value={viewedAccount.creditPaymentDueDay ?? "-"} />
+                  <DetailModalField label="Statement closing day" value={viewedAccount.creditStatementDay ?? "-"} />
+                  <DetailModalField label="Minimum payment" value={viewedAccount.creditMinimumPayment} />
+                </>
+              ) : null}
               <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
             </DetailModalSection>
-            <DetailModalSection title="Amount type totals">
-              {viewedAccount.balanceBreakdowns.map((breakdown) => (
-                <DetailModalField key={breakdown.type} label={breakdown.type} value={breakdown.amount} />
+            <DetailModalSection title={isCreditCardAccount(viewedAccount) ? "Credit card limits" : "Amount type totals"}>
+              {(isCreditCardAccount(viewedAccount) ? viewedAccount.availableBreakdowns : viewedAccount.balanceBreakdowns).map((breakdown) => (
+                <DetailModalField key={breakdown.type} label={breakdown.type} value={<span className={breakdown.type === "Credit Used" ? "text-[#b42318]" : undefined}>{breakdown.amount}</span>} />
               ))}
             </DetailModalSection>
             <DetailModalSection title="Monthly activity">
-              <DetailModalField label="Inflow" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
-              <DetailModalField label="Outflow" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Payments" : "Inflow"} value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
+              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Charges" : "Outflow"} value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
               <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
             </DetailModalSection>
           </div>

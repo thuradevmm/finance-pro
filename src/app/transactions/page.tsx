@@ -22,7 +22,7 @@ export default async function TransactionsPage({
   const { user } = await getUserSafely(supabase);
   const accounts = user ? await getAccounts(supabase, user.id, { limit: 200 }) : [];
   const categories = user ? await getCategories({ limit: 200 }) : [];
-  const transactions = user ? await getTransactions(supabase, user.id, accounts, categories, { limit: 250 }) : [];
+  const transactions = user ? await getTransactions(supabase, user.id, accounts, categories) : [];
   const transactionFilterOptions = getTransactionFilterOptions(transactions, accounts, categories);
 
   return (
@@ -59,6 +59,7 @@ export default async function TransactionsPage({
       />
 
       <TransactionsPageContent
+        accounts={accounts}
         filterOptions={transactionFilterOptions}
         initialAccountFilter={requestedAccount}
         initialCategoryFilter={requestedCategory}

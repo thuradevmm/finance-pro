@@ -46,6 +46,7 @@ type AssetRow = {
 type LinkedTransactionRow = {
   amount: number | string | null;
   related_entity_id: string | null;
+  status: string | null;
 };
 
 function metadataRecord(metadata: unknown) {
@@ -109,7 +110,7 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
 
   const [assetsResult, transactionsResult] = await Promise.all([
     assetsQuery,
-    supabase.from("transactions").select("related_entity_id,amount").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
+    supabase.from("transactions").select("related_entity_id,amount,status").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
   ]);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
@@ -117,6 +118,7 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
   const linkedPurchasesByAssetId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
+    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
     linkedPurchasesByAssetId.set(
       transaction.related_entity_id,
       (linkedPurchasesByAssetId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),
