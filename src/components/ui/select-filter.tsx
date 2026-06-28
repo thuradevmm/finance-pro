@@ -9,7 +9,7 @@ type SelectFilterProps = {
 
 export function SelectFilter({ label, onChange, options, value }: SelectFilterProps) {
   return (
-    <label className="relative min-w-36 flex-1 md:flex-none">
+    <label className="relative min-w-0 flex-1 sm:min-w-36 md:flex-none">
       <span className="sr-only">{label}</span>
       <select
         aria-label={label}

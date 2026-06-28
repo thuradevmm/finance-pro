@@ -94,7 +94,7 @@ export function ModalShell({
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
-        {actions ? <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[#c6c6cd]/50 px-5 py-4">{actions}</footer> : null}
+        {actions ? <footer className="flex shrink-0 flex-col-reverse items-stretch gap-2 border-t border-[#c6c6cd]/50 px-5 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">{actions}</footer> : null}
       </div>
     </div>
   );

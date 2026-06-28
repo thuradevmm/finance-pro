@@ -10,7 +10,7 @@ type SearchFieldProps = {
 
 export function SearchField({ label, placeholder, className = "", onChange, value }: SearchFieldProps) {
   return (
-    <label className={`relative min-w-56 flex-1 ${className}`}>
+    <label className={`relative min-w-0 flex-1 sm:min-w-56 ${className}`}>
       <span className="sr-only">{label}</span>
       <Icon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="search" />
       <input

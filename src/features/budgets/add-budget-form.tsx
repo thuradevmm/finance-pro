@@ -170,32 +170,34 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
           <TextAreaInput label="Description" onChange={setDescription} placeholder="Optional note about this budget target..." value={description} />
         </FormCard>
 
-        <div className="flex flex-col-reverse items-stretch justify-end gap-3 pt-2 sm:flex-row sm:items-center">
+        <div className="space-y-3 pt-2">
           {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
-          <Link
-            className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
-            href="/budgets"
-          >
-            Cancel
-          </Link>
-          <button
-            className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
-            disabled={isSaving || Boolean(budget) || !selectedCategory}
-            onClick={() => handleSaveBudget(true)}
-            type="button"
-          >
-            Save & Add Another
-          </button>
-          <LoadingButton
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!selectedCategory}
-            isLoading={isSaving}
-            loadingLabel="Saving…"
-            onClick={() => handleSaveBudget(false)}
-            type="button"
-          >
-            {budget ? "Save Changes" : "Save Budget"}
-          </LoadingButton>
+          <div className="flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
+            <Link
+              className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+              href="/budgets"
+            >
+              Cancel
+            </Link>
+            <button
+              className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+              disabled={isSaving || Boolean(budget) || !selectedCategory}
+              onClick={() => handleSaveBudget(true)}
+              type="button"
+            >
+              Save & Add Another
+            </button>
+            <LoadingButton
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!selectedCategory}
+              isLoading={isSaving}
+              loadingLabel="Saving…"
+              onClick={() => handleSaveBudget(false)}
+              type="button"
+            >
+              {budget ? "Save Changes" : "Save Budget"}
+            </LoadingButton>
+          </div>
         </div>
       </div>
 

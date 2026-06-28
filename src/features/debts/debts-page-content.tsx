@@ -202,12 +202,12 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
       <h2 className="mb-5 text-xl font-semibold text-[#0b1c30]">Upcoming Payments</h2>
       <div className="space-y-4">
         {visiblePayments.length > 0 ? visiblePayments.map((payment) => (
-          <div className="flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0" key={payment.id}>
-            <div>
+          <div className="flex flex-col gap-2 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4" key={payment.id}>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>
               <p className={`mt-1 text-xs font-bold ${payment.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{payment.dueLabel}</p>
             </div>
-            <p className="whitespace-nowrap text-lg font-semibold text-[#0b1c30]">{payment.amount}</p>
+            <p className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg">{payment.amount}</p>
           </div>
         )) : (
           <div className="rounded-lg border border-dashed border-[#c6c6cd] bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
@@ -264,7 +264,7 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
                       <p className="truncate text-sm font-semibold text-[#0b1c30]">{entry.debtName}</p>
                       <p className={`mt-1 text-xs font-bold ${entry.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{entry.dateLabel}</p>
                     </div>
-                    <p className="whitespace-nowrap text-sm font-semibold text-[#0b1c30]">{entry.amount}</p>
+                    <p className="amount-value text-sm font-semibold text-[#0b1c30]">{entry.amount}</p>
                     <span className={`w-fit rounded px-2 py-1 text-xs font-bold ${entry.isOverdue ? "bg-[#ffdad6] text-[#93000a]" : "bg-[#d8e2ff] text-[#004395]"}`}>
                       {entry.isOverdue ? "Overdue" : "Scheduled"}
                     </span>

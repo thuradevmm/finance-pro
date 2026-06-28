@@ -45,9 +45,9 @@ export function DetailModalSection({ children, title }: DetailModalSectionProps)
 
 export function DetailModalField({ label, value }: DetailModalFieldProps) {
   return (
-    <div className="rounded-md border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-3">
+    <div className="min-w-0 rounded-md border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-3">
       <p className="text-xs font-bold uppercase text-[#76777d]">{label}</p>
-      <div className="mt-1 text-sm font-semibold text-[#0b1c30]">{value}</div>
+      <div className="mt-1 min-w-0 break-words text-sm font-semibold text-[#0b1c30]">{value}</div>
     </div>
   );
 }

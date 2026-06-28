@@ -29,7 +29,7 @@ export function AppSidebar({
     <aside
       className={
         isMobile
-          ? "fixed inset-y-0 left-0 z-50 w-72 border-r border-[#c6c6cd]/70 bg-white shadow-xl"
+          ? "fixed inset-y-0 left-0 z-50 w-[min(18rem,calc(100vw-2rem))] border-r border-[#c6c6cd]/70 bg-white shadow-xl"
           : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 md:block`
       }
     >

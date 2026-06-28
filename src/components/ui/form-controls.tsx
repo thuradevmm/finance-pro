@@ -8,8 +8,8 @@ export function FieldLabel({ children }: { children: string }) {
 
 export function FormCard({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <section className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <h2 className="mb-5 text-xl font-semibold text-[#0b1c30]">{title}</h2>
+    <section className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
+      <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">{title}</h2>
       {children}
     </section>
   );

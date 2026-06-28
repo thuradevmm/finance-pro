@@ -324,9 +324,9 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         <p className="text-sm font-medium">
           {hasSelectedTransactions ? `${selectedVisibleCount} selected for bulk actions` : "Select transactions to export or delete multiple records."}
         </p>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedTransactions}
             onClick={exportSelectedTransactions}
             type="button"
@@ -335,7 +335,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             Export selected
           </button>
           <button
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#fecaca] bg-white px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#fecaca] bg-white px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedTransactions || isDeleting}
             onClick={deleteSelectedTransactions}
             type="button"
@@ -475,8 +475,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <p className="mt-1 text-xs text-[#45464d]">{transaction.date}</p>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <p className={`amount-value text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`}>{transaction.amount}</p>
+                <div className="min-w-0 shrink text-right">
+                  <p className={`amount-value overflow-hidden text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`}>{transaction.amount}</p>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -546,7 +546,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             </select>
           </label>
         </div>
-        <nav aria-label="Pagination" className="inline-flex w-fit overflow-hidden rounded-md border border-[#c6c6cd] bg-white shadow-sm">
+        <nav aria-label="Pagination" className="flex max-w-full self-start overflow-x-auto rounded-md border border-[#c6c6cd] bg-white shadow-sm [-webkit-overflow-scrolling:touch] sm:self-auto">
           <button
             aria-label="Previous page"
             className="grid size-10 place-items-center border-r border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"

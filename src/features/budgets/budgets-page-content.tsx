@@ -39,34 +39,34 @@ function BudgetPeriodControls({
 }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="inline-flex w-fit items-center rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm">
+      <div className="flex w-full items-center rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm sm:w-fit">
         <button
           aria-label="Previous period"
-          className="grid size-8 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
+          className="grid size-8 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
           type="button"
         >
           <Icon className="size-4" name="chevronLeft" />
         </button>
-        <span className="min-w-32 px-3 text-center text-sm font-semibold text-[#0b1c30]">
+        <span className="min-w-0 flex-1 px-3 text-center text-sm font-semibold text-[#0b1c30] sm:min-w-32">
           {activePeriod === "Monthly" ? "June 2026" : "Year 2026"}
         </span>
         <button
           aria-label="Next period"
-          className="grid size-8 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
+          className="grid size-8 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
           type="button"
         >
           <Icon className="size-4" name="chevronRight" />
         </button>
       </div>
 
-      <div className="inline-flex w-fit rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm">
+      <div className="flex w-full rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm sm:w-fit">
         {periods.map((period) => (
           <button
             aria-pressed={period === activePeriod}
             className={
               period === activePeriod
-                ? "h-9 rounded-md bg-[#dce9ff] px-4 text-sm font-semibold text-[#0b1c30]"
-                : "h-9 rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+                ? "h-9 flex-1 rounded-md bg-[#dce9ff] px-4 text-sm font-semibold text-[#0b1c30] sm:flex-none"
+                : "h-9 flex-1 rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:flex-none"
             }
             key={period}
             onClick={() => onPeriodChange(period)}
@@ -92,9 +92,9 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
           <h2 className="text-xl font-semibold text-[#0b1c30]">Overall Budget Usage</h2>
           <p className="mt-1 text-sm text-[#45464d]">You have spent {usagePercent}% of your current limit.</p>
         </div>
-        <div className="text-left sm:text-right">
-          <span className="text-2xl font-bold text-[#0b1c30]">{formatCurrency(totalActual)}</span>
-          <span className="text-base text-[#45464d]"> / {formatCurrency(totalBudget)}</span>
+        <div className="min-w-0 text-left sm:text-right">
+          <span className="amount-value block text-2xl font-bold text-[#0b1c30]">{formatCurrency(totalActual)}</span>
+          <span className="amount-value mt-1 block text-base text-[#45464d]">/ {formatCurrency(totalBudget)}</span>
         </div>
       </div>
 
@@ -105,10 +105,10 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
         />
         <div className="absolute bottom-0 top-0 w-0.5 bg-[#45464d]/50" style={{ left: "80%" }} />
       </div>
-      <div className="mt-2 flex justify-between text-xs font-semibold uppercase text-[#45464d]">
+      <div className="mt-2 flex min-w-0 justify-between gap-2 text-xs font-semibold uppercase text-[#45464d]">
         <span>{formatMmk(0)}</span>
-        <span>Target 80%</span>
-        <span>{formatCurrency(totalBudget)}</span>
+        <span className="shrink-0">Target 80%</span>
+        <span className="amount-value min-w-0 overflow-hidden text-right">{formatCurrency(totalBudget)}</span>
       </div>
     </section>
   );

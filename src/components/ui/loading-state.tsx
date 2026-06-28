@@ -55,12 +55,12 @@ function SkeletonBlock({ className = "" }: { className?: string }) {
 
 function HeaderSkeleton({ action = true }: { action?: boolean }) {
   return (
-    <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-      <div>
+    <div className="mb-6 flex min-w-0 flex-col justify-between gap-4 md:flex-row md:items-end">
+      <div className="min-w-0">
         <SkeletonBlock className="h-8 w-56" />
         <SkeletonBlock className="mt-3 h-4 w-80 max-w-full" />
       </div>
-      {action ? <SkeletonBlock className="h-10 w-40" /> : null}
+      {action ? <SkeletonBlock className="h-10 w-full sm:w-40" /> : null}
     </div>
   );
 }
@@ -144,7 +144,7 @@ function SubscriptionSkeleton() {
     <>
       <SummarySkeleton />
       <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <SkeletonBlock className="h-6 w-56" />
             <SkeletonBlock className="mt-2 h-4 w-96 max-w-full" />
@@ -159,9 +159,9 @@ function SubscriptionSkeleton() {
       </section>
       <section className="mb-6">
         <SkeletonBlock className="mb-3 h-6 w-64" />
-        <div className="flex gap-4 overflow-hidden pb-3">
+        <div className="flex max-w-full gap-4 overflow-hidden pb-3">
           {Array.from({ length: 3 }, (_, index) => (
-            <SkeletonBlock className="h-32 w-72 shrink-0" key={index} />
+            <SkeletonBlock className="h-32 w-[min(18rem,calc(100vw-2rem))] shrink-0 sm:w-72" key={index} />
           ))}
         </div>
       </section>

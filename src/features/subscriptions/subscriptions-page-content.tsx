@@ -37,8 +37,8 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
 
   return (
     <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <div>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <h2 className="text-xl font-semibold text-[#0b1c30]">Subscription Reminders</h2>
           <p className="mt-1 text-sm font-medium text-[#45464d]">{reminderItems.length ? "Renewals that need attention based on reminder settings." : "No subscriptions are inside the active reminder window."}</p>
         </div>
@@ -70,10 +70,10 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
   return (
     <section className="mb-6">
       <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">Upcoming Billing Timeline</h2>
-      <div className="flex gap-4 overflow-x-auto pb-3">
+      <div className="flex max-w-full gap-4 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
         {billings.map((billing) => (
           <article
-            className="relative flex w-72 shrink-0 flex-col gap-4 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]"
+            className="relative flex w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:w-72"
             key={billing.id}
           >
             <div className={`absolute bottom-0 left-0 top-0 w-1 rounded-l-lg ${billing.isNext ? "bg-[#0058be]" : "bg-[#c6c6cd]"}`} />
@@ -90,7 +90,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
                 <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle} · {billing.reminderLabel}</p>
                 <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{billing.billedAmount}</p>
               </div>
-              <p className="amount-value text-lg font-semibold text-[#0b1c30]">{billing.amount}</p>
+              <p className="amount-value max-w-28 overflow-hidden text-right text-base font-semibold text-[#0b1c30] sm:text-lg">{billing.amount}</p>
             </div>
           </article>
         ))}

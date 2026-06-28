@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 .amount-value {
+  max-width: 100%;
+  min-width: 0;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }

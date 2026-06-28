@@ -241,7 +241,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
             </p>
           </div>
           <button
-            className="inline-flex h-10 w-fit items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+            className="inline-flex h-10 w-full items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:w-fit"
             onClick={clearFilters}
             type="button"
           >
@@ -337,15 +337,15 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Assets</h2>
             <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{activeAssets.length} assets currently tracked</p>
           </div>
-          <div className="inline-flex w-fit items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">
+          <div className="inline-flex w-full items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d] sm:w-fit">
             <Icon className="size-4" name="timeline" />
             Scroll to compare assets
           </div>
         </div>
-        <div className="-mx-4 overflow-x-auto px-4 pb-2">
+        <div className="-mx-4 max-w-[calc(100%+2rem)] overflow-x-auto px-4 pb-2 [-webkit-overflow-scrolling:touch]">
           <div className="flex min-w-max gap-4">
             {activeAssets.map((asset) => (
-              <div className="w-[320px] shrink-0 xl:w-[360px]" key={asset.id}>
+              <div className="w-[min(20rem,calc(100vw-2rem))] shrink-0 sm:w-[320px] xl:w-[360px]" key={asset.id}>
                 <AssetCard asset={asset} onDelete={deleteAsset} />
               </div>
             ))}
