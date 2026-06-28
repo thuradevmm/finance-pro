@@ -85,8 +85,8 @@ export function ForgotPasswordForm() {
         <p className="mt-2 text-sm leading-6 text-[#5f6168]">
           {emailServicesEnabled ? <>A password reset link was sent to <strong className="text-[#0b1c30]">{submittedEmail}</strong>.</> : <>The password for <strong className="text-[#0b1c30]">{submittedEmail}</strong> was updated successfully.</>}
         </p>
-        <Link className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white transition hover:bg-[#1f2937]" href="/login">Return to Sign In</Link>
-        <button className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" onClick={() => setSubmittedEmail("")} type="button">Use another email</button>
+        <Link className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white transition hover:bg-[#1f2937]" href="/login">Return to Sign In</Link>
+        <button className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" onClick={() => setSubmittedEmail("")} type="button">Use another email</button>
       </div>
     );
   }
@@ -103,7 +103,7 @@ export function ForgotPasswordForm() {
         </>
       ) : null}
       <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Working…" type="submit">{emailServicesEnabled ? "Send Reset Link" : "Reset Password"}</LoadingButton>
-      <Link className="inline-flex h-10 w-full items-center justify-center rounded-md text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" href="/login">
+      <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-md text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" href="/login">
         <Icon className="mr-2 size-4" name="chevronLeft" />
         Back to Sign In
       </Link>

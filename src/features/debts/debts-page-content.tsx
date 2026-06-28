@@ -123,18 +123,18 @@ function DebtsTable({
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-[#c6c6cd]/60 px-4 py-4">
-        <div>
-          <h2 className="text-xl font-semibold text-[#0b1c30]">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
+    <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#c6c6cd]/60 px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
           <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue debts" : "Showing paid debts too"}</p>
         </div>
         <button
           aria-pressed={showActiveOnly}
           aria-label={showActiveOnly ? "Show all liabilities" : "Show active liabilities only"}
           className={showActiveOnly
-            ? "grid size-9 place-items-center rounded-full bg-[#eff6ff] text-[#0058be] transition hover:bg-[#dce9ff]"
-            : "grid size-9 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"}
+            ? "grid size-11 shrink-0 place-items-center rounded-full bg-[#eff6ff] text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+            : "grid size-11 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"}
           onClick={onToggleActiveOnly}
           title={showActiveOnly ? "Show all liabilities" : "Show active liabilities only"}
           type="button"
@@ -143,8 +143,8 @@ function DebtsTable({
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-collapse text-left">
+      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
           <thead>
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Debt Name</SortHeader></th>
@@ -153,7 +153,7 @@ function DebtsTable({
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("remainingBalance")} sortDirection={sortKey === "remainingBalance" ? sortDirection : undefined}>Remaining Balance</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Monthly Payment</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-center"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Actions</th>
+              <th className="w-36 border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
@@ -198,16 +198,16 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
   const visiblePayments = payments.slice(0, 5);
 
   return (
-    <aside className="rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-sm">
-      <h2 className="mb-5 text-xl font-semibold text-[#0b1c30]">Upcoming Payments</h2>
+    <aside className="min-w-0 max-w-full rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-sm sm:p-5">
+      <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">Upcoming Payments</h2>
       <div className="space-y-4">
         {visiblePayments.length > 0 ? visiblePayments.map((payment) => (
-          <div className="flex flex-col gap-2 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4" key={payment.id}>
+          <div className="grid min-w-0 gap-3 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] sm:items-center" key={payment.id}>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>
+              <p className="truncate text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>
               <p className={`mt-1 text-xs font-bold ${payment.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{payment.dueLabel}</p>
             </div>
-            <p className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg">{payment.amount}</p>
+            <p className="amount-value max-w-full overflow-hidden rounded-md bg-[#f8f9ff] px-3 py-2 text-right text-base font-semibold text-[#0b1c30] sm:text-lg" title={payment.amount}>{payment.amount}</p>
           </div>
         )) : (
           <div className="rounded-lg border border-dashed border-[#c6c6cd] bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
@@ -217,7 +217,7 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
       </div>
       {payments.length > 0 ? (
         <button
-          className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-[#c6c6cd] text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+          className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#c6c6cd] text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
           onClick={onViewCalendar}
           type="button"
         >
@@ -259,12 +259,12 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
               </header>
               <div className="divide-y divide-[#c6c6cd]/40">
                 {group.entries.map((entry) => (
-                  <div className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center" key={entry.id}>
+                  <div className="grid min-w-0 grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,auto)_auto] sm:items-center" key={entry.id}>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-[#0b1c30]">{entry.debtName}</p>
                       <p className={`mt-1 text-xs font-bold ${entry.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{entry.dateLabel}</p>
                     </div>
-                    <p className="amount-value text-sm font-semibold text-[#0b1c30]">{entry.amount}</p>
+                    <p className="amount-value text-right text-sm font-semibold text-[#0b1c30]" title={entry.amount}>{entry.amount}</p>
                     <span className={`w-fit rounded px-2 py-1 text-xs font-bold ${entry.isOverdue ? "bg-[#ffdad6] text-[#93000a]" : "bg-[#d8e2ff] text-[#004395]"}`}>
                       {entry.isOverdue ? "Overdue" : "Scheduled"}
                     </span>
@@ -316,8 +316,8 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-      <div className="xl:col-span-9">
+    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 xl:col-span-9">
         {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
         {filteredDebts.length > 0 ? (
           <DebtsTable
@@ -327,14 +327,14 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
             showActiveOnly={showActiveOnly}
           />
         ) : (
-          <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+          <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
             <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
             <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No debts yet</h2>
             <p className="mt-1 text-sm text-[#45464d]">Add a debt to track repayment progress.</p>
           </section>
         )}
       </div>
-      <div className="xl:col-span-3">
+      <div className="min-w-0 xl:col-span-3">
         <UpcomingPayments onViewCalendar={() => setIsCalendarOpen(true)} payments={payments} />
       </div>
       <DebtPaymentCalendarModal entries={calendarEntries} isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />

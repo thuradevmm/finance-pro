@@ -35,12 +35,12 @@ export function AppShell({
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-[#f8f9ff] text-[#0b1c30]">
-      <div className="flex min-h-screen">
+    <div className="min-h-dvh bg-[#f8f9ff] text-[#0b1c30]">
+      <div className="flex min-h-dvh min-w-0">
         <AppSidebar activeLabel={activeNavLabel} collapsed={isSidebarCollapsed} onToggleCollapse={toggleSidebar} />
 
         {isMobileNavigationOpen ? (
-          <div className="fixed inset-0 z-40 md:hidden" role="presentation">
+          <div className="fixed inset-0 z-40 lg:hidden" role="presentation">
             <button
               aria-label="Close navigation"
               className="absolute inset-0 h-full w-full bg-[#0b1c30]/40"
@@ -55,7 +55,7 @@ export function AppShell({
           <MobileHeader action={mobileAction} onOpenNavigation={() => setIsMobileNavigationOpen(true)} subtitle={mobileSubtitle} />
           <AppTopBar />
 
-          <main className="mx-auto min-w-0 w-full max-w-[1440px] flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+          <main className="mx-auto min-w-0 w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-5 md:px-6 lg:px-8 lg:py-8">{children}</main>
         </div>
       </div>
     </div>

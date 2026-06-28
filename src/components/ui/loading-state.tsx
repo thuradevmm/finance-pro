@@ -24,9 +24,9 @@ export function LoadingButton({
 export function LoadingOverlay({ label = "Loading…" }: { label?: string }) {
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-[#0b1c30]/25 p-4 backdrop-blur-[2px]" role="status">
-      <div className="flex items-center gap-3 rounded-lg border border-white/60 bg-white px-5 py-4 text-sm font-semibold text-[#0b1c30] shadow-[0_20px_60px_rgba(15,23,42,0.25)]">
+      <div className="flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg border border-white/60 bg-white px-5 py-4 text-sm font-semibold text-[#0b1c30] shadow-[0_20px_60px_rgba(15,23,42,0.25)]">
         <LoadingSpinner className="size-5 text-[#0058be]" />
-        <span>{label}</span>
+        <span className="min-w-0 break-words">{label}</span>
       </div>
     </div>
   );
@@ -85,13 +85,13 @@ function SummarySkeleton({ count = 4 }: { count?: number }) {
 
 function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] px-4 py-3">
         <SkeletonBlock className="h-4 w-48" />
       </div>
       <div className="divide-y divide-[#c6c6cd]/40">
         {Array.from({ length: rows }, (_, rowIndex) => (
-          <div className={`grid gap-4 px-4 py-4 ${columns >= 5 ? "grid-cols-5" : "grid-cols-4"}`} key={rowIndex}>
+          <div className={`grid min-w-0 gap-4 px-4 py-4 ${columns >= 5 ? "grid-cols-2 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4"}`} key={rowIndex}>
             <SkeletonBlock className="col-span-2 h-5" />
             {Array.from({ length: columns - 2 }, (_, columnIndex) => (
               <SkeletonBlock className="h-5" key={columnIndex} />
@@ -105,8 +105,8 @@ function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: num
 
 function FormSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <div className="space-y-6 lg:col-span-8">
+    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 space-y-6 xl:col-span-8">
         {Array.from({ length: 2 }, (_, cardIndex) => (
           <section className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" key={cardIndex}>
             <SkeletonBlock className="mb-5 h-6 w-44" />
@@ -126,7 +126,7 @@ function FormSkeleton() {
           <SkeletonBlock className="h-10 w-40" />
         </div>
       </div>
-      <aside className="hidden lg:col-span-4 lg:block">
+      <aside className="hidden min-w-0 xl:col-span-4 xl:block">
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <SkeletonBlock className="h-12 w-full" />
@@ -243,10 +243,10 @@ export function FinancialPageSkeleton({
   sidebarCollapsed?: boolean;
 }) {
   return (
-    <div className="min-h-screen bg-[#f8f9ff] text-[#0b1c30]" role="status" aria-label="Loading financial workspace">
+    <div className="min-h-dvh bg-[#f8f9ff] text-[#0b1c30]" role="status" aria-label="Loading financial workspace">
       <NavigationProgress />
-      <div className="flex min-h-screen">
-        <aside className={`${sidebarCollapsed ? "w-20 px-3" : "w-64 px-6"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white py-6 transition-[width] duration-200 md:block`}>
+      <div className="flex min-h-dvh min-w-0">
+        <aside className={`${sidebarCollapsed ? "w-20 px-3" : "w-64 px-6"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white py-6 transition-[width] duration-200 lg:block`}>
           <SkeletonBlock className={sidebarCollapsed ? "mx-auto h-7 w-10" : "h-7 w-32"} />
           {sidebarCollapsed ? null : <SkeletonBlock className="mt-2 h-3 w-28" />}
           <div className="mt-8 space-y-2">
@@ -256,14 +256,14 @@ export function FinancialPageSkeleton({
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 hidden h-16 items-center justify-between border-b border-[#c6c6cd]/70 bg-white/95 px-8 md:flex">
+          <header className="sticky top-0 z-20 hidden h-16 items-center justify-between border-b border-[#c6c6cd]/70 bg-white/95 px-8 lg:flex">
             <SkeletonBlock className="h-10 w-full max-w-xl" />
             <div className="flex items-center gap-3">
               <SkeletonBlock className="size-10 rounded-full" />
               <SkeletonBlock className="h-10 w-28 rounded-full" />
             </div>
           </header>
-          <header className="sticky top-0 z-20 border-b border-[#c6c6cd]/70 bg-white/95 px-4 py-4 md:hidden">
+          <header className="sticky top-0 z-20 border-b border-[#c6c6cd]/70 bg-white/95 px-4 py-4 lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <SkeletonBlock className="size-10" />
               <SkeletonBlock className="h-9 flex-1" />
@@ -271,7 +271,7 @@ export function FinancialPageSkeleton({
             </div>
             <SkeletonBlock className="mt-4 h-10 w-full" />
           </header>
-          <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 md:px-8 md:py-8">
+          <main className="mx-auto min-w-0 w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-5 md:px-6 lg:px-8 lg:py-8">
             <HeaderSkeleton action={routeKind !== "settings" && routeKind !== "detail"} />
             <RouteBodySkeleton kind={routeKind} />
           </main>

@@ -277,8 +277,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <div className="space-y-6 lg:col-span-8">
+    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 space-y-6 xl:col-span-8">
         <FormCard title="Debt Details">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -305,7 +305,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               <ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(monthlyPaymentValue)}</ResponsiveAmount>
               <span className="mt-1 block text-xs font-semibold text-[#45464d]">{normalizedDurationMonths > 0 ? `${normalizedDurationMonths} months` : "Set a valid duration"}</span>
             </div>
-            <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <TextInput label="Interest Rate" onChange={setInterestRate} placeholder="5.85" type="number" value={interestRate} />
               <SelectInput label="Rate Type" onChange={(value) => setInterestRatePeriod(value as DebtInterestRatePeriod)} options={["Yearly", "Monthly"]} value={interestRatePeriod} />
             </div>
@@ -357,13 +357,13 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium leading-5 text-[#991b1b]" role="alert">{formError}</div> : null}
           <div className="flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
             <Link
-              className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
               href="/debts"
             >
               Cancel
             </Link>
             <button
-              className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
               disabled={isSaving || Boolean(debt)}
               onClick={() => handleSaveDebt(true)}
               type="button"
@@ -371,7 +371,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               Save & Add Another
             </button>
             <LoadingButton
-              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
               isLoading={isSaving}
               loadingLabel="Saving…"
               onClick={() => handleSaveDebt(false)}
@@ -383,7 +383,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
         </div>
       </div>
 
-      <aside className="hidden lg:col-span-4 lg:block">
+      <aside className="hidden min-w-0 xl:col-span-4 xl:block">
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <div className="mb-5 flex items-center gap-3 border-b border-[#c6c6cd]/40 pb-4">

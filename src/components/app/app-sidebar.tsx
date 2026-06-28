@@ -29,11 +29,11 @@ export function AppSidebar({
     <aside
       className={
         isMobile
-          ? "fixed inset-y-0 left-0 z-50 w-[min(18rem,calc(100vw-2rem))] border-r border-[#c6c6cd]/70 bg-white shadow-xl"
-          : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 md:block`
+          ? "fixed inset-y-0 left-0 z-50 w-[min(19rem,calc(100vw-1rem))] border-r border-[#c6c6cd]/70 bg-white shadow-xl"
+          : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 lg:block`
       }
     >
-      <div className={`${isMobile ? "px-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-screen flex-col overflow-y-auto py-6`}>
+      <div className={`${isMobile ? "px-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-dvh flex-col overflow-y-auto pb-6 pt-[max(1.5rem,env(safe-area-inset-top))]`}>
         <div className={isCompact ? "mb-6 flex flex-col items-center gap-3" : "mb-8 flex justify-between gap-3"}>
           <div className={isCompact ? "min-w-0 text-center" : "min-w-0"}>
             <p className="truncate text-xl font-semibold text-[#0b1c30]">{isCompact ? "FP" : "FinancePro"}</p>
@@ -42,7 +42,7 @@ export function AppSidebar({
           {isMobile ? (
             <button
               aria-label="Close navigation"
-              className="grid size-9 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
               onClick={onClose}
               type="button"
             >
@@ -52,7 +52,7 @@ export function AppSidebar({
             <button
               aria-expanded={!collapsed}
               aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-              className="grid size-9 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+              className="grid size-11 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
               onClick={onToggleCollapse}
               title={collapsed ? "Expand navigation" : "Collapse navigation"}
               type="button"
@@ -76,8 +76,8 @@ export function AppSidebar({
                     aria-current={isActive ? "page" : undefined}
                     className={
                       isActive
-                        ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex h-10 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm`
-                        : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex h-10 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]`
+                        ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex min-h-11 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25`
+                        : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} relative flex min-h-11 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25`
                     }
                     href={item.href}
                     key={item.label}

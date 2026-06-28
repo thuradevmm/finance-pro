@@ -116,8 +116,8 @@ export function AddSavingsGoalForm({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <div className="space-y-6 lg:col-span-8">
+    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 space-y-6 xl:col-span-8">
         <FormCard title="Goal Details">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -196,13 +196,13 @@ export function AddSavingsGoalForm({
           {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
           <div className="flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
             <Link
-              className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+              className="inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
               href="/savings-goals"
             >
               Cancel
             </Link>
             <button
-              className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+              className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
               disabled={isSaving || Boolean(goal)}
               onClick={() => handleSaveGoal(true)}
               type="button"
@@ -210,7 +210,7 @@ export function AddSavingsGoalForm({
               Save & Add Another
             </button>
             <LoadingButton
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
               isLoading={isSaving}
               loadingLabel="Saving…"
               onClick={() => handleSaveGoal(false)}
@@ -222,7 +222,7 @@ export function AddSavingsGoalForm({
         </div>
       </div>
 
-      <aside className="hidden lg:col-span-4 lg:block">
+      <aside className="hidden min-w-0 xl:col-span-4 xl:block">
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <div className="mb-5 flex items-center gap-3 border-b border-[#c6c6cd]/40 pb-4">

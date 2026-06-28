@@ -65,12 +65,12 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
       <AuthField autoComplete="email" error={errors.email} icon="mail" label="Email Address" name="email" onChange={setEmail} placeholder="you@example.com" type="email" value={email} />
       <div>
         <AuthField autoComplete="current-password" error={errors.password} icon="lock" label="Password" name="password" onChange={setPassword} placeholder="Enter your password" type="password" value={password} />
-        <div className="mt-3 flex items-center justify-between gap-4">
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-[#45464d]">
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-[#45464d] sm:min-h-0">
             <input checked={rememberMe} className="size-4 accent-[#2170e4]" disabled={isSubmitting} onChange={(event) => setRememberMe(event.target.checked)} type="checkbox" />
             Remember me
           </label>
-          <Link className="text-sm font-semibold text-[#0058be] hover:underline" href="/forgot-password">Forgot password?</Link>
+          <Link className="inline-flex min-h-11 items-center text-sm font-semibold text-[#0058be] hover:underline sm:min-h-0" href="/forgot-password">Forgot password?</Link>
         </div>
       </div>
 

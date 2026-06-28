@@ -30,7 +30,7 @@ export function AuthField({ autoComplete, error, icon, label, name, onChange, pl
           aria-describedby={error ? `${name}-error` : undefined}
           aria-invalid={Boolean(error)}
           autoComplete={autoComplete}
-          className={`h-12 w-full rounded-lg border bg-white pl-12 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#8b8d94] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${isPassword ? "pr-12" : "pr-4"} ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
+          className={`h-12 w-full rounded-lg border bg-white pl-12 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#8b8d94] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${isPassword ? "pr-14" : "pr-4"} ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
           id={name}
           name={name}
           onChange={(event) => onChange(event.target.value)}
@@ -41,7 +41,7 @@ export function AuthField({ autoComplete, error, icon, label, name, onChange, pl
         {isPassword ? (
           <button
             aria-label={showPassword ? "Hide password" : "Show password"}
-            className="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-md text-[#5f6168] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+            className="absolute right-1 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-[#5f6168] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
             onClick={() => setShowPassword((current) => !current)}
             title={showPassword ? "Hide password" : "Show password"}
             type="button"

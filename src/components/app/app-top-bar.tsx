@@ -5,7 +5,7 @@ import { ProfileMenu } from "@/components/app/profile-menu";
 
 export function AppTopBar() {
   return (
-    <header className="sticky top-0 z-20 hidden h-16 items-center justify-between border-b border-[#c6c6cd]/70 bg-white/95 px-8 backdrop-blur md:flex">
+    <header className="sticky top-0 z-20 hidden h-16 items-center justify-between border-b border-[#c6c6cd]/70 bg-white/95 px-8 backdrop-blur lg:flex">
       <div className="min-w-0" />
       <div className="flex items-center gap-2">
         <Link

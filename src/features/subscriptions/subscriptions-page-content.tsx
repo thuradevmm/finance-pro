@@ -36,27 +36,27 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
   const reminderItems = subscriptions.filter((subscription) => subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in")).slice(0, 4);
 
   return (
-    <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-xl font-semibold text-[#0b1c30]">Subscription Reminders</h2>
+          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">Subscription Reminders</h2>
           <p className="mt-1 text-sm font-medium text-[#45464d]">{reminderItems.length ? "Renewals that need attention based on reminder settings." : "No subscriptions are inside the active reminder window."}</p>
         </div>
-        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">
+        <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-[#eef2ff] text-[#4f46e5]">
           <Icon name="bell" />
         </span>
       </div>
       {reminderItems.length ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {reminderItems.map((subscription) => (
-            <article className="rounded-md border border-[#fecaca] bg-[#fffafa] p-4" key={subscription.id}>
+            <article className="min-w-0 rounded-md border border-[#fecaca] bg-[#fffafa] p-4" key={subscription.id}>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
                 <ReminderStatusBadge status={subscription.reminderStatus} />
               </div>
               <p className="text-xs font-bold uppercase text-[#45464d]">Next billing</p>
               <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{subscription.nextBillingDate}</p>
-              <p className="mt-3 amount-value text-sm font-bold text-[#0b1c30]">{subscription.amount}</p>
+              <p className="mt-3 amount-value text-sm font-bold text-[#0b1c30]" title={subscription.amount}>{subscription.amount}</p>
               <p className="mt-1 text-xs font-semibold text-[#45464d]">{subscription.billedAmount}</p>
             </article>
           ))}
@@ -68,20 +68,20 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
 
 function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[] }) {
   return (
-    <section className="mb-6">
-      <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">Upcoming Billing Timeline</h2>
-      <div className="flex max-w-full gap-4 overflow-x-auto pb-3 [-webkit-overflow-scrolling:touch]">
+    <section className="mb-6 min-w-0 max-w-full">
+      <h2 className="mb-3 text-lg font-semibold text-[#0b1c30] sm:text-xl">Upcoming Billing Timeline</h2>
+      <div className="flex max-w-full gap-4 overflow-x-auto px-0.5 pb-3 [-webkit-overflow-scrolling:touch]">
         {billings.map((billing) => (
           <article
-            className="relative flex w-[min(18rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:w-72"
+            className="relative flex w-[min(19rem,calc(100vw-2rem))] shrink-0 flex-col gap-4 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:w-80"
             key={billing.id}
           >
             <div className={`absolute bottom-0 left-0 top-0 w-1 rounded-l-lg ${billing.isNext ? "bg-[#0058be]" : "bg-[#c6c6cd]"}`} />
-            <div className="flex items-center justify-between gap-3 pl-2">
-              <p className={`text-xs font-bold ${billing.isNext ? "text-[#0058be]" : "text-[#45464d]"}`}>{billing.dateLabel}</p>
-              {billing.reminderDue ? <span className="rounded bg-[#fff1f0] px-2 py-1 text-[11px] font-bold uppercase text-[#991b1b]">Reminder</span> : null}
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pl-2">
+              <p className={`min-w-0 truncate text-xs font-bold ${billing.isNext ? "text-[#0058be]" : "text-[#45464d]"}`}>{billing.dateLabel}</p>
+              {billing.reminderDue ? <span className="shrink-0 rounded bg-[#fff1f0] px-2 py-1 text-[11px] font-bold uppercase text-[#991b1b]">Reminder</span> : null}
             </div>
-            <div className="flex items-center gap-3 pl-2">
+            <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-3 pl-2">
               <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#eff4ff] text-[#45464d]">
                 <Icon className="size-5" name={billing.icon} />
               </span>
@@ -90,7 +90,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
                 <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle} · {billing.reminderLabel}</p>
                 <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{billing.billedAmount}</p>
               </div>
-              <p className="amount-value max-w-28 overflow-hidden text-right text-base font-semibold text-[#0b1c30] sm:text-lg">{billing.amount}</p>
+              <p className="amount-value col-span-2 ml-[3.25rem] max-w-full overflow-hidden rounded-md bg-[#f8f9ff] px-3 py-2 text-right text-base font-semibold text-[#0b1c30] sm:text-lg" title={billing.amount}>{billing.amount}</p>
             </div>
           </article>
         ))}
@@ -126,11 +126,11 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
   }
 
   return (
-    <section>
-      <h2 className="mb-3 text-xl font-semibold text-[#0b1c30]">All Subscriptions</h2>
-      <div className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1280px] border-collapse text-left">
+    <section className="min-w-0">
+      <h2 className="mb-3 text-lg font-semibold text-[#0b1c30] sm:text-xl">All Subscriptions</h2>
+      <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+        <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+          <table className="w-full min-w-[1360px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold text-[#45464d]">
                 <th className="px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Name</SortHeader></th>
@@ -143,7 +143,7 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                 <th className="px-4 py-3"><SortHeader onSort={() => handleSort("nextBillingDate")} sortDirection={sortKey === "nextBillingDate" ? sortDirection : undefined}>Next Billing</SortHeader></th>
                 <th className="px-4 py-3"><SortHeader onSort={() => handleSort("reminder")} sortDirection={sortKey === "reminder" ? sortDirection : undefined}>Reminder</SortHeader></th>
                 <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
-                <th className="w-24 px-4 py-3 text-right">Actions</th>
+                <th className="w-36 px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">

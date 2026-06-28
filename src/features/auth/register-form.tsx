@@ -120,7 +120,7 @@ export function RegisterForm() {
         <p className="mt-2 text-sm leading-6 text-[#5f6168]">Email recovery is temporarily disabled. Store this one-time account recovery code somewhere private.</p>
         <code className="mt-5 block break-all rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm font-semibold text-[#0b1c30]">{recoveryCode}</code>
         <p className="mt-3 text-xs leading-5 text-[#991b1b]">This code will not be shown again. Anyone with this code and your email can reset your password.</p>
-        <LoadingButton className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white" isLoading={isSubmitting} loadingLabel="Opening Dashboard…" onClick={() => { setIsSubmitting(true); beginLoading(); router.replace("/dashboard"); router.refresh(); }} type="button">I saved it — Continue</LoadingButton>
+        <LoadingButton className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white" isLoading={isSubmitting} loadingLabel="Opening Dashboard…" onClick={() => { setIsSubmitting(true); beginLoading(); router.replace("/dashboard"); router.refresh(); }} type="button">I saved it — Continue</LoadingButton>
       </div>
     );
   }

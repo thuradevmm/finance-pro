@@ -35,7 +35,7 @@ export function RecordActions({
       {viewHref ? (
         <Link
           aria-label={`${viewLabel} for ${itemLabel}`}
-          className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+          className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
           href={viewHref}
           title={`${viewLabel} for ${itemLabel}`}
         >
@@ -44,7 +44,7 @@ export function RecordActions({
       ) : null}
       <Link
         aria-label={`Edit ${itemLabel}`}
-        className="grid size-8 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+        className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
         href={editHref}
         title={`Edit ${itemLabel}`}
       >
@@ -52,7 +52,7 @@ export function RecordActions({
       </Link>
       <button
         aria-label={`Delete ${itemLabel}`}
-        className="grid size-8 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0]"
+        className="grid size-11 place-items-center rounded-full text-[#b42318] transition hover:bg-[#fff1f0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b42318]/25"
         onClick={() => setIsDeleteOpen(true)}
         title={`Delete ${itemLabel}`}
         type="button"

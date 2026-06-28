@@ -18,7 +18,7 @@ const highlights = [
 
 export function AuthShell({ children, description, eyebrow, title }: AuthShellProps) {
   return (
-    <main className="grid min-h-screen bg-white lg:grid-cols-[minmax(0,1.05fr)_minmax(440px,0.95fr)]">
+    <main className="grid min-h-dvh min-w-0 bg-white lg:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
       <section className="relative hidden overflow-hidden bg-[#0b1c30] px-12 py-10 text-white lg:flex lg:flex-col lg:justify-between xl:px-16">
         <Link className="inline-flex w-fit items-center gap-3" href="/login">
           <span className="grid size-10 place-items-center rounded-lg bg-[#2170e4] text-lg font-bold">F</span>
@@ -49,16 +49,16 @@ export function AuthShell({ children, description, eyebrow, title }: AuthShellPr
         <p className="text-xs text-[#8fa2b8]">Secure personal finance workspace</p>
       </section>
 
-      <section className="flex min-h-screen items-center justify-center bg-[#f8f9ff] px-4 py-8 sm:px-8 lg:px-12">
-        <div className="w-full max-w-md">
+      <section className="flex min-h-dvh min-w-0 items-center justify-center bg-[#f8f9ff] px-4 py-8 sm:px-8 lg:px-12">
+        <div className="w-full max-w-md min-w-0">
           <Link className="mb-10 inline-flex items-center gap-3 lg:hidden" href="/login">
             <span className="grid size-10 place-items-center rounded-lg bg-[#0b1c30] text-lg font-bold text-white">F</span>
             <span className="text-xl font-semibold text-[#0b1c30]">FinancePro</span>
           </Link>
 
-          <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-6 shadow-[0_14px_40px_rgba(15,23,42,0.08)] sm:p-8">
+          <div className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.08)] sm:p-8">
             <p className="text-xs font-bold uppercase text-[#2170e4]">{eyebrow}</p>
-            <h1 className="mt-3 text-3xl font-semibold text-[#0b1c30]">{title}</h1>
+            <h1 className="mt-3 break-words text-2xl font-semibold text-[#0b1c30] sm:text-3xl">{title}</h1>
             <p className="mt-3 text-sm leading-6 text-[#5f6168]">{description}</p>
             <div className="mt-8">{children}</div>
           </div>

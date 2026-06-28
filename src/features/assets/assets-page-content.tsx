@@ -71,7 +71,7 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
   const usageDuration = calculateUsageDuration(asset.startUsingDateValue);
 
   return (
-    <article className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`grid size-11 shrink-0 place-items-center rounded-lg ${asset.bg} ${asset.tone}`}>
@@ -88,11 +88,11 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
       <dl className="grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Purchased</dt>
-          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{asset.purchaseAmount}</dd>
+          <dd className="amount-value mt-1 text-sm font-semibold text-[#0b1c30]" title={asset.purchaseAmount}>{asset.purchaseAmount}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Current</dt>
-          <dd className="amount-value mt-1 overflow-x-auto text-sm font-semibold text-[#0058be]">{asset.currentValue}</dd>
+          <dd className="amount-value mt-1 text-sm font-semibold text-[#0058be]" title={asset.currentValue}>{asset.currentValue}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">Used</dt>
@@ -104,7 +104,7 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
         </div>
       </dl>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-4">
+      <div className="mt-4 flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-4">
         <p className="truncate text-sm font-medium text-[#45464d]">{asset.note}</p>
         <div className="flex shrink-0 gap-1">
           <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your list.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
@@ -141,12 +141,12 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; on
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Asset Register</h2>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] border-collapse text-left">
+      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="w-full min-w-[1060px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Asset</SortHeader></th>
@@ -155,7 +155,7 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; on
               <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("currentValue")} sortDirection={sortKey === "currentValue" ? sortDirection : undefined}>Current Value</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("usage")} sortDirection={sortKey === "usage" ? sortDirection : undefined}>Usage</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("condition")} sortDirection={sortKey === "condition" ? sortDirection : undefined}>Condition</SortHeader></th>
-              <th className="w-24 px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Actions</th>
+              <th className="w-36 px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
@@ -231,7 +231,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
   }
 
   return (
-    <section className="mt-6 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="mt-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -241,7 +241,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
             </p>
           </div>
           <button
-            className="inline-flex h-10 w-full items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:w-fit"
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:w-fit"
             onClick={clearFilters}
             type="button"
           >
@@ -255,7 +255,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
           <SelectInput label="Purchase Amount" onChange={(value) => setAmountRange(value as (typeof amountRanges)[number])} options={[...amountRanges]} value={amountRange} />
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[920px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
@@ -331,19 +331,19 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
 
   return (
     <>
-      <section className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Assets</h2>
             <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{activeAssets.length} assets currently tracked</p>
           </div>
-          <div className="inline-flex w-full items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d] sm:w-fit">
+          <div className="inline-flex min-h-11 w-full items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d] sm:w-fit">
             <Icon className="size-4" name="timeline" />
             Scroll to compare assets
           </div>
         </div>
         <div className="-mx-4 max-w-[calc(100%+2rem)] overflow-x-auto px-4 pb-2 [-webkit-overflow-scrolling:touch]">
-          <div className="flex min-w-max gap-4">
+          <div className="flex w-max max-w-none gap-4">
             {activeAssets.map((asset) => (
               <div className="w-[min(20rem,calc(100vw-2rem))] shrink-0 sm:w-[320px] xl:w-[360px]" key={asset.id}>
                 <AssetCard asset={asset} onDelete={deleteAsset} />

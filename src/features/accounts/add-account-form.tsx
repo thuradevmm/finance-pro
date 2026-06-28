@@ -116,7 +116,7 @@ function SelectInput({
       <FieldLabel>{label}</FieldLabel>
       <div className="relative">
         <select
-          className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-10 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
           onChange={(event) => onChange?.(event.target.value)}
           value={value}
         >
@@ -124,7 +124,7 @@ function SelectInput({
             <option key={option}>{option}</option>
           ))}
         </select>
-        <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+        <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
       </div>
     </div>
   );
@@ -337,8 +337,8 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <div className="space-y-6 lg:col-span-8">
+    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+      <div className="min-w-0 space-y-6 xl:col-span-8">
         <FormCard title="Account Type">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {accountTypes.map((option) => {
@@ -439,7 +439,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                     <div className="flex items-end">
                       <button
                         aria-label={`Remove ${amountType.type || "amount type"}`}
-                        className="grid h-12 w-full place-items-center rounded-lg border border-[#fecaca] bg-white text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50 md:w-12"
+                        className="grid min-h-12 w-full place-items-center rounded-lg border border-[#fecaca] bg-white text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50 md:w-12"
                         disabled={amountTypes.length === 1}
                         onClick={() => removeAmountType(amountType.id)}
                         type="button"
@@ -455,7 +455,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                 Amount values are calculated from transaction activity.
               </div>
               <button
-                className="mt-4 inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+                className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
                 onClick={addAmountType}
                 type="button"
               >
@@ -493,13 +493,13 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
             {formError ? <div className="w-full rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-2 text-sm font-medium text-[#991b1b]" role="alert">{formError}</div> : null}
             <div className="flex flex-col-reverse items-stretch justify-end gap-3 sm:flex-row sm:items-center">
               <Link
-                className="inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+                className="inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
                 href={returnTo}
               >
                 Cancel
               </Link>
               <button
-                className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
+                className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-[#eff4ff] px-4 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff]"
                 disabled={isSaving || Boolean(account)}
                 onClick={() => handleSaveAccount(true)}
                 type="button"
@@ -507,7 +507,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                 Save & Add Another
               </button>
               <LoadingButton
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
                 isLoading={isSaving}
                 loadingLabel="Saving…"
                 onClick={() => handleSaveAccount(false)}
@@ -520,7 +520,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
         </form>
       </div>
 
-      <aside className="hidden lg:col-span-4 lg:block">
+      <aside className="hidden min-w-0 xl:col-span-4 xl:block">
         <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className={`mx-auto mb-5 grid size-20 place-items-center rounded-full shadow-sm ${selectedOption.previewClassName}`}>
             <Icon className="size-10" name={selectedOption.icon} />

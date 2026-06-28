@@ -22,7 +22,7 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
   const isTransferFilter = filters.type === "Transfer";
 
   return (
-    <section className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
         <label className="relative block min-w-0">
           <span className="sr-only">Date from</span>
@@ -31,7 +31,7 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
           </span>
           <input
             aria-label="Date from"
-            className="h-10 w-full rounded-md border border-[#c6c6cd] bg-white pl-14 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-14 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateFrom", event.target.value)}
             type="date"
             value={filters.dateFrom}
@@ -44,7 +44,7 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
           </span>
           <input
             aria-label="Date to"
-            className="h-10 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateTo", event.target.value)}
             type="date"
             value={filters.dateTo}

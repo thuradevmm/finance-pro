@@ -27,16 +27,16 @@ export function MobileHeader({
   action,
   onOpenNavigation,
 }: MobileHeaderProps) {
-  const actionClassName = "grid size-10 place-items-center rounded-md bg-[#0b1c30] text-white shadow-sm";
+  const actionClassName = "grid size-11 shrink-0 place-items-center rounded-md bg-[#0b1c30] text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25";
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[#c6c6cd]/70 bg-white/95 px-4 py-4 backdrop-blur md:hidden">
+    <header className="sticky top-0 z-20 border-b border-[#c6c6cd]/70 bg-white/95 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur lg:hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {onOpenNavigation ? (
             <button
               aria-label="Open navigation"
-              className="grid size-10 shrink-0 place-items-center rounded-md border border-[#c6c6cd]/70 text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4]"
+              className="grid size-11 shrink-0 place-items-center rounded-md border border-[#c6c6cd]/70 text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
               onClick={onOpenNavigation}
               type="button"
             >
@@ -48,7 +48,7 @@ export function MobileHeader({
             <p className="truncate text-xs font-semibold uppercase text-[#45464d]">{subtitle}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {action?.href ? (
             <Link aria-label={action.label} className={actionClassName} href={action.href} title={action.title ?? action.label}>
               <Icon name={action.icon} />

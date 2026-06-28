@@ -22,7 +22,7 @@ export function SortHeader({
 }) {
   return (
     <button
-      className={`inline-flex w-full items-center gap-1 text-xs font-semibold text-[#45464d] transition hover:text-[#0b1c30] ${align === "right" ? "justify-end" : "justify-start"}`}
+      className={`inline-flex min-h-11 w-full items-center gap-1 text-xs font-semibold text-[#45464d] transition hover:text-[#0b1c30] ${align === "right" ? "justify-end" : "justify-start"}`}
       onClick={onSort}
       type="button"
     >

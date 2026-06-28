@@ -38,11 +38,11 @@ function BudgetPeriodControls({
   onPeriodChange: (period: BudgetPeriod) => void;
 }) {
   return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex w-full items-center rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm sm:w-fit">
         <button
           aria-label="Previous period"
-          className="grid size-8 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
+          className="grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
           type="button"
         >
           <Icon className="size-4" name="chevronLeft" />
@@ -52,7 +52,7 @@ function BudgetPeriodControls({
         </span>
         <button
           aria-label="Next period"
-          className="grid size-8 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff]"
+          className="grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
           type="button"
         >
           <Icon className="size-4" name="chevronRight" />
@@ -65,8 +65,8 @@ function BudgetPeriodControls({
             aria-pressed={period === activePeriod}
             className={
               period === activePeriod
-                ? "h-9 flex-1 rounded-md bg-[#dce9ff] px-4 text-sm font-semibold text-[#0b1c30] sm:flex-none"
-                : "h-9 flex-1 rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:flex-none"
+                ? "min-h-11 flex-1 rounded-md bg-[#dce9ff] px-4 text-sm font-semibold text-[#0b1c30] sm:flex-none"
+                : "min-h-11 flex-1 rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:flex-none"
             }
             key={period}
             onClick={() => onPeriodChange(period)}
@@ -86,7 +86,7 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
   const usagePercent = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
 
   return (
-    <section className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-[#0b1c30]">Overall Budget Usage</h2>
@@ -154,16 +154,16 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Category Breakdown</h2>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" type="button">
+        <button className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" type="button">
           <Icon className="size-4" name="category" />
           Filter
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[960px] border-collapse text-left">
+      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="w-full min-w-[1040px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50 bg-white">
               <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Category</SortHeader></th>
@@ -172,7 +172,7 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
               <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("remaining")} sortDirection={sortKey === "remaining" ? sortDirection : undefined}>Remaining</SortHeader></th>
               <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("usage")} sortDirection={sortKey === "usage" ? sortDirection : undefined}>Usage</SortHeader></th>
               <th className="px-4 py-3 uppercase"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
-              <th className="w-28 px-4 py-3 text-right text-xs font-semibold uppercase text-[#45464d]">Actions</th>
+              <th className="w-36 px-4 py-3 text-right text-xs font-semibold uppercase text-[#45464d]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
@@ -251,11 +251,11 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating budgets…</p> : null}
       <OverallBudgetUsage budgets={filteredBudgets} />
       {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (
-        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="savings" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No {activePeriod.toLowerCase()} budgets yet</h2>
           <p className="mt-1 text-sm text-[#45464d]">Create a budget to start tracking spending limits.</p>
-          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/budgets/add">Create Budget</Link>
+          <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/budgets/add">Create Budget</Link>
         </section>
       )}
     </>

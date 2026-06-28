@@ -98,7 +98,7 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
       cancelHref={cancelHref}
       onSave={() => { beginLoading(); router.push(cancelHref); }}
       preview={
-        <div className="sticky top-24 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+        <div className="sticky top-24 min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-[#eff4ff] p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] xl:p-6">
           <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-5">
             <div className="mb-5 flex items-center gap-3 border-b border-[#c6c6cd]/40 pb-4">
               <span className={`grid size-11 place-items-center rounded-lg ${preview.iconClassName}`}>
@@ -112,9 +112,9 @@ export function SimpleRecordEditPage({ cancelHref, fields, preview, record, save
             </div>
             <dl className="space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               {preview.metrics.map((metric) => (
-                <div className="flex items-center justify-between gap-4" key={`${metric.label}-${metric.key}`}>
-                  <dt className="text-xs font-bold uppercase text-[#45464d]">{metric.label}</dt>
-                  <dd className="amount-value max-w-40 overflow-x-auto text-sm font-semibold text-[#0b1c30]">{getMetricValue(metric)}</dd>
+                <div className="flex min-w-0 items-center justify-between gap-4" key={`${metric.label}-${metric.key}`}>
+                  <dt className="min-w-0 text-xs font-bold uppercase text-[#45464d]">{metric.label}</dt>
+                  <dd className="amount-value max-w-40 text-right text-sm font-semibold text-[#0b1c30]" title={getMetricValue(metric)}>{getMetricValue(metric)}</dd>
                 </div>
               ))}
             </dl>

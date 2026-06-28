@@ -27,7 +27,7 @@ function CategoryBadge({ type }: { type: CategoryType }) {
 
 function CategoryListItem({ category, onDelete }: { category: CategoryRecord; onDelete: (id: string) => void }) {
   return (
-    <article className="grid min-w-0 gap-4 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] md:grid-cols-[minmax(16rem,1.5fr)_minmax(11rem,1fr)_minmax(11rem,0.7fr)_auto] md:items-center sm:p-5">
+    <article className="grid min-w-0 gap-4 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] xl:grid-cols-[minmax(16rem,1.5fr)_minmax(11rem,1fr)_minmax(11rem,0.7fr)_auto] xl:items-center sm:p-5">
       <div className="flex min-w-0 items-center gap-3">
         <span className={`relative grid size-11 shrink-0 place-items-center rounded-full ${category.bg} ${category.tone}`}>
           <Icon name={category.icon} />
@@ -57,7 +57,7 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
         <span className="mt-1 block text-xs font-semibold text-[#45464d]">{category.transactionCount} Transactions</span>
       </div>
 
-      <div className="flex min-h-9 items-center justify-end border-t border-[#c6c6cd]/40 pt-3 md:border-0 md:pt-0">
+      <div className="flex min-h-11 items-center justify-end border-t border-[#c6c6cd]/40 pt-3 xl:border-0 xl:pt-0">
         <RecordActions
           deleteDescription={`Deleting ${category.name} will remove this category from your category list.`}
           editHref={`/categories/${category.id}/edit`}
@@ -107,11 +107,11 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating categories…</p> : null}
 
       {filteredCategories.length === 0 ? (
-        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="category" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No {activeType.toLowerCase()} categories yet</h2>
           <p className="mt-1 text-sm text-[#45464d]">Create categories that match how you manage your finances.</p>
-          <Link className="mt-5 inline-flex h-10 items-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/categories/add">Add Category</Link>
+          <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/categories/add">Add Category</Link>
         </section>
       ) : null}
 

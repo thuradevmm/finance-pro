@@ -33,7 +33,7 @@ export default async function SubscriptionsPage() {
       <PageHeader
         actions={
           <Link
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
             href="/subscriptions/add"
           >
             <Icon className="size-4" name="plus" />

@@ -51,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="fixed right-4 top-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" role="status" aria-live="polite">
+      <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+1rem)] z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-3" role="status" aria-live="polite">
         {messages.map((message) => (
           <ToastItem key={message.id} message={message} onDismiss={dismissToast} />
         ))}
@@ -69,14 +69,14 @@ function ToastItem({ message, onDismiss }: { message: ToastMessage; onDismiss: (
   const isError = message.tone === "error";
 
   return (
-    <div className={`flex items-start gap-3 rounded-lg border bg-white px-4 py-3 text-sm font-semibold shadow-[0_14px_36px_rgba(15,23,42,0.16)] ${isError ? "border-[#fecaca] text-[#991b1b]" : "border-[#bbf7d0] text-[#166534]"}`}>
+    <div className={`flex min-w-0 items-start gap-3 rounded-lg border bg-white px-4 py-3 text-sm font-semibold shadow-[0_14px_36px_rgba(15,23,42,0.16)] ${isError ? "border-[#fecaca] text-[#991b1b]" : "border-[#bbf7d0] text-[#166534]"}`}>
       <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${isError ? "bg-[#fff1f0]" : "bg-[#ecfdf5]"}`}>
         <Icon className="size-4" name={isError ? "close" : "check"} />
       </span>
-      <p className="min-w-0 flex-1 leading-5">{message.message}</p>
+      <p className="min-w-0 flex-1 break-words leading-5">{message.message}</p>
       <button
         aria-label="Dismiss message"
-        className="grid size-6 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#f8f9ff] hover:text-[#0b1c30]"
+        className="-m-2 grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#f8f9ff] hover:text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2"
         onClick={() => onDismiss(message.id)}
         type="button"
       >

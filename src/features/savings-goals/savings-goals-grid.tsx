@@ -19,7 +19,7 @@ const statusStyles: Record<SavingsGoalStatus, string> = {
 
 function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void> }) {
   return (
-    <article className="flex flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-5 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <article className="flex min-w-0 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${goal.bg} ${goal.tone}`}>
@@ -38,18 +38,18 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
       <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
         <div>
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
-          <dd className="amount-value overflow-x-auto text-lg font-semibold text-[#0b1c30]">{goal.savedAmount}</dd>
+          <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.savedAmount}>{goal.savedAmount}</dd>
         </div>
         <div>
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
-          <dd className="amount-value overflow-x-auto text-lg font-semibold text-[#0b1c30]">{goal.targetAmount}</dd>
+          <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.targetAmount}>{goal.targetAmount}</dd>
         </div>
       </dl>
 
       <div className="mt-5 border-t border-[#c6c6cd]/40 pt-4">
-        <div className="flex items-center justify-center gap-2 text-sm font-medium text-[#45464d]">
+        <div className="flex min-w-0 items-center justify-center gap-2 text-sm font-medium text-[#45464d]">
           <Icon className="size-4" name="calendar" />
-          Target: {goal.targetDate}
+          <span className="min-w-0 truncate">Target: {goal.targetDate}</span>
         </div>
         <div className="mt-4 flex items-center justify-end gap-1">
           <RecordActions
@@ -96,13 +96,13 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating savings goals…</p> : null}
 
       {filteredGoals.length === 0 ? (
-        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-10 text-center">
+        <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="target" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No savings goals yet</h2>
           <p className="mt-1 text-sm text-[#45464d]">Create your first goal to track target amount, saved amount, and remaining progress.</p>
         </section>
       ) : (
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+        <section className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-3">
           {filteredGoals.map((goal) => (
             <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} />
           ))}

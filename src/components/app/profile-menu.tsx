@@ -92,8 +92,8 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
         aria-haspopup="menu"
         className={
           compact
-            ? "grid size-10 place-items-center rounded-md bg-[#eff6ff] text-sm font-bold text-[#0369a1] transition hover:bg-[#dce9ff]"
-            : "flex h-10 items-center gap-2 rounded-full border border-[#c6c6cd]/70 bg-white py-1 pl-1 pr-3 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+            ? "grid size-11 place-items-center rounded-md bg-[#eff6ff] text-sm font-bold text-[#0369a1] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+            : "flex min-h-11 items-center gap-2 rounded-full border border-[#c6c6cd]/70 bg-white py-1 pl-1 pr-3 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
         }
         onClick={() => setIsOpen((current) => !current)}
         type="button"
@@ -118,7 +118,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           </div>
           {menuItems.map((item) => (
             <Link
-              className="flex h-10 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+              className="flex min-h-11 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
               href={item.href}
               key={item.label}
               onClick={() => setIsOpen(false)}
@@ -130,7 +130,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           ))}
           <div className="mt-1 border-t border-[#c6c6cd]/40 pt-1">
             <button
-              className="flex h-10 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0]"
+              className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0]"
               disabled={isLoggingOut}
               onClick={handleLogout}
               role="menuitem"

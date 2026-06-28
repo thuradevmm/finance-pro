@@ -9,13 +9,13 @@ export default function NotFound() {
       actions={
         <>
           <Link
-            className="inline-flex h-11 items-center justify-center rounded-lg border border-[#c6c6cd]/70 bg-white px-5 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#c6c6cd]/70 bg-white px-5 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
             href="/"
           >
             Return Home
           </Link>
           <Link
-            className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
             href="/transactions"
           >
             <Icon className="size-4" name="receipt" />

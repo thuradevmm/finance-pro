@@ -32,14 +32,14 @@ export function DeleteConfirmationDialog({
       actions={
         <>
           <button
-            className="inline-flex h-10 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
             onClick={onCancel}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#b42318] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#8f1d14]"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#b42318] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#8f1d14]"
             disabled={isPending}
             onClick={onConfirm}
             type="button"

@@ -312,13 +312,21 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     setCurrentPage(Math.min(Math.max(page, 1), pageCount));
   }
 
+  function MetadataChip({ children }: { children: string }) {
+    return (
+      <span className="inline-flex min-w-0 max-w-full items-center rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
+        <span className="truncate">{children}</span>
+      </span>
+    );
+  }
+
   return (
-    <section className="space-y-3 lg:overflow-hidden lg:rounded-lg lg:border lg:border-[#c6c6cd]/70 lg:bg-white lg:shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="min-w-0 max-w-full space-y-3 xl:overflow-hidden xl:rounded-lg xl:border xl:border-[#c6c6cd]/70 xl:bg-white xl:shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div
-        className={`flex min-h-14 flex-col gap-3 rounded-lg border px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-t-0 ${
+        className={`flex min-h-14 min-w-0 max-w-full flex-col gap-3 rounded-lg border px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between xl:rounded-none xl:border-x-0 xl:border-t-0 ${
           hasSelectedTransactions
             ? "border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]"
-            : "border-[#c6c6cd]/60 bg-white text-[#45464d] lg:bg-[#f8f9ff]"
+            : "border-[#c6c6cd]/60 bg-white text-[#45464d] xl:bg-[#f8f9ff]"
         }`}
       >
         <p className="text-sm font-medium">
@@ -326,7 +334,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         </p>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedTransactions}
             onClick={exportSelectedTransactions}
             type="button"
@@ -335,7 +343,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             Export selected
           </button>
           <button
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#fecaca] bg-white px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#fecaca] bg-white px-3 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedTransactions || isDeleting}
             onClick={deleteSelectedTransactions}
             type="button"
@@ -345,8 +353,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           </button>
         </div>
       </div>
-      <div className="hidden overflow-x-auto lg:block">
-        <table className="w-full min-w-[960px] border-collapse text-left">
+      <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
+        <table className="w-full min-w-[1120px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/60 bg-[#f8f9ff]">
               <th className="w-12 px-4 py-3 text-center">
@@ -372,7 +380,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <Icon className="size-4" name="attach" />
                 </span>
               </th>
-              <th className="w-36 px-4 py-3 text-center">
+              <th className="w-52 px-4 py-3 text-center">
                 <span className="text-xs font-semibold text-[#45464d]">Actions</span>
               </th>
             </tr>
@@ -415,13 +423,13 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <td className="w-16 px-4 py-4 text-center">
                     <AttachmentIcon attachment={transaction.attachment} />
                   </td>
-                  <td className="w-36 px-4 py-4 text-right">
-                    <div className="flex min-w-28 justify-end gap-1">
+                  <td className="w-52 px-4 py-4 text-right">
+                    <div className="flex min-w-48 justify-end gap-1">
                       {transactionActions.map((item) => (
                         item.action === "edit" ? (
                           <Link
                             aria-label={`${item.label} for ${transaction.id}`}
-                            className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                            className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
                             href={`/transactions/${transaction.id}/edit`}
                             key={item.action}
                             title={item.label}
@@ -431,7 +439,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                         ) : (
                           <button
                             aria-label={`${item.label} for ${transaction.id}`}
-                            className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                            className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
                             disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
                             key={item.action}
                             onClick={() => handleAction(item.action, transaction)}
@@ -457,10 +465,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         </table>
       </div>
 
-      <div className="grid gap-3 lg:hidden">
+      <div className="grid min-w-0 max-w-full gap-3 xl:hidden">
         {paginatedTransactions.length > 0 ? (
           paginatedTransactions.map((transaction) => (
-            <article className="rounded-md border border-[#c6c6cd]/60 bg-white p-4" key={transaction.id}>
+            <article className="min-w-0 max-w-full overflow-hidden rounded-md border border-[#c6c6cd]/60 bg-white p-4" key={transaction.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 gap-3">
                   <input
@@ -475,26 +483,22 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <p className="mt-1 text-xs text-[#45464d]">{transaction.date}</p>
                   </div>
                 </div>
-                <div className="min-w-0 shrink text-right">
-                  <p className={`amount-value overflow-hidden text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`}>{transaction.amount}</p>
+                <div className="min-w-0 max-w-[45%] shrink text-right">
+                  <p className={`amount-value overflow-hidden text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`} title={transaction.amount}>{transaction.amount}</p>
                 </div>
               </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-4 flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <TransactionTypeBadge transferDirection={transaction.transferDirection} type={transaction.type} />
                 <CategoryBadge category={transaction.category} />
-                <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {accountMovementLabel(transaction)}
-                </span>
-                <span className="rounded-md border border-[#c6c6cd]/60 px-2.5 py-1 text-xs font-semibold text-[#45464d]">
-                  {amountTypeMovementLabel(transaction)}
-                </span>
+                <MetadataChip>{accountMovementLabel(transaction)}</MetadataChip>
+                <MetadataChip>{amountTypeMovementLabel(transaction)}</MetadataChip>
               </div>
-              <div className="mt-4 flex items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
                 {transactionActions.map((item) => (
                   item.action === "edit" ? (
                     <Link
                       aria-label={`${item.label} for ${transaction.id}`}
-                      className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                      className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
                       href={`/transactions/${transaction.id}/edit`}
                       key={item.action}
                       title={item.label}
@@ -504,7 +508,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   ) : (
                     <button
                       aria-label={`${item.label} for ${transaction.id}`}
-                      className={`grid size-8 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
+                      className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
                       disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
                       key={item.action}
                       onClick={() => handleAction(item.action, transaction)}
@@ -525,7 +529,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         )}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-[#f8f9ff]">
+      <div className="flex min-w-0 max-w-full flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between xl:rounded-none xl:border-x-0 xl:border-b-0 xl:bg-[#f8f9ff]">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
           <p className="text-sm text-[#45464d]">
             Showing <span className="font-semibold text-[#0b1c30]">{resultStart}</span> to{" "}
@@ -534,22 +538,25 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
           </p>
           <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#45464d]">
             Rows
-            <select
-              className="h-9 rounded-md border border-[#c6c6cd] bg-white px-2 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
-              onChange={(event) => {
-                setRowsPerPage(Number(event.target.value));
-                setCurrentPage(1);
-              }}
-              value={rowsPerPage}
-            >
-              {rowsPerPageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
+            <span className="relative">
+              <select
+                className="min-h-11 appearance-none rounded-md border border-[#c6c6cd] bg-white pl-3 pr-11 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                onChange={(event) => {
+                  setRowsPerPage(Number(event.target.value));
+                  setCurrentPage(1);
+                }}
+                value={rowsPerPage}
+              >
+                {rowsPerPageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+              <Icon className="pointer-events-none absolute right-4 top-1/2 size-3.5 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+            </span>
           </label>
         </div>
         <nav aria-label="Pagination" className="flex max-w-full self-start overflow-x-auto rounded-md border border-[#c6c6cd] bg-white shadow-sm [-webkit-overflow-scrolling:touch] sm:self-auto">
           <button
             aria-label="Previous page"
-            className="grid size-10 place-items-center border-r border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
+            className="grid size-11 place-items-center border-r border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={effectiveCurrentPage === 1}
             onClick={() => goToPage(effectiveCurrentPage - 1)}
             type="button"
@@ -562,8 +569,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 aria-current={item === effectiveCurrentPage ? "page" : undefined}
                 className={
                   item === effectiveCurrentPage
-                    ? "h-10 min-w-10 border-r border-[#c6c6cd] bg-[#d8e2ff] px-3 text-sm font-semibold text-[#0058be]"
-                    : "h-10 min-w-10 border-r border-[#c6c6cd] px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+                    ? "min-h-11 min-w-11 border-r border-[#c6c6cd] bg-[#d8e2ff] px-3 text-sm font-semibold text-[#0058be]"
+                    : "min-h-11 min-w-11 border-r border-[#c6c6cd] px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
                 }
                 key={item}
                 onClick={() => goToPage(item)}
@@ -572,12 +579,12 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 {item}
               </button>
             ) : (
-              <span className="grid h-10 min-w-10 place-items-center border-r border-[#c6c6cd] px-3 text-sm text-[#45464d]" key={item}>...</span>
+              <span className="grid min-h-11 min-w-11 place-items-center border-r border-[#c6c6cd] px-3 text-sm text-[#45464d]" key={item}>...</span>
             )
           ))}
           <button
             aria-label="Next page"
-            className="grid size-10 place-items-center text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
+            className="grid size-11 place-items-center text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={effectiveCurrentPage === pageCount}
             onClick={() => goToPage(effectiveCurrentPage + 1)}
             type="button"
@@ -590,14 +597,14 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         actions={
           <>
             <Link
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
               href={viewedTransaction ? `/transactions/${viewedTransaction.id}/edit` : "/transactions"}
             >
               <Icon className="size-4" name="edit" />
               Edit
             </Link>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-[#fecaca] bg-white px-4 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0]"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#fecaca] bg-white px-4 text-sm font-semibold text-[#b42318] transition hover:bg-[#fff1f0]"
               onClick={() => {
                 if (viewedTransaction) {
                   handleAction("delete", viewedTransaction);

@@ -10,7 +10,7 @@ export function ProgressCircle({
   const clampedPercent = Math.max(0, Math.min(percent, 100));
 
   return (
-    <div className="relative mx-auto size-48">
+    <div className="relative mx-auto size-40 max-w-full sm:size-48">
       <svg aria-hidden="true" className="size-full -rotate-90" viewBox="0 0 36 36">
         <path
           className="stroke-[#e5eeff]"
@@ -28,7 +28,7 @@ export function ProgressCircle({
         />
       </svg>
       <div className="absolute inset-0 grid place-items-center">
-        <span className="text-2xl font-bold text-[#0b1c30]">{label ?? `${clampedPercent}%`}</span>
+        <span className="text-xl font-bold text-[#0b1c30] sm:text-2xl">{label ?? `${clampedPercent}%`}</span>
       </div>
     </div>
   );

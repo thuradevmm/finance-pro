@@ -8,7 +8,7 @@ export function FieldLabel({ children }: { children: string }) {
 
 export function FormCard({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <section className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
+    <section className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">{title}</h2>
       {children}
     </section>
@@ -31,7 +31,7 @@ export function TextInput({
   type?: "date" | "number" | "text";
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
       <input
         aria-invalid={error}
@@ -59,11 +59,11 @@ export function SelectInput({
   value?: string;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
       <div className="relative">
         <select
-          className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-10 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
           onChange={(event) => onChange?.(event.target.value)}
           value={value}
         >
@@ -71,7 +71,7 @@ export function SelectInput({
             <option key={option}>{option}</option>
           ))}
         </select>
-        <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+        <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
       </div>
     </div>
   );
@@ -89,7 +89,7 @@ export function TextAreaInput({
   value?: string;
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
       <textarea
         className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
