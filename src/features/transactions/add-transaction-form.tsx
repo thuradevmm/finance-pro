@@ -81,9 +81,7 @@ function formatPreviewAmount(amount: string, type: TransactionType) {
 }
 
 function isCreditCardAccount(account: AccountRecord | undefined) {
-  if (!account) return false;
-  const normalizedType = account.type.toLowerCase().replace(/[\s_-]+/g, "");
-  return normalizedType === "creditcard" || Boolean(account.cardNumber || account.cardType);
+  return account?.type === "Credit Card";
 }
 
 function accountAmountTypeOptionsFor(account: AccountRecord | undefined) {

@@ -59,7 +59,7 @@ export function ModalShell({
     <div
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0b1c30]/45 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1c30]/45 p-4 backdrop-blur-sm sm:p-6"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -68,7 +68,7 @@ export function ModalShell({
       role="dialog"
     >
       <div
-        className={`flex max-h-[92dvh] w-full max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-t-lg border border-[#c6c6cd]/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:rounded-lg ${maxWidthClassName}`}
+        className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-h-[92dvh] ${maxWidthClassName}`}
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-4 sm:px-5">
           <div className="flex min-w-0 items-start gap-3">
