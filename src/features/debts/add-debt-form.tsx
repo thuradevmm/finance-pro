@@ -16,173 +16,12 @@ import { formatMmkPreview } from "@/lib/currency";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { buildEmiSchedule } from "@/lib/debts/emi";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
 import type { DebtStatus } from "@/types/finance";
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
-}
-
-function formatDateInput(value: Date) {
-  if (Number.isNaN(value.getTime())) return "";
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function addMonthsPreservingDay(startDate: string, monthCount: number) {
-  const start = new Date(`${startDate}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || !Number.isFinite(monthCount) || monthCount <= 0) return "";
-
-  const expectedDay = start.getDate();
-  const result = new Date(start);
-  result.setMonth(result.getMonth() + monthCount);
-  if (result.getDate() !== expectedDay) result.setDate(0);
-  return result;
-}
-
-function daysBetween(startDate: Date, endDate: Date) {
-  return Math.max(Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000), 0);
-}
-
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function emiInstallment(principal: number, interestRate: number, interestRatePeriod: DebtInterestRatePeriod, numberOfMonths: number) {
-  if (!Number.isFinite(principal) || principal <= 0 || numberOfMonths <= 0) return 0;
-  const monthlyRate = interestRatePeriod === "Monthly" ? interestRate / 100 : interestRate / 1200;
-  if (!Number.isFinite(monthlyRate) || monthlyRate <= 0) return roundMoney(principal / numberOfMonths);
-
-  const payment = principal * (monthlyRate / (1 - (1 + monthlyRate) ** -numberOfMonths));
-  return roundMoney(payment);
-}
-
-type RepaymentScheduleItem = {
-  amount: number;
-  date: string;
-  timestamp: number;
-};
-
-function startOfToday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today.getTime();
-}
-
-function calculateNextPaymentDate(payments: RepaymentScheduleItem[], repaidAmount: number) {
-  if (payments.length === 0) return "";
-
-  let remainingRepaidAmount = Math.max(roundMoney(repaidAmount), 0);
-  const firstUnpaidPayment = payments.find((payment) => {
-    if (remainingRepaidAmount + 0.005 >= payment.amount) {
-      remainingRepaidAmount = roundMoney(remainingRepaidAmount - payment.amount);
-      return false;
-    }
-
-    return true;
-  });
-
-  if (!firstUnpaidPayment) return "";
-  const todayTimestamp = startOfToday();
-  if (firstUnpaidPayment.timestamp < todayTimestamp) return firstUnpaidPayment.date;
-
-  const currentOrFuturePayment = payments.find((payment) => payment.timestamp >= todayTimestamp && payment.timestamp >= firstUnpaidPayment.timestamp);
-  if (currentOrFuturePayment) return currentOrFuturePayment.date;
-
-  return firstUnpaidPayment.date;
-}
-
-function calculateRepaymentSchedule(principal: number, repaidAmount: number, interestRate: number, interestRatePeriod: DebtInterestRatePeriod, numberOfMonths: number, startDate: string) {
-  const regularInstallment = emiInstallment(principal, interestRate, interestRatePeriod, numberOfMonths);
-  const startedAt = new Date(`${startDate}T00:00:00`);
-  if (Number.isNaN(startedAt.getTime()) || numberOfMonths <= 0) {
-    return {
-      firstInterestAmount: 0,
-      firstPrincipalAmount: 0,
-      monthlyPayment: regularInstallment,
-      nextPaymentDate: "",
-      payoffDate: "",
-      totalInterest: 0,
-      totalRepayment: 0,
-    };
-  }
-
-  const firstDueDate = addMonthsPreservingDay(startDate, 1);
-  if (firstDueDate) firstDueDate.setDate(firstDueDate.getDate() - 1);
-  const finalDueDate = addMonthsPreservingDay(startDate, numberOfMonths);
-  if (finalDueDate) finalDueDate.setDate(finalDueDate.getDate() - 1);
-  const calculatedPayoffDate = finalDueDate ? formatDateInput(finalDueDate) : "";
-
-  if (!regularInstallment) {
-    const dateOnlyPayments = firstDueDate
-      ? Array.from({ length: numberOfMonths }, (_, index) => {
-        const dueDate = addMonthsPreservingDay(startDate, index + 1);
-        if (!dueDate) return null;
-        dueDate.setDate(dueDate.getDate() - 1);
-        return {
-          amount: 0,
-          date: formatDateInput(dueDate),
-          timestamp: dueDate.getTime(),
-        };
-      }).filter((payment): payment is RepaymentScheduleItem => payment != null)
-      : [];
-
-    return {
-      firstInterestAmount: 0,
-      firstPrincipalAmount: 0,
-      monthlyPayment: regularInstallment,
-      nextPaymentDate: calculateNextPaymentDate(dateOnlyPayments, repaidAmount),
-      payoffDate: calculatedPayoffDate,
-      totalInterest: 0,
-      totalRepayment: 0,
-    };
-  }
-
-  let balance = principal;
-  let previousDate = startedAt;
-  let totalInterest = 0;
-  let totalPrincipal = 0;
-  let firstInterestAmount = 0;
-  let firstPrincipalAmount = 0;
-  const payments: RepaymentScheduleItem[] = [];
-  let payoffDate = "";
-
-  for (let month = 1; month <= numberOfMonths; month += 1) {
-    const dueDate = addMonthsPreservingDay(startDate, month);
-    if (!dueDate) break;
-    dueDate.setDate(dueDate.getDate() - 1);
-    payoffDate = formatDateInput(dueDate);
-
-    const rawInterestAmount = interestRatePeriod === "Monthly"
-      ? balance * (interestRate / 100)
-      : balance * (interestRate / 100) * (daysBetween(previousDate, dueDate) / 365);
-    const interestAmount = roundMoney(rawInterestAmount);
-    const installmentAmount = month === numberOfMonths ? roundMoney(balance + interestAmount) : regularInstallment;
-    const principalAmount = month === numberOfMonths ? balance : roundMoney(installmentAmount - interestAmount);
-    payments.push({ amount: installmentAmount, date: payoffDate, timestamp: dueDate.getTime() });
-
-    if (month === 1) {
-      firstInterestAmount = interestAmount;
-      firstPrincipalAmount = principalAmount;
-    }
-
-    balance = roundMoney(balance - principalAmount);
-    totalInterest += rawInterestAmount;
-    totalPrincipal = roundMoney(totalPrincipal + principalAmount);
-    previousDate = dueDate;
-  }
-
-  return {
-    firstInterestAmount,
-    firstPrincipalAmount,
-    monthlyPayment: regularInstallment,
-    nextPaymentDate: calculateNextPaymentDate(payments, repaidAmount),
-    payoffDate,
-    totalInterest: roundMoney(totalInterest),
-    totalRepayment: roundMoney(totalPrincipal + totalInterest),
-  };
 }
 
 export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountRecord[]; categories: CategoryRecord[]; debt?: DebtRecordWithValues }) {
@@ -220,9 +59,16 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const repaid = parseAmount(repaidAmount);
   const parsedInterestRateValue = interestRate.trim() ? Number(interestRate) : 0;
   const parsedInterestRate = Number.isFinite(parsedInterestRateValue) ? parsedInterestRateValue : 0;
-  const progressPercent = total > 0 ? Math.round((repaid / total) * 100) : 0;
-  const remaining = Math.max(total - repaid, 0);
-  const repaymentSchedule = calculateRepaymentSchedule(total, repaid, parsedInterestRate, interestRatePeriod, normalizedDurationMonths, startDate);
+  const repaymentSchedule = buildEmiSchedule({
+    interestRate: parsedInterestRate,
+    interestRatePeriod,
+    numberOfMonths: normalizedDurationMonths,
+    principal: total,
+    repaidAmount: repaid,
+    startDate,
+  });
+  const progressPercent = total > 0 ? Math.min(Math.round((repaymentSchedule.principalPaid / total) * 100), 100) : 0;
+  const remaining = repaymentSchedule.remainingPrincipal;
   const nextPaymentDate = repaymentSchedule.nextPaymentDate;
   const payoffDate = repaymentSchedule.payoffDate;
   const monthlyPaymentValue = repaymentSchedule.monthlyPayment;

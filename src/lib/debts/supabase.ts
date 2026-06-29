@@ -4,7 +4,12 @@ import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { buildEmiSchedule, formatDateInput, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
+import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
+import { metadataRecord, normalizeAccountType, numericValue, roundCurrencyValue, transactionStatusAffectsBalance } from "@/lib/ledger";
 import type { DebtRecord, DebtStatus, SummaryMetric, UpcomingDebtPayment } from "@/types/finance";
+
+export type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 
 export type DebtFormData = {
   categoryId: string;
@@ -24,8 +29,6 @@ export type DebtFormData = {
   totalAmount: number;
   type: string;
 };
-
-export type DebtInterestRatePeriod = "Monthly" | "Yearly";
 
 export type DebtRecordWithValues = DebtRecord & {
   chargeActivity: DebtLedgerActivity[];
@@ -103,25 +106,6 @@ const debtAppearances: Record<string, { bg: string; icon: IconName; tone: string
   "Student Loan": { bg: "bg-[#fff1f0]", icon: "document", tone: "text-[#b42318]" },
 };
 
-function metadataRecord(metadata: unknown) {
-  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
-}
-
-function numericValue(value: unknown, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function roundCurrencyValue(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
-function normalizeAccountType(value: unknown) {
-  const key = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (key === "creditcard") return "credit_card";
-  return key;
-}
-
 function normalizeDebtType(value: unknown) {
   return String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
 }
@@ -148,7 +132,7 @@ function transferDirection(metadata: Record<string, unknown>) {
 }
 
 function transactionStatusAllowsDebtImpact(value: unknown) {
-  return String(value ?? "cleared").toLowerCase() !== "scheduled";
+  return transactionStatusAffectsBalance(value);
 }
 
 function transactionDebtImpact(transaction: LinkedTransactionRow, creditCardAccountIds: Set<string>) {
@@ -204,17 +188,6 @@ function formatDate(value: string) {
   return formatDisplayDate(value);
 }
 
-function parseDateInput(value: string) {
-  const dateValue = value.includes("T") ? value.slice(0, 10) : value;
-  const date = new Date(`${dateValue}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatDateInput(value: Date) {
-  if (Number.isNaN(value.getTime())) return "";
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
-
 function addMonths(date: Date, monthCount: number) {
   const next = new Date(date);
   const day = next.getDate();
@@ -242,7 +215,20 @@ function upcomingInstallments(debt: DebtRecordWithValues): DebtInstallment[] {
     }];
   }
 
-  if (debt.status === "Paid" || debt.remainingBalanceValue <= 0 || !debt.nextPaymentDateValue) return [];
+  if (debt.status === "Paid" || debt.remainingBalanceValue <= 0) return [];
+
+  const schedule = buildEmiSchedule({
+    interestRate: debt.interestRateValue,
+    interestRatePeriod: debt.interestRatePeriod,
+    numberOfMonths: debt.durationMonths,
+    principal: debt.totalAmountValue,
+    repaidAmount: debt.repaidAmountValue,
+    startDate: debt.startDate,
+  });
+  const scheduledInstallments = unpaidEmiInstallments(schedule.payments, debt.repaidAmountValue);
+  if (scheduledInstallments.length > 0) return scheduledInstallments;
+
+  if (!debt.nextPaymentDateValue) return [];
 
   const firstDueDate = parseDateInput(debt.nextPaymentDateValue);
   if (!firstDueDate) return [];
@@ -296,18 +282,37 @@ function mapDebt(
   const repaidAmountValue = (numericValue(row.repaid_amount) || numericValue(metadata.repaid_amount)) + (linkedRepaymentsByDebtId.get(row.id) ?? 0);
   const creditCardUsedAmountValue = isCreditCard ? Math.max(totalChargedAmountValue - repaidAmountValue, 0) : 0;
   const totalAmountValue = isCreditCard ? creditCardUsedAmountValue : totalChargedAmountValue;
-  const monthlyPaymentValue = isCreditCard && !usesManualCreditCardTerms ? creditCardUsedAmountValue : numericValue(row.monthly_payment) || numericValue(metadata.monthly_payment);
   const interestRatePeriod = normalizeInterestRatePeriod(metadata.interest_rate_period);
-  const payoffDate = typeof metadata.payoff_date === "string" ? metadata.payoff_date : "";
+  const interestRateValue = numericValue(row.interest_rate) || numericValue(metadata.interest_rate);
+  const storedMonthlyPaymentValue = numericValue(row.monthly_payment) || numericValue(metadata.monthly_payment);
+  const storedPayoffDate = typeof metadata.payoff_date === "string" ? metadata.payoff_date : "";
   const startDate = row.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date : "");
-  const nextPaymentDateValue = row.next_payment_date ?? (typeof metadata.next_payment_date === "string" ? metadata.next_payment_date : "");
+  const storedNextPaymentDateValue = row.next_payment_date ?? (typeof metadata.next_payment_date === "string" ? metadata.next_payment_date : "");
   const durationMonths = isCreditCard && !usesManualCreditCardTerms
     ? Math.max(numericValue(metadata.duration_months, 1), 1)
-    : Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, payoffDate)), 0);
-  const remaining = isCreditCard ? creditCardUsedAmountValue : Math.max(totalAmountValue - repaidAmountValue, 0);
+    : Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, storedPayoffDate)), 0);
+  const emiSchedule = !isCreditCard && totalAmountValue > 0
+    ? buildEmiSchedule({
+      interestRate: interestRateValue,
+      interestRatePeriod,
+      numberOfMonths: durationMonths,
+      principal: totalAmountValue,
+      repaidAmount: repaidAmountValue,
+      startDate,
+    })
+    : null;
+  const monthlyPaymentValue = isCreditCard && !usesManualCreditCardTerms
+    ? creditCardUsedAmountValue
+    : emiSchedule?.monthlyPayment || storedMonthlyPaymentValue;
+  const payoffDate = emiSchedule?.payoffDate || storedPayoffDate;
+  const nextPaymentDateValue = isCreditCard
+    ? storedNextPaymentDateValue
+    : emiSchedule?.nextPaymentDate || storedNextPaymentDateValue;
+  const remaining = isCreditCard ? creditCardUsedAmountValue : emiSchedule?.remainingPrincipal ?? Math.max(totalAmountValue - repaidAmountValue, 0);
+  const repaidPrincipalValue = emiSchedule?.principalPaid ?? repaidAmountValue;
   const progressPercent = isCreditCard && !usesManualCreditCardTerms
     ? remaining <= 0 ? 100 : 0
-    : totalAmountValue > 0 ? Math.min(Math.round((repaidAmountValue / totalAmountValue) * 100), 100) : 0;
+    : totalAmountValue > 0 ? Math.min(Math.round((repaidPrincipalValue / totalAmountValue) * 100), 100) : 0;
 
   return {
     ...appearance,
@@ -317,9 +322,9 @@ function mapDebt(
     creditCardUsedAmountValue,
     durationMonths,
     id: row.id,
-    interestRate: `${numericValue(row.interest_rate) || numericValue(metadata.interest_rate)}% ${interestRatePeriod.toLowerCase()}`,
+    interestRate: `${interestRateValue}% ${interestRatePeriod.toLowerCase()}`,
     interestRatePeriod,
-    interestRateValue: numericValue(row.interest_rate) || numericValue(metadata.interest_rate),
+    interestRateValue,
     isCreditCardDebt: isCreditCard,
     usesManualCreditCardTerms,
     lender: row.lender ?? (typeof metadata.lender === "string" ? metadata.lender : ""),

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { formatMmk } from "@/lib/currency";
+import { buildAccountLedgerActivities, normalizeAmountType } from "@/lib/ledger";
 import type { TransactionFormData } from "@/lib/transactions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +14,6 @@ type ActionResult = { error?: string; transactionIds?: string[] };
 
 type AccountRow = {
   id: string;
-  initial_balance?: number | string | null;
   metadata?: unknown;
   name?: string | null;
   type: string | null;
@@ -142,18 +142,6 @@ function dayOfMonthValue(value: unknown) {
   return day >= 1 && day <= 31 ? day : null;
 }
 
-function normalizeAmountType(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : "General";
-}
-
-function storedAccountAmountValue(record: Record<string, unknown>) {
-  for (const key of ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"]) {
-    const value = optionalNumericValue(record[key]);
-    if (value != null) return value;
-  }
-  return null;
-}
-
 function normalizeAccountType(value: unknown) {
   const key = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (key === "creditcard") return "credit_card";
@@ -197,40 +185,6 @@ function nextMonthlyDateForDay(day: number, fromDate: Date) {
 
 function creditLimitFromMetadata(metadata: Record<string, unknown>) {
   return numericValue(metadata.credit_limit ?? metadata.monthly_budget_limit);
-}
-
-function openingBalanceForAmountType(account: AccountRow, amountType: string) {
-  const openingBalance = numericValue(account.initial_balance);
-  const metadata = metadataRecord(account.metadata);
-  const metadataAmountTypes = Array.isArray(metadata.amount_types)
-    ? metadata.amount_types
-      .map((item) => metadataRecord(item))
-      .map((item) => ({
-        amountValue: storedAccountAmountValue(item),
-        type: normalizeAmountType(item.type),
-      }))
-      .filter((item) => item.type.trim() !== "")
-    : [];
-
-  const openingBalanceType = typeof metadata.opening_balance_amount_type === "string"
-    ? normalizeAmountType(metadata.opening_balance_amount_type)
-    : metadataAmountTypes[0]?.type ?? "Operation";
-
-  if (openingBalance !== 0) return openingBalanceType.toLowerCase() === normalizeAmountType(amountType).toLowerCase() ? openingBalance : 0;
-
-  const requestedType = normalizeAmountType(amountType).toLowerCase();
-  const matchingMetadataAmountType = metadataAmountTypes.find((item) => item.type.toLowerCase() === requestedType);
-  const legacySplitAmount = requestedType === "operation"
-    ? optionalNumericValue(metadata.operation_amount)
-    : requestedType === "saving"
-      ? optionalNumericValue(metadata.saving_amount)
-      : null;
-
-  if (legacySplitAmount != null && (matchingMetadataAmountType?.amountValue == null || matchingMetadataAmountType.amountValue === 0)) return legacySplitAmount;
-  if (matchingMetadataAmountType?.amountValue != null) return matchingMetadataAmountType.amountValue;
-
-  if (legacySplitAmount != null) return legacySplitAmount;
-  return 0;
 }
 
 function isCreditCardAccount(account: AccountRow | null) {
@@ -318,7 +272,7 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
   const amountType = normalizeAmountType(input.accountAmountType);
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id,type,metadata,initial_balance")
+    .select("id,type,metadata")
     .eq("id", input.accountId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -335,58 +289,24 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
 
   if (transactionsError) return transactionsError.message;
 
+  const accountActivities = buildAccountLedgerActivities(
+    (transactions as TransactionRow[]).filter((transaction) => !ignoredTransactionIds.includes(transaction.id)),
+    [account as AccountRow],
+  );
+  const accountActivity = accountActivities.get(input.accountId);
+
   if (isCreditCardAccount(account as AccountRow)) {
     const creditLimit = creditLimitFromMetadata(metadataRecord((account as AccountRow).metadata));
     if (creditLimit <= 0) return null;
 
-    let usedAmount = 0;
-    const ignoredIds = new Set(ignoredTransactionIds);
-    for (const transaction of transactions as TransactionRow[]) {
-      if (ignoredIds.has(transaction.id)) continue;
-      if (!postedStatusAffectsBalance(transaction.status)) continue;
-
-      const transactionType = String(transaction.type ?? "").toLowerCase();
-      const direction = transferDirection(metadataRecord(transaction.metadata));
-      const amount = Math.abs(numericValue(transaction.amount));
-      if (transaction.account_id === input.accountId) {
-        if (transactionType === "expense") usedAmount += amount;
-        if (transactionType === "income") usedAmount -= amount;
-        if (transactionType === "transfer") usedAmount += direction === "credit" ? -amount : amount;
-      } else if (transactionType === "transfer" && !direction && transaction.transfer_account_id === input.accountId) {
-        usedAmount -= amount;
-      }
-    }
-
+    const usedAmount = accountActivity?.creditUsed ?? 0;
     const availableLimit = Math.max(creditLimit - usedAmount, 0);
     return input.amount > availableLimit
       ? `Insufficient credit card limit. Available limit is ${formatMmk(availableLimit)}.`
       : null;
   }
 
-  let availableAmount = openingBalanceForAmountType(account as AccountRow, amountType);
-  const ignoredIds = new Set(ignoredTransactionIds);
-  for (const transaction of transactions as TransactionRow[]) {
-    if (ignoredIds.has(transaction.id)) continue;
-    if (!postedStatusAffectsBalance(transaction.status)) continue;
-
-    const transactionType = String(transaction.type ?? "").toLowerCase();
-    const metadata = metadataRecord(transaction.metadata);
-    const transactionAmountType = normalizeAmountType(metadata.account_amount_type);
-    const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
-    const direction = transferDirection(metadata);
-
-    const amount = Math.abs(numericValue(transaction.amount));
-    if (transaction.account_id === input.accountId && transactionAmountType === amountType) {
-      if (transactionType === "income") availableAmount += amount;
-      if (transactionType === "expense") availableAmount -= amount;
-      if (transactionType === "transfer") {
-        availableAmount += direction === "credit" ? amount : -amount;
-      }
-    }
-    if (transactionType === "transfer" && !direction && transaction.transfer_account_id === input.accountId && transferAmountType === amountType) {
-      availableAmount += amount;
-    }
-  }
+  const availableAmount = accountActivity?.deltas.get(amountType) ?? 0;
 
   return input.amount > availableAmount
     ? `Insufficient ${amountType} available amount. Available amount is ${formatMmk(availableAmount)}.`

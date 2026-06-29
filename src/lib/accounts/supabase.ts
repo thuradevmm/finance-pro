@@ -3,6 +3,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
+import {
+  buildAccountLedgerActivities,
+  metadataRecord,
+  normalizeAccountType,
+  normalizeAmountType,
+  numericValue,
+  roundCurrencyValue,
+  type LedgerAccountActivity,
+} from "@/lib/ledger";
 import type { AccountAmountType, AccountStatus, AccountType, FinancialAccount, SummaryMetric } from "@/types/finance";
 
 export type AccountRecord = FinancialAccount & {
@@ -114,14 +123,6 @@ type AccountTransactionRow = {
   type: string;
 };
 
-type AccountActivity = {
-  creditUsed: number;
-  inflow: number;
-  outflow: number;
-  deltas: Map<string, number>;
-  transactionCount: number;
-};
-
 const typeMap: Record<string, AccountType> = {
   bank: "Bank Account",
   bank_account: "Bank Account",
@@ -141,23 +142,12 @@ const appearances: Record<AccountType, { bg: string; icon: IconName; tone: strin
 };
 
 function normalizeTypeKey(type: string | null | undefined) {
-  const key = String(type ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const key = normalizeAccountType(type);
   if (key === "bankaccount") return "bank_account";
   if (key === "cashwallet") return "cash_wallet";
   if (key === "creditcard") return "credit_card";
   if (key === "digitalwallet") return "digital_wallet";
   return key;
-}
-
-function metadataRecord(metadata: unknown) {
-  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
-    ? metadata as Record<string, unknown>
-    : {};
-}
-
-function numericValue(value: unknown, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 function optionalNumericValue(value: unknown) {
@@ -173,10 +163,6 @@ function dayOfMonthValue(value: unknown) {
   return day >= 1 && day <= 31 ? day : null;
 }
 
-function roundCurrencyValue(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
   const amountValue = roundCurrencyValue(numericValue(value));
   return {
@@ -184,46 +170,6 @@ function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
     amountValue,
     type,
   };
-}
-
-function emptyActivity(): AccountActivity {
-  return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
-}
-
-function normalizeAmountType(value: unknown): AccountAmountType {
-  return typeof value === "string" && value.trim() ? value.trim() : "General";
-}
-
-function addActivityDelta(activity: AccountActivity, amountType: AccountAmountType, delta: number) {
-  activity.deltas.set(amountType, roundCurrencyValue((activity.deltas.get(amountType) ?? 0) + delta));
-}
-
-function isCreditCardType(type: string | null | undefined) {
-  return normalizeTypeKey(type) === "credit_card";
-}
-
-function transactionStatusAffectsBalance(value: unknown) {
-  const status = String(value ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
-}
-
-function transferDirection(metadata: Record<string, unknown>) {
-  const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
-  if (direction === "debit" || direction === "credit") return direction;
-
-  const legacyRole = typeof metadata.same_account_transfer_role === "string" ? metadata.same_account_transfer_role.toLowerCase() : "";
-  if (legacyRole === "out") return "debit";
-  if (legacyRole === "in") return "credit";
-  return "";
-}
-
-function signedAccountDelta(amount: number, isCreditCard: boolean, direction: "credit" | "debit") {
-  if (direction === "credit") return isCreditCard ? -amount : amount;
-  return isCreditCard ? amount : -amount;
-}
-
-function addCreditUsed(activity: AccountActivity, delta: number) {
-  activity.creditUsed = roundCurrencyValue(activity.creditUsed + delta);
 }
 
 function amountTypeKey(value: unknown) {
@@ -281,107 +227,16 @@ function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
   ];
 }
 
-function openingBalanceType(metadata: Record<string, unknown>, amountTypeValues: { type: string }[]) {
-  return typeof metadata.opening_balance_amount_type === "string"
-    ? normalizeAmountType(metadata.opening_balance_amount_type)
-    : amountTypeValues[0]?.type ?? "Operation";
-}
-
-function openingBalanceBreakdowns(
-  metadata: Record<string, unknown>,
-  initialBalanceValue: number,
-  amountTypeValues: { amountValue: number; type: string }[],
-) {
+function transactionBalanceBreakdowns(amountTypeValues: { type: string }[]) {
   const breakdowns = new Map(amountTypeValues.map((item) => [item.type, 0]));
-  if (initialBalanceValue !== 0) {
-    const amountType = openingBalanceType(metadata, amountTypeValues);
-    breakdowns.set(amountType, roundCurrencyValue((breakdowns.get(amountType) ?? 0) + initialBalanceValue));
-    return breakdowns;
-  }
-
-  for (const item of amountTypeValues) {
-    breakdowns.set(item.type, roundCurrencyValue((breakdowns.get(item.type) ?? 0) + item.amountValue));
-  }
-
   return breakdowns;
 }
 
-function buildAccountActivity(transactions: AccountTransactionRow[], accounts: AccountRow[]) {
-  const activityByAccount = new Map<string, AccountActivity>();
-  const accountTypes = new Map(accounts.map((account) => [account.id, account.type]));
-
-  function getActivity(accountId: string) {
-    const existingActivity = activityByAccount.get(accountId);
-    if (existingActivity) return existingActivity;
-    const nextActivity = emptyActivity();
-    activityByAccount.set(accountId, nextActivity);
-    return nextActivity;
-  }
-
-  for (const transaction of transactions) {
-    if (!transactionStatusAffectsBalance(transaction.status)) continue;
-
-    const amount = Math.abs(numericValue(transaction.amount));
-    const metadata = metadataRecord(transaction.metadata);
-    const amountType = normalizeAmountType(metadata.account_amount_type);
-    const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
-    const type = transaction.type.toLowerCase();
-    const direction = transferDirection(metadata);
-
-    if (transaction.account_id) {
-      const activity = getActivity(transaction.account_id);
-      const isCreditCard = isCreditCardType(accountTypes.get(transaction.account_id));
-      activity.transactionCount += 1;
-      if (type === "income") {
-        activity.inflow += amount;
-        if (isCreditCard) {
-          addCreditUsed(activity, -amount);
-        } else {
-          addActivityDelta(activity, amountType, amount);
-        }
-      } else if (type === "expense") {
-        activity.outflow += amount;
-        if (isCreditCard) {
-          addCreditUsed(activity, amount);
-        } else {
-          addActivityDelta(activity, amountType, -amount);
-        }
-      } else if (type === "transfer") {
-        if (direction === "credit") {
-          activity.inflow += amount;
-          if (isCreditCard) {
-            addCreditUsed(activity, -amount);
-          } else {
-            addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "credit"));
-          }
-        } else {
-          activity.outflow += amount;
-          if (isCreditCard) {
-            addCreditUsed(activity, amount);
-          } else {
-            addActivityDelta(activity, amountType, signedAccountDelta(amount, isCreditCard, "debit"));
-          }
-        }
-      }
-    }
-
-    if (type === "transfer" && !direction && transaction.transfer_account_id) {
-      const transferActivity = getActivity(transaction.transfer_account_id);
-      const isCreditCard = isCreditCardType(accountTypes.get(transaction.transfer_account_id));
-      transferActivity.transactionCount += 1;
-      transferActivity.inflow += amount;
-      if (isCreditCard) {
-        addCreditUsed(transferActivity, -amount);
-      } else {
-        addActivityDelta(transferActivity, transferAmountType, amount);
-      }
-    }
-  }
-
-  return activityByAccount;
+function emptyActivity(): LedgerAccountActivity {
+  return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
 }
 
-function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()): AccountRecord {
+function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActivity()): AccountRecord {
   const metadata = metadataRecord(row.metadata);
   const type = typeMap[normalizeTypeKey(row.type)] ?? "Bank Account";
   const isCreditCard = type === "Credit Card";
@@ -399,7 +254,7 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
   const amountTypeValues = normalizeAmountTypeValues(metadata);
   const displayAmountTypes = isCreditCard
     ? new Map(amountTypeValues.map((item) => [item.type, 0]))
-    : openingBalanceBreakdowns(metadata, initialBalanceValue, amountTypeValues);
+    : transactionBalanceBreakdowns(amountTypeValues);
   for (const [amountType, delta] of activity.deltas) {
     displayAmountTypes.set(amountType, roundCurrencyValue((displayAmountTypes.get(amountType) ?? 0) + delta));
   }
@@ -501,7 +356,7 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
   const accountRows = accountsResult.data as AccountRow[];
-  const activities = buildAccountActivity(transactionsResult.data as AccountTransactionRow[], accountRows);
+  const activities = buildAccountLedgerActivities(transactionsResult.data as AccountTransactionRow[], accountRows);
   return accountRows.map((account) => mapAccount(account, activities.get(account.id)));
 }
 

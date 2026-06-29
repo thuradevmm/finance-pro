@@ -46,12 +46,6 @@ type CategoryAmountRow = {
   date: string | null;
 };
 
-type CategoryAccountRow = {
-  created_at: string | null;
-  initial_balance: number | string | null;
-  metadata: unknown;
-};
-
 type CategoryActivity = {
   monthlyAverage: number;
   transactionCount: number;
@@ -133,22 +127,6 @@ function transactionActivityRows(transactions: CategoryTransactionRow[]): Catego
   });
 }
 
-function accountActivityRows(accounts: CategoryAccountRow[], categories: CategoryRow[]): CategoryAmountRow[] {
-  const categoryIdByName = new Map(categories.map((category) => [category.name.trim().toLowerCase(), category.id]));
-
-  return accounts.flatMap((account) => {
-    const metadata = metadataRecord(account.metadata);
-    const categoryName = typeof metadata.category === "string" ? metadata.category.trim().toLowerCase() : "";
-    const categoryId = categoryName ? categoryIdByName.get(categoryName) : undefined;
-    if (!categoryId) return [];
-    return [{
-      amount: account.initial_balance,
-      category_id: categoryId,
-      date: account.created_at,
-    }];
-  });
-}
-
 function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
   const scopes = Array.isArray(metadata.scopes)
@@ -190,7 +168,7 @@ export async function getCategories(options: { limit?: number } = {}) {
 
   if (options.limit) categoriesQuery = categoriesQuery.limit(options.limit);
 
-  const [categoriesResult, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult, accountsResult] = await Promise.all([
+  const [categoriesResult, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult] = await Promise.all([
     categoriesQuery,
     supabase
       .from("transactions")
@@ -217,11 +195,6 @@ export async function getCategories(options: { limit?: number } = {}) {
       .select("category_id,amount,next_billing_date,created_at")
       .eq("user_id", user.id)
       .is("deleted_at", null),
-    supabase
-      .from("accounts")
-      .select("initial_balance,metadata,created_at")
-      .eq("user_id", user.id)
-      .is("deleted_at", null),
   ]);
 
   if (categoriesResult.error) throw new Error(categoriesResult.error.message);
@@ -230,7 +203,6 @@ export async function getCategories(options: { limit?: number } = {}) {
   if (debtsResult.error) throw new Error(debtsResult.error.message);
   if (savingsGoalsResult.error) throw new Error(savingsGoalsResult.error.message);
   if (subscriptionsResult.error) throw new Error(subscriptionsResult.error.message);
-  if (accountsResult.error) throw new Error(accountsResult.error.message);
 
   const categoryRows = categoriesResult.data as CategoryRow[];
   const activityRows = [
@@ -239,7 +211,6 @@ export async function getCategories(options: { limit?: number } = {}) {
     ...(debtsResult.data as Array<{ category_id: string | null; created_at: string | null; start_date: string | null; total_amount: number | string | null }>).map((debt) => ({ amount: debt.total_amount, category_id: debt.category_id, date: debt.start_date ?? debt.created_at })),
     ...(savingsGoalsResult.data as Array<{ category_id: string | null; created_at: string | null; target_amount: number | string | null; target_date: string | null }>).map((goal) => ({ amount: goal.target_amount, category_id: goal.category_id, date: goal.target_date ?? goal.created_at })),
     ...(subscriptionsResult.data as Array<{ amount: number | string | null; category_id: string | null; created_at: string | null; next_billing_date: string | null }>).map((subscription) => ({ amount: subscription.amount, category_id: subscription.category_id, date: subscription.next_billing_date ?? subscription.created_at })),
-    ...accountActivityRows(accountsResult.data as CategoryAccountRow[], categoryRows),
   ];
   const activityByCategory = buildCategoryActivity(activityRows);
   return categoryRows.map((category) => mapCategory(category, activityByCategory.get(category.id)));

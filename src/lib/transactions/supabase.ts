@@ -5,6 +5,7 @@ import { combineDateWithTimestampTime, formatDisplayDate } from "@/lib/date-form
 import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { summarizeLedgerTransactions } from "@/lib/ledger";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 export type TransactionRecord = Transaction & {
@@ -121,14 +122,6 @@ function isPostedTransaction(transaction: Pick<TransactionRecord, "status">) {
   return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
-function isCreditCardAccount(account: AccountRecord | undefined) {
-  return account?.type === "Credit Card";
-}
-
-function roundCurrencyValue(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
-
 function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
@@ -233,39 +226,21 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
 }
 
 export function getTransactionSummaries(transactions: TransactionRecord[], accounts: AccountRecord[] = []): SummaryMetric[] {
-  const accountsById = new Map(accounts.map((account) => [account.id, account]));
-  let income = 0;
-  let expenses = 0;
-  let net = 0;
-
-  for (const transaction of transactions) {
-    if (!isPostedTransaction(transaction)) continue;
-
-    const amount = transaction.amountValue ?? 0;
-    const account = accountsById.get(transaction.accountId);
-    const transferAccount = accountsById.get(transaction.transferAccountId);
-
-    if (transaction.type === "Income") {
-      if (!isCreditCardAccount(account)) {
-        income = roundCurrencyValue(income + amount);
-        net = roundCurrencyValue(net + amount);
-      }
-    } else if (transaction.type === "Expense") {
-      if (!isCreditCardAccount(account)) {
-        expenses = roundCurrencyValue(expenses + amount);
-        net = roundCurrencyValue(net - amount);
-      }
-    } else if (transaction.type === "Transfer") {
-      if (transaction.transferDirection === "Credit") {
-        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net + amount);
-      } else if (transaction.transferDirection === "Debit") {
-        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net - amount);
-      } else {
-        if (!isCreditCardAccount(account)) net = roundCurrencyValue(net - amount);
-        if (!isCreditCardAccount(transferAccount)) net = roundCurrencyValue(net + amount);
-      }
-    }
-  }
+  const { expenses, income, net } = summarizeLedgerTransactions(
+    transactions.map((transaction) => ({
+      account_id: transaction.accountId || null,
+      amount: transaction.amountValue ?? 0,
+      metadata: {
+        account_amount_type: transaction.accountAmountType,
+        transfer_account_amount_type: transaction.transferAccountAmountType,
+        transfer_direction: transaction.transferDirection?.toLowerCase(),
+      },
+      status: transaction.status,
+      transfer_account_id: transaction.transferAccountId || null,
+      type: transaction.type.toLowerCase(),
+    })),
+    accounts,
+  );
 
   const transferGroups = new Set<string>();
   const transfers = transactions
