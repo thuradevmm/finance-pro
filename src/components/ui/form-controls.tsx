@@ -30,19 +30,24 @@ export function TextInput({
   value?: string;
   type?: "date" | "number" | "text";
 }) {
+  const isDate = type === "date";
+
   return (
     <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
-      <input
-        aria-invalid={error}
-        className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
-          error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"
-        }`}
-        onChange={(event) => onChange?.(event.target.value)}
-        placeholder={placeholder}
-        type={type}
-        value={value}
-      />
+      <div className={isDate ? "relative" : undefined}>
+        <input
+          aria-invalid={error}
+          className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
+            isDate ? "pr-12" : ""
+          } ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
+          onChange={(event) => onChange?.(event.target.value)}
+          placeholder={placeholder}
+          type={type}
+          value={value}
+        />
+        {isDate ? <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" /> : null}
+      </div>
     </div>
   );
 }

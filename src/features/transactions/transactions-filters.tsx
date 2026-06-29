@@ -1,4 +1,5 @@
 import { SelectFilter } from "@/components/ui/select-filter";
+import { Icon } from "@/components/ui/icon";
 import type { TransactionFilterOptions } from "@/types/finance";
 
 type TransactionsFiltersProps = {
@@ -31,11 +32,12 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
           </span>
           <input
             aria-label="Date from"
-            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-14 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-14 pr-10 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateFrom", event.target.value)}
             type="date"
             value={filters.dateFrom}
           />
+          <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
         </label>
         <label className="relative block min-w-0">
           <span className="sr-only">Date to</span>
@@ -44,11 +46,12 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
           </span>
           <input
             aria-label="Date to"
-            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-3 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-10 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateTo", event.target.value)}
             type="date"
             value={filters.dateTo}
           />
+          <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
         </label>
         <SelectFilter label="Category filter" onChange={(value) => onFilterChange("category", value)} options={filterOptions.category} value={filters.category} />
         {!isTransferFilter ? (

@@ -287,7 +287,10 @@ export function AddTransactionForm({
               </div>
               <div>
                 <FieldLabel>Date</FieldLabel>
-                <input className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${dateHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`} onChange={(event) => setTransactionDate(event.target.value)} type="date" value={transactionDate} />
+                <div className="relative">
+                  <input className={`h-12 w-full rounded-lg border bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${dateHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`} onChange={(event) => setTransactionDate(event.target.value)} type="date" value={transactionDate} />
+                  <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+                </div>
                 {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Transaction date is required.</p> : null}
               </div>
             </div>
