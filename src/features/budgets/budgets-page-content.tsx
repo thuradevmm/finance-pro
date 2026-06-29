@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { deleteBudget } from "@/app/budgets/actions";
 import { Icon } from "@/components/ui/icon";
+import { ProgressMeter } from "@/components/ui/progress-meter";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
@@ -98,13 +99,13 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
         </div>
       </div>
 
-      <div className="relative h-4 overflow-hidden rounded-full bg-[#dce9ff]">
-        <div
-          className={`h-full rounded-full transition-all ${usagePercent > 100 ? "bg-[#ba1a1a]" : "bg-[#0058be]"}`}
-          style={{ width: `${Math.min(usagePercent, 100)}%` }}
-        />
-        <div className="absolute bottom-0 top-0 w-0.5 bg-[#45464d]/50" style={{ left: "80%" }} />
-      </div>
+      <ProgressMeter
+        ariaLabel="Overall budget usage"
+        className="h-4"
+        colorClassName={usagePercent > 100 ? "bg-[#ba1a1a]" : "bg-[#0058be]"}
+        markerPercent={80}
+        percent={usagePercent}
+      />
       <div className="mt-2 flex min-w-0 justify-between gap-2 text-xs font-semibold uppercase text-[#45464d]">
         <span>{formatMmk(0)}</span>
         <span className="shrink-0">Target 80%</span>
@@ -123,9 +124,7 @@ function UsageMeter({ budget }: { budget: BudgetCategory }) {
       <span className={`w-10 text-right text-xs font-bold ${budget.status === "Over Budget" ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
         {budget.usagePercent}%
       </span>
-      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#dce9ff]">
-        <div className={`h-full rounded-full ${meterColor}`} style={{ width: `${Math.min(budget.usagePercent, 100)}%` }} />
-      </div>
+      <ProgressMeter ariaLabel={`${budget.category} budget usage`} className="h-1.5 w-24 shrink-0" colorClassName={meterColor} percent={budget.usagePercent} />
     </div>
   );
 }

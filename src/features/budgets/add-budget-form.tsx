@@ -9,6 +9,7 @@ import { useInteractionLoading } from "@/components/app/interaction-loading-prov
 import { Icon } from "@/components/ui/icon";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
+import { ProgressMeter } from "@/components/ui/progress-meter";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
@@ -217,9 +218,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{period} Limit</p>
               <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{budgetAmount.trim() === "" ? formatMmkPreview(0) : formatMmkPreview(budgetAmount)}</ResponsiveAmount>
-              <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#dce9ff]">
-                <div className="h-full w-0 rounded-full bg-[#0058be]" />
-              </div>
+              <ProgressMeter ariaLabel={`${selectedCategory.name} budget preview usage`} className="mt-5 h-3" percent={0} />
               <div className="mt-2 flex justify-between text-xs font-semibold text-[#45464d]">
                 <span>MMK 0 spent</span>
                 <span>0%</span>

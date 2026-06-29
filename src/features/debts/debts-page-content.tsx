@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { deleteDebt } from "@/app/debts/actions";
 import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
+import { ProgressMeter } from "@/components/ui/progress-meter";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
@@ -33,9 +34,7 @@ function DebtProgress({ debt }: { debt: DebtRecord }) {
         <span>Repaid</span>
         <span>{debt.progressPercent}%</span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[#dce9ff]">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(debt.progressPercent, 100)}%` }} />
-      </div>
+      <ProgressMeter ariaLabel={`${debt.name} repayment progress`} colorClassName={color} percent={debt.progressPercent} />
     </div>
   );
 }
@@ -164,7 +163,7 @@ function DebtsTable({
                     <span className={`grid size-9 shrink-0 place-items-center rounded-md ${debt.bg} ${debt.tone}`}>
                       <Icon className="size-4" name={debt.icon} />
                     </span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-[#0b1c30]">{debt.name}</p>
                       <p className="mt-1 text-xs font-medium text-[#45464d]">{debt.lender}</p>
                       <DebtProgress debt={debt} />
