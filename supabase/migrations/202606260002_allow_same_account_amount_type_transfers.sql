@@ -1,3 +1,4 @@
+-- @allow-destructive-migration: Replaces only the transfer-account check constraint; no rows are deleted.
 alter table if exists public.transactions
 drop constraint if exists chk_transaction_transfer_accounts;
 

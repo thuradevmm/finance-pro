@@ -12,6 +12,7 @@ create temp table if not exists tmp_credit_card_debt_candidates (
   credit_card_account_id uuid
 ) on commit drop;
 
+-- @allow-destructive-migration: Temp table is local to this migration and contains no application data.
 truncate table tmp_credit_card_debt_candidates;
 
 insert into tmp_credit_card_debt_candidates (debt_id, user_id, credit_card_account_id)
@@ -184,6 +185,7 @@ create temp table if not exists tmp_credit_card_debt_ledger (
   repaid_amount numeric not null default 0
 ) on commit drop;
 
+-- @allow-destructive-migration: Temp table is local to this migration and contains no application data.
 truncate table tmp_credit_card_debt_ledger;
 
 insert into tmp_credit_card_debt_ledger (debt_id, charged_amount, repaid_amount)

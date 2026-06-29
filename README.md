@@ -107,8 +107,12 @@ NEXT_PUBLIC_SESSION_IDLE_TIMEOUT_MINUTES=30
 
 - `NEXT_PUBLIC_SUPABASE_URL`
   - Supabase project URL.
+  - Local examples use `127.0.0.1:54321` or `localhost:54321`.
+  - Remote examples use `https://<project-ref>.supabase.co`.
+  - This value is exposed to browser code.
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
   - Browser-safe Supabase publishable key.
+  - This value is exposed to browser code.
 - `SUPABASE_SECRET_KEY`
   - Server-only key used for the temporary no-email registration and password recovery flow.
   - Never expose this as a `NEXT_PUBLIC_` variable.
@@ -155,9 +159,12 @@ Apply migrations to the linked Supabase project:
 ```bash
 npm run db:login
 npm run db:link -- --project-ref YOUR_PROJECT_REF
-npm run db:migration:list
-npm run db:push
+npm run db:migration:check
+npm run db:remote:migrations
+npx supabase db push
 ```
+
+Do not run linked resets as a normal deployment step. Back up the remote database before applying data-changing migrations.
 
 Generate Supabase types after linking:
 
@@ -176,10 +183,17 @@ Current migrations:
 - `202606250003_app_flow_schema_alignment.sql`
 - `202606260001_subscription_reminders.sql`
 - `202606260002_allow_same_account_amount_type_transfers.sql`
+- `202606270001_transfer_ledger_pairs.sql`
+- `202606290001_credit_card_debt_existing_data_alignment.sql`
 
 ## Supabase Migration Flow
 
 Use the npm scripts for Supabase CLI commands. The CLI is installed as a project dev dependency, so a global Supabase install is not required.
+
+Read the database safety docs before changing migrations:
+
+- `docs/supabase-workflow.md`
+- `docs/migration-checklist.md`
 
 ### Local-first database change
 
@@ -196,24 +210,30 @@ npm run db:new -- your_change_name
 ```
 
 3. Edit the generated SQL file in `supabase/migrations`.
-4. Rebuild the local database from migrations:
+4. Scan migrations for risky SQL:
 
 ```bash
-npm run db:reset
+npm run db:migration:check
 ```
 
-5. Regenerate local TypeScript database types:
+5. Rebuild the local database from migrations only if it is acceptable to lose local unseeded rows:
+
+```bash
+npm run db:local:reset:safe
+```
+
+6. Regenerate local TypeScript database types:
 
 ```bash
 npm run db:types:local
 ```
 
-6. Run app checks and test the related screens.
-7. Push the verified migrations to the linked Supabase project:
+7. Run app checks and test the related screens.
+8. Push the verified migrations to the linked Supabase project only after a remote backup:
 
 ```bash
-npm run db:migration:list
-npm run db:push
+npm run db:remote:migrations
+npx supabase db push
 npm run db:types
 ```
 
@@ -223,7 +243,8 @@ Use this only when a schema change was made directly in Supabase Dashboard and n
 
 ```bash
 npm run db:pull -- remote_schema_sync
-npm run db:reset
+npm run db:migration:check
+npm run db:local:reset:safe
 npm run db:types:local
 ```
 
@@ -234,10 +255,48 @@ Review the generated migration before committing it. Do not edit migrations that
 When a local code change depends on a migration, run this against the linked project before testing the deployed or cloud-backed app:
 
 ```bash
-npm run db:migration:list
-npm run db:push
+npm run db:migration:check
+npm run db:remote:migrations
+npx supabase db push
 npm run db:types
 ```
+
+### Two-laptop data sync
+
+Git syncs source code and migration files. It does not sync rows in laptop1's local Supabase database.
+
+Laptop1:
+
+```bash
+git pull
+npm run db:migration:check
+# Optional, only if preserving local rows for laptop2:
+npx supabase db dump --local --data-only --file laptop1-local-data.sql
+git push
+```
+
+Laptop2:
+
+```bash
+git pull
+npm run db:migration:check
+npm run db:start
+npm run db:local:migrations
+# Only rebuild local DB when local data loss is acceptable:
+npm run db:local:reset:safe
+```
+
+If laptop2 needs laptop1's local rows, copy the dump securely and restore it into laptop2 local Supabase only after checking for duplicate IDs and auth-user ownership issues.
+
+### Safe command summary
+
+- `npm run db:migration:check` scans migrations for destructive SQL.
+- `npm run db:local:status` checks the local Supabase stack.
+- `npm run db:local:migrations` lists local migration state.
+- `npm run db:local:reset:safe` prompts before running local reset.
+- `npm run db:remote:migrations` lists linked remote migration state.
+
+No package script runs `supabase db reset --linked`.
 
 ## Available Scripts
 
@@ -249,13 +308,16 @@ npm run lint
 npm run db:login
 npm run db:link
 npm run db:status
+npm run db:local:status
+npm run db:migration:check
+npm run db:local:migrations
+npm run db:local:reset:safe
+npm run db:remote:migrations
 npm run db:start
 npm run db:stop
 npm run db:new -- migration_name
 npm run db:diff
 npm run db:pull -- migration_name
-npm run db:push
-npm run db:reset
 npm run db:migration:list
 npm run db:types
 npm run db:types:local

@@ -31,6 +31,7 @@ begin
   ) then
     alter table public.user_profiles
       add constraint user_profiles_auth_user_id_fkey
+      -- @allow-destructive-migration: Auth/profile lifecycle intentionally follows auth user deletion.
       foreign key (id) references auth.users(id) on delete cascade not valid;
   end if;
 end $$;
