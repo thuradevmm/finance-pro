@@ -117,7 +117,8 @@ function formatTransferAmount(value: number, direction: Transaction["transferDir
 }
 
 function isPostedTransaction(transaction: Pick<TransactionRecord, "status">) {
-  return String(transaction.status ?? "cleared").toLowerCase() !== "scheduled";
+  const status = String(transaction.status ?? "cleared").trim().toLowerCase();
+  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
 function isCreditCardAccount(account: AccountRecord | undefined) {
@@ -132,7 +133,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
   const type = direction ? "Transfer" : normalizeType(row.type);
-  const amountValue = Number(row.amount) || 0;
+  const amountValue = Math.abs(Number(row.amount) || 0);
   const account = row.account_id ? accounts.get(row.account_id) : undefined;
   const metadataTransferAccountId = typeof metadata.transfer_account_id === "string" ? metadata.transfer_account_id : "";
   const counterAccountId = typeof metadata.counter_account_id === "string" ? metadata.counter_account_id : "";

@@ -33,6 +33,10 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
+function hasManualCreditCardTerms(metadata: Record<string, unknown>) {
+  return metadata.manual_credit_card_terms === true || metadata.auto_credit_card_terms === false;
+}
+
 function formatDateInput(value: Date) {
   if (Number.isNaN(value.getTime())) return "";
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
@@ -57,19 +61,43 @@ function creditLimitValue(input: AccountFormData) {
   return input.creditLimit ?? input.monthlyBudgetLimit;
 }
 
-function accountPayload(input: AccountFormData) {
+function amountTypeKey(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function amountTypePayload(amountTypes: { type: string }[], existingMetadata: Record<string, unknown>) {
+  const existingAmountTypes = Array.isArray(existingMetadata.amount_types)
+    ? existingMetadata.amount_types.map((item) => metadataRecord(item))
+    : [];
+  const existingByType = new Map(existingAmountTypes.map((item) => [amountTypeKey(item.type), item]));
+  const amountValueKeys = ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"];
+
+  return amountTypes.map((item) => {
+    const type = item.type.trim();
+    const existing = existingByType.get(amountTypeKey(type));
+    const preservedAmounts = Object.fromEntries(
+      amountValueKeys
+        .filter((key) => existing?.[key] != null)
+        .map((key) => [key, existing?.[key]]),
+    );
+    return { ...preservedAmounts, type };
+  });
+}
+
+function accountPayload(input: AccountFormData, options: { existingMetadata?: Record<string, unknown>; includeInitialBalance?: boolean } = {}) {
   const creditLimit = input.type === "Credit Card" ? creditLimitValue(input) : null;
   const monthlyBudgetLimit = input.type === "Credit Card" ? creditLimit : input.monthlyBudgetLimit;
+  const existingMetadata = options.existingMetadata ?? {};
 
   return {
     currency_code: input.currency,
     description: input.notes.trim() || null,
-    initial_balance: 0,
+    ...(options.includeInitialBalance === false ? {} : { initial_balance: 0 }),
     is_active: input.status !== "Archived",
     metadata: {
       account_number: input.accountNumber.trim(),
-      amount_types: input.amountTypes.map((item) => ({ type: item.type.trim() })),
-      available_balance: 0,
+      amount_types: amountTypePayload(input.amountTypes, existingMetadata),
+      available_balance: existingMetadata.available_balance ?? 0,
       bank_book_account_number: input.bankBookAccountNumber.trim(),
       card_expiry_code: input.cardExpiryCode.trim(),
       card_number: input.cardNumber.trim(),
@@ -83,9 +111,10 @@ function accountPayload(input: AccountFormData) {
       institution: input.institution.trim(),
       monthly_budget_limit: monthlyBudgetLimit,
       mobile_banking_account_number: input.mobileBankingAccountNumber.trim(),
-      operation_amount: null,
+      opening_balance_amount_type: existingMetadata.opening_balance_amount_type,
+      operation_amount: existingMetadata.operation_amount ?? null,
       phone_number: input.phoneNumber.trim(),
-      saving_amount: null,
+      saving_amount: existingMetadata.saving_amount ?? null,
       status: input.status,
     },
     name: input.name.trim(),
@@ -140,6 +169,7 @@ async function syncCreditCardDebtTerms(
     const metadata = metadataRecord(debt.metadata);
     const status = String(debt.status ?? metadata.status ?? "").toLowerCase();
     if (status === "paid" || status === "archived") continue;
+    const isManualTerms = hasManualCreditCardTerms(metadata);
 
     const payload = {
       metadata: {
@@ -151,11 +181,10 @@ async function syncCreditCardDebtTerms(
         credit_payment_due_day: input.creditPaymentDueDay,
         credit_statement_day: input.creditStatementDay,
         lender: input.name.trim() || metadata.lender,
-        monthly_payment: minimumPayment,
         payment_account_id: accountId,
+        ...(isManualTerms ? {} : { duration_months: 1, requires_full_payment: true }),
         ...(nextPaymentDate ? { next_payment_date: nextPaymentDate } : {}),
       },
-      monthly_payment: minimumPayment,
       ...(nextPaymentDate ? { next_payment_date: nextPaymentDate } : {}),
       payment_account_id: accountId,
     };
@@ -188,9 +217,19 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   const validationError = validateAccountInput(input);
   if (validationError) return { error: validationError };
 
+  const { data: existingAccount, error: existingError } = await supabase
+    .from("accounts")
+    .select("id,metadata")
+    .eq("id", accountId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (existingError) return { error: existingError.message };
+  if (!existingAccount) return { error: "Account not found." };
+
   const { data, error } = await supabase
     .from("accounts")
-    .update(accountPayload(input))
+    .update(accountPayload(input, { existingMetadata: metadataRecord(existingAccount.metadata), includeInitialBalance: false }))
     .eq("id", accountId)
     .eq("user_id", user.id)
     .select("id")

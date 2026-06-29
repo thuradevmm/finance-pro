@@ -233,7 +233,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const creditMinimumPaymentHasError = showErrors && isCreditCard && creditMinimumPayment.trim() !== "" && (creditMinimumPaymentValue == null || creditMinimumPaymentValue < 0);
   const effectiveSelectedCategory = accountCategoryOptions.includes(selectedCategory) ? selectedCategory : accountCategoryOptions[0] ?? "";
   const creditLimitPreview = creditLimit.trim() === "" ? account?.creditLimitValue ?? 0 : Number(creditLimit);
-  const transactionTotal = isCreditCard ? Math.max((Number.isFinite(creditLimitPreview) ? creditLimitPreview : 0) - (account?.creditUsedValue ?? 0), 0) : account?.balanceValue ?? 0;
+  const transactionTotal = isCreditCard ? (Number.isFinite(creditLimitPreview) ? creditLimitPreview : 0) - (account?.creditUsedValue ?? 0) : account?.balanceValue ?? 0;
 
   function updateAmountType(id: string, value: string) {
     setAmountTypes((items) => items.map((item) => (item.id === id ? { ...item, type: value } : item)));

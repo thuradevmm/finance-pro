@@ -195,13 +195,14 @@ function DebtsTable({
 }
 
 function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => void; payments: UpcomingDebtPayment[] }) {
-  const visiblePayments = payments.slice(0, 5);
+  const currentDueDateKey = payments[0]?.dueDateTimeValue?.split("T")[0] ?? payments[0]?.dueLabel ?? "";
+  const currentPayments = payments.filter((payment) => (payment.dueDateTimeValue?.split("T")[0] ?? payment.dueLabel) === currentDueDateKey);
 
   return (
     <aside className="min-w-0 max-w-full rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-sm sm:p-5">
       <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">Upcoming Payments</h2>
       <div className="space-y-4">
-        {visiblePayments.length > 0 ? visiblePayments.map((payment) => (
+        {currentPayments.length > 0 ? currentPayments.map((payment) => (
           <div className="grid min-w-0 gap-3 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] sm:items-center" key={payment.id}>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>

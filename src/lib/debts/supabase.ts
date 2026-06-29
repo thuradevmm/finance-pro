@@ -36,6 +36,7 @@ export type DebtRecordWithValues = DebtRecord & {
   interestRatePeriod: DebtInterestRatePeriod;
   interestRateValue: number;
   isCreditCardDebt: boolean;
+  usesManualCreditCardTerms: boolean;
   nextPaymentDateValue: string;
   notes: string;
   paymentAccountId: string;
@@ -52,6 +53,11 @@ export type DebtRecordWithValues = DebtRecord & {
 export type DebtLedgerActivity = {
   amountValue: number;
   dateValue: string;
+};
+
+type DebtInstallment = {
+  amountValue: number;
+  dueDateValue: string;
 };
 
 type DebtRow = {
@@ -126,6 +132,12 @@ function isCreditCardDebt(row: DebtRow, metadata: Record<string, unknown>) {
     || normalizeDebtType(row.type ?? metadata.type) === "creditcard";
 }
 
+function hasManualCreditCardTerms(metadata: Record<string, unknown>) {
+  if (metadata.manual_credit_card_terms === true || metadata.auto_credit_card_terms === false) return true;
+  if (metadata.auto_credit_card_account_id || metadata.auto_credit_card_terms === true) return false;
+  return true;
+}
+
 function transferDirection(metadata: Record<string, unknown>) {
   const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
   if (direction === "debit" || direction === "credit") return direction;
@@ -181,9 +193,9 @@ function normalizeStatus(value: unknown, remaining: number): DebtStatus {
   return "Active";
 }
 
-function normalizeCreditCardDebtStatus(value: unknown): DebtStatus {
+function normalizeCreditCardDebtStatus(value: unknown, remaining: number): DebtStatus {
+  if (remaining <= 0) return "Paid";
   const status = String(value ?? "").toLowerCase();
-  if (status === "paid") return "Paid";
   if (status === "overdue") return "Overdue";
   return "Active";
 }
@@ -211,79 +223,56 @@ function addMonths(date: Date, monthCount: number) {
   return next;
 }
 
-function firstUnpaidCreditCardChargeDate(charges: DebtLedgerActivity[], repayments: DebtLedgerActivity[]) {
-  const sortedCharges = [...charges].sort((first, second) => dateTimeSortValue(first.dateValue) - dateTimeSortValue(second.dateValue));
-  let unappliedRepayments = repayments.reduce((sum, repayment) => sum + repayment.amountValue, 0);
-
-  for (const charge of sortedCharges) {
-    if (unappliedRepayments + 0.005 >= charge.amountValue) {
-      unappliedRepayments = roundCurrencyValue(unappliedRepayments - charge.amountValue);
-      continue;
-    }
-    return charge.dateValue;
-  }
-
-  return "";
-}
-
 function creditCardDueDateValue(debt: DebtRecordWithValues) {
   if (debt.creditCardUsedAmountValue <= 0) return "";
+  if (debt.nextPaymentDateValue) return debt.nextPaymentDateValue;
 
-  const unpaidChargeDateValue = firstUnpaidCreditCardChargeDate(debt.chargeActivity, debt.repaymentActivity);
-  const referenceDate = parseDateInput(unpaidChargeDateValue) ?? parseDateInput(debt.startDate) ?? parseDateInput(debt.createdAtValue);
-  if (!referenceDate) return debt.nextPaymentDateValue;
-
-  const explicitDueDate = parseDateInput(debt.nextPaymentDateValue);
-  if (explicitDueDate) {
-    const dueDate = new Date(explicitDueDate);
-    while (dueDate < referenceDate) {
-      const nextDueDate = addMonths(dueDate, 1);
-      if (nextDueDate.getTime() === dueDate.getTime()) break;
-      dueDate.setTime(nextDueDate.getTime());
-    }
-    return formatDateInput(dueDate);
-  }
-
+  const referenceDate = parseDateInput(debt.startDate) ?? parseDateInput(debt.createdAtValue);
+  if (!referenceDate) return "";
   return formatDateInput(addMonths(referenceDate, 1));
 }
 
-function nextUnpaidInstallment(debt: DebtRecordWithValues) {
-  if (debt.isCreditCardDebt) {
+function upcomingInstallments(debt: DebtRecordWithValues): DebtInstallment[] {
+  if (debt.isCreditCardDebt && !debt.usesManualCreditCardTerms) {
     const dueDateValue = creditCardDueDateValue(debt);
-    if (!dueDateValue) return null;
-    return {
+    if (!dueDateValue || debt.creditCardUsedAmountValue <= 0) return [];
+    return [{
       amountValue: debt.creditCardUsedAmountValue,
       dueDateValue,
-    };
+    }];
   }
 
-  if (debt.status === "Paid" || debt.remainingBalanceValue <= 0 || !debt.nextPaymentDateValue) return null;
+  if (debt.status === "Paid" || debt.remainingBalanceValue <= 0 || !debt.nextPaymentDateValue) return [];
 
   const firstDueDate = parseDateInput(debt.nextPaymentDateValue);
-  if (!firstDueDate) return null;
+  if (!firstDueDate) return [];
 
   let dueDate = firstDueDate;
   let unappliedPayments = debt.repaymentActivity.reduce((sum, repayment) => sum + repayment.amountValue, 0);
   let scheduleBalance = roundCurrencyValue(debt.remainingBalanceValue + unappliedPayments);
   const regularPayment = debt.monthlyPaymentValue > 0 ? debt.monthlyPaymentValue : scheduleBalance;
-  const maxInstallments = Math.max(debt.durationMonths || 1, 1) + 120;
+  const balanceInstallments = regularPayment > 0 ? Math.ceil(scheduleBalance / regularPayment) : 1;
+  const maxInstallments = Math.min(Math.max(debt.durationMonths, balanceInstallments, 1) + 12, 600);
+  const installments: Array<{ amountValue: number; dueDateValue: string }> = [];
 
   for (let installmentIndex = 0; installmentIndex < maxInstallments && scheduleBalance > 0.005; installmentIndex += 1) {
     const installmentAmount = roundCurrencyValue(Math.min(regularPayment, scheduleBalance));
-    if (unappliedPayments + 0.005 >= installmentAmount) {
-      unappliedPayments = roundCurrencyValue(unappliedPayments - installmentAmount);
-      scheduleBalance = roundCurrencyValue(scheduleBalance - installmentAmount);
-      dueDate = addMonths(dueDate, 1);
-      continue;
+    const appliedPayment = Math.min(unappliedPayments, installmentAmount);
+    const amountDue = roundCurrencyValue(installmentAmount - appliedPayment);
+
+    if (amountDue > 0.005) {
+      installments.push({
+        amountValue: amountDue,
+        dueDateValue: formatDateInput(dueDate),
+      });
     }
 
-    return {
-      amountValue: roundCurrencyValue(installmentAmount - unappliedPayments),
-      dueDateValue: formatDateInput(dueDate),
-    };
+    unappliedPayments = roundCurrencyValue(Math.max(unappliedPayments - appliedPayment, 0));
+    scheduleBalance = roundCurrencyValue(scheduleBalance - installmentAmount);
+    dueDate = addMonths(dueDate, 1);
   }
 
-  return null;
+  return installments;
 }
 
 function mapDebt(
@@ -298,6 +287,7 @@ function mapDebt(
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
   const isCreditCard = isCreditCardDebt(row, metadata);
+  const usesManualCreditCardTerms = isCreditCard && hasManualCreditCardTerms(metadata);
   const type = category?.name ?? (isCreditCard ? "Credit Card" : String(row.type ?? metadata.type ?? "Debt"));
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
   const chargeActivity = linkedChargeEntriesByDebtId.get(row.id) ?? [];
@@ -306,14 +296,16 @@ function mapDebt(
   const repaidAmountValue = (numericValue(row.repaid_amount) || numericValue(metadata.repaid_amount)) + (linkedRepaymentsByDebtId.get(row.id) ?? 0);
   const creditCardUsedAmountValue = isCreditCard ? Math.max(totalChargedAmountValue - repaidAmountValue, 0) : 0;
   const totalAmountValue = isCreditCard ? creditCardUsedAmountValue : totalChargedAmountValue;
-  const monthlyPaymentValue = numericValue(row.monthly_payment) || numericValue(metadata.monthly_payment);
+  const monthlyPaymentValue = isCreditCard && !usesManualCreditCardTerms ? creditCardUsedAmountValue : numericValue(row.monthly_payment) || numericValue(metadata.monthly_payment);
   const interestRatePeriod = normalizeInterestRatePeriod(metadata.interest_rate_period);
   const payoffDate = typeof metadata.payoff_date === "string" ? metadata.payoff_date : "";
   const startDate = row.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date : "");
   const nextPaymentDateValue = row.next_payment_date ?? (typeof metadata.next_payment_date === "string" ? metadata.next_payment_date : "");
-  const durationMonths = Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, payoffDate)), 0);
+  const durationMonths = isCreditCard && !usesManualCreditCardTerms
+    ? Math.max(numericValue(metadata.duration_months, 1), 1)
+    : Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, payoffDate)), 0);
   const remaining = isCreditCard ? creditCardUsedAmountValue : Math.max(totalAmountValue - repaidAmountValue, 0);
-  const progressPercent = isCreditCard
+  const progressPercent = isCreditCard && !usesManualCreditCardTerms
     ? remaining <= 0 ? 100 : 0
     : totalAmountValue > 0 ? Math.min(Math.round((repaidAmountValue / totalAmountValue) * 100), 100) : 0;
 
@@ -329,6 +321,7 @@ function mapDebt(
     interestRatePeriod,
     interestRateValue: numericValue(row.interest_rate) || numericValue(metadata.interest_rate),
     isCreditCardDebt: isCreditCard,
+    usesManualCreditCardTerms,
     lender: row.lender ?? (typeof metadata.lender === "string" ? metadata.lender : ""),
     monthlyPayment: formatMmk(monthlyPaymentValue),
     monthlyPaymentValue,
@@ -346,7 +339,7 @@ function mapDebt(
     repaidAmount: formatMmk(repaidAmountValue),
     repaidAmountValue,
     startDate,
-    status: isCreditCard ? normalizeCreditCardDebtStatus(row.status ?? metadata.status) : normalizeStatus(row.status ?? metadata.status, remaining),
+    status: isCreditCard && !usesManualCreditCardTerms ? normalizeCreditCardDebtStatus(row.status ?? metadata.status, remaining) : normalizeStatus(row.status ?? metadata.status, remaining),
     totalAmount: formatMmk(totalAmountValue),
     totalAmountValue,
     type,
@@ -424,19 +417,20 @@ export function getDebtSummaries(debts: DebtRecordWithValues[]): SummaryMetric[]
 export function getUpcomingDebtPayments(debts: DebtRecordWithValues[]): UpcomingDebtPayment[] {
   const today = Date.now();
   return debts
-    .flatMap((debt) => {
+    .flatMap((debt): UpcomingDebtPayment[] => {
       if (debt.status === "Paid" || (!debt.isCreditCardDebt && debt.remainingBalanceValue <= 0)) return [];
-      const installment = nextUnpaidInstallment(debt);
-      if (!installment || installment.amountValue <= 0) return [];
-      const dueDateTimeValue = combineDateWithTimestampTime(installment.dueDateValue, debt.createdAtValue);
-      return [{
-        amount: formatMmk(installment.amountValue),
-        debtName: debt.name,
-        dueDateTimeValue,
-        dueLabel: formatDate(installment.dueDateValue),
-        id: `${debt.id}-${installment.dueDateValue}`,
-        isOverdue: new Date(`${installment.dueDateValue}T23:59:59`).getTime() < today,
-      }];
+      return upcomingInstallments(debt).flatMap((installment, index) => {
+        if (installment.amountValue <= 0) return [];
+        const dueDateTimeValue = combineDateWithTimestampTime(installment.dueDateValue, debt.createdAtValue);
+        return [{
+          amount: formatMmk(installment.amountValue),
+          debtName: debt.name,
+          dueDateTimeValue,
+          dueLabel: formatDate(installment.dueDateValue),
+          id: `${debt.id}-${installment.dueDateValue}-${index}`,
+          isOverdue: new Date(`${installment.dueDateValue}T23:59:59`).getTime() < today,
+        }];
+      });
     })
     .sort((first, second) => dateTimeSortValue(first.dueDateTimeValue ?? "") - dateTimeSortValue(second.dueDateTimeValue ?? ""));
 }

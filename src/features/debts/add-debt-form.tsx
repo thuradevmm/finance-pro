@@ -200,6 +200,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts", "Debt"), [categories]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? debtCategories[0]?.id ?? "");
   const selectedCategory = debtCategories.find((category) => category.id === selectedCategoryId) ?? debtCategories[0];
+  const debtCategoryOptions = debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Debt"];
   const [status, setStatus] = useState<DebtStatus>(debt?.status ?? "Active");
   const activeAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
   const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? activeAccounts[0]?.id ?? "");
@@ -214,7 +215,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const durationValue = Number(durationMonths);
   const normalizedDurationMonths = Number.isFinite(durationValue) ? Math.trunc(durationValue) : 0;
   const durationHasError = showErrors && (durationMonths.trim() === "" || normalizedDurationMonths <= 0);
-  const categoryHasError = showErrors && !selectedCategory;
+  const categoryHasError = showErrors && debtCategories.length > 0 && !selectedCategory;
   const total = parseAmount(totalAmount);
   const repaid = parseAmount(repaidAmount);
   const parsedInterestRateValue = interestRate.trim() ? Number(interestRate) : 0;
@@ -229,12 +230,12 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const totalInterestValue = repaymentSchedule.totalInterest;
 
   async function handleSaveDebt(addAnother = false) {
-    const hasErrors = name.trim() === "" || lender.trim() === "" || totalAmount.trim() === "" || durationMonths.trim() === "" || normalizedDurationMonths <= 0 || !selectedCategory;
+    const hasErrors = name.trim() === "" || lender.trim() === "" || totalAmount.trim() === "" || durationMonths.trim() === "" || normalizedDurationMonths <= 0 || (debtCategories.length > 0 && !selectedCategory);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
     const input: DebtFormData = {
-      categoryId: selectedCategory.id,
+      categoryId: selectedCategory?.id ?? "",
       durationMonths: normalizedDurationMonths,
       interestRate: parsedInterestRate,
       interestRatePeriod,
@@ -249,7 +250,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       startDate,
       status,
       totalAmount: Number(totalAmount),
-      type: selectedCategory?.name ?? "",
+      type: selectedCategory?.name ?? debt?.type ?? "Debt",
     };
     setIsSaving(true);
     const result = debt ? await updateDebt(debt.id, input) : await createDebt(input);
@@ -340,7 +341,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Status" onChange={(value) => setStatus(value as DebtStatus)} options={["Active", "Overdue", "Paid"]} value={status} />
             <div>
-              <SelectInput label="Debt Category" onChange={(name) => setSelectedCategoryId(debtCategories.find((category) => category.name === name)?.id ?? "")} options={debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["No debt categories"]} value={selectedCategory?.name ?? "No debt categories"} />
+              <SelectInput label="Debt Category" onChange={(name) => setSelectedCategoryId(debtCategories.find((category) => category.name === name)?.id ?? "")} options={debtCategoryOptions} value={selectedCategory?.name ?? "Uncategorized Debt"} />
               {categoryHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Debt category is required.</p> : null}
             </div>
           </div>

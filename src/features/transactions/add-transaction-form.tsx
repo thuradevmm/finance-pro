@@ -90,6 +90,34 @@ function accountAmountTypeOptionsFor(account: AccountRecord | undefined) {
   return account.balanceBreakdowns.map((breakdown) => breakdown.type);
 }
 
+function postedStatusAffectsBalance(status: string | undefined) {
+  const normalizedStatus = String(status ?? "cleared").trim().toLowerCase();
+  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(normalizedStatus);
+}
+
+function transferFromAmountType(transaction: TransactionRecord) {
+  if (transaction.transferDirection === "Credit") return transaction.transferAccountAmountType ?? transaction.accountAmountType;
+  return transaction.accountAmountType;
+}
+
+function transferToAmountType(transaction: TransactionRecord) {
+  if (transaction.transferDirection === "Credit") return transaction.accountAmountType;
+  return transaction.transferAccountAmountType ?? transaction.accountAmountType;
+}
+
+function editedTransactionBalanceAdjustment(transaction: TransactionRecord | undefined, accountId: string, amountType: string) {
+  if (!transaction || !postedStatusAffectsBalance(transaction.status)) return 0;
+
+  const amountValue = transaction.amountValue ?? 0;
+  if (transaction.type === "Income" && transaction.accountId === accountId && transaction.accountAmountType === amountType) return -amountValue;
+  if (transaction.type === "Expense" && transaction.accountId === accountId && transaction.accountAmountType === amountType) return amountValue;
+  if (transaction.type !== "Transfer") return 0;
+
+  if (transaction.transferFromAccountId === accountId && transferFromAmountType(transaction) === amountType) return amountValue;
+  if (transaction.transferToAccountId === accountId && transferToAmountType(transaction) === amountType) return -amountValue;
+  return 0;
+}
+
 export function AddTransactionForm({
   accounts,
   categories,
@@ -169,7 +197,7 @@ export function AddTransactionForm({
   const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
   const categoryHasError = showErrors && !isTransfer && !categoryId;
   const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
-  const availableAmountValue = selectedAvailableBreakdown?.amountValue ?? 0;
+  const availableAmountValue = (selectedAvailableBreakdown?.amountValue ?? 0) + editedTransactionBalanceAdjustment(transaction, accountId, effectiveAccountAmountType);
   const shouldValidateAvailableAmount = !isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
   const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
 

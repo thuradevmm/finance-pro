@@ -203,7 +203,8 @@ function isCreditCardType(type: string | null | undefined) {
 }
 
 function transactionStatusAffectsBalance(value: unknown) {
-  return String(value ?? "cleared").toLowerCase() !== "scheduled";
+  const status = String(value ?? "cleared").trim().toLowerCase();
+  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
 function transferDirection(metadata: Record<string, unknown>) {
@@ -225,27 +226,84 @@ function addCreditUsed(activity: AccountActivity, delta: number) {
   activity.creditUsed = roundCurrencyValue(activity.creditUsed + delta);
 }
 
+function amountTypeKey(value: unknown) {
+  return normalizeAmountType(value).toLowerCase();
+}
+
+function storedAmountValue(record: Record<string, unknown>) {
+  for (const key of ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"]) {
+    const value = optionalNumericValue(record[key]);
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function legacySplitAmountValues(metadata: Record<string, unknown>) {
+  const values = new Map<string, { amountValue: number; type: string }>();
+  const operationAmount = optionalNumericValue(metadata.operation_amount);
+  const savingAmount = optionalNumericValue(metadata.saving_amount);
+
+  if (operationAmount != null) values.set(amountTypeKey("Operation"), { amountValue: operationAmount, type: "Operation" });
+  if (savingAmount != null) values.set(amountTypeKey("Saving"), { amountValue: savingAmount, type: "Saving" });
+
+  return values;
+}
+
 function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
+  const legacySplitValues = legacySplitAmountValues(metadata);
   if (Array.isArray(metadata.amount_types)) {
     const amountTypes = metadata.amount_types
       .map((item) => metadataRecord(item))
-      .map((item) => ({
-        amountValue: 0,
-        type: normalizeAmountType(item.type),
-      }))
+      .map((item) => {
+        const storedAmount = storedAmountValue(item);
+        const legacyAmount = legacySplitValues.get(amountTypeKey(item.type))?.amountValue;
+        return {
+          amountValue: legacyAmount != null && (storedAmount == null || storedAmount === 0) ? legacyAmount : storedAmount ?? 0,
+          type: normalizeAmountType(item.type),
+        };
+      })
       .filter((item) => item.type.trim() !== "");
+
+    for (const [key, value] of legacySplitValues) {
+      if (!amountTypes.some((item) => amountTypeKey(item.type) === key)) amountTypes.push(value);
+    }
 
     if (amountTypes.length > 0) return amountTypes;
   }
 
-  const hasLegacySplit = metadata.operation_amount != null || metadata.saving_amount != null;
+  if (legacySplitValues.size > 0) return Array.from(legacySplitValues.values());
+
   return [
     {
       amountValue: 0,
       type: "Operation",
     },
-    ...(hasLegacySplit ? [{ amountValue: 0, type: "Saving" }] : []),
   ];
+}
+
+function openingBalanceType(metadata: Record<string, unknown>, amountTypeValues: { type: string }[]) {
+  return typeof metadata.opening_balance_amount_type === "string"
+    ? normalizeAmountType(metadata.opening_balance_amount_type)
+    : amountTypeValues[0]?.type ?? "Operation";
+}
+
+function openingBalanceBreakdowns(
+  metadata: Record<string, unknown>,
+  initialBalanceValue: number,
+  amountTypeValues: { amountValue: number; type: string }[],
+) {
+  const breakdowns = new Map(amountTypeValues.map((item) => [item.type, 0]));
+  if (initialBalanceValue !== 0) {
+    const amountType = openingBalanceType(metadata, amountTypeValues);
+    breakdowns.set(amountType, roundCurrencyValue((breakdowns.get(amountType) ?? 0) + initialBalanceValue));
+    return breakdowns;
+  }
+
+  for (const item of amountTypeValues) {
+    breakdowns.set(item.type, roundCurrencyValue((breakdowns.get(item.type) ?? 0) + item.amountValue));
+  }
+
+  return breakdowns;
 }
 
 function buildAccountActivity(transactions: AccountTransactionRow[], accounts: AccountRow[]) {
@@ -263,7 +321,7 @@ function buildAccountActivity(transactions: AccountTransactionRow[], accounts: A
   for (const transaction of transactions) {
     if (!transactionStatusAffectsBalance(transaction.status)) continue;
 
-    const amount = numericValue(transaction.amount);
+    const amount = Math.abs(numericValue(transaction.amount));
     const metadata = metadataRecord(transaction.metadata);
     const amountType = normalizeAmountType(metadata.account_amount_type);
     const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
@@ -339,17 +397,19 @@ function mapAccount(row: AccountRow, activity: AccountActivity = emptyActivity()
   const legacyAccountNumber = typeof metadata.account_number === "string" ? metadata.account_number : "";
   const accountIdentifier = bankBookAccountNumber || mobileBankingAccountNumber || legacyAccountNumber;
   const amountTypeValues = normalizeAmountTypeValues(metadata);
-  const displayAmountTypes = new Map(amountTypeValues.map((item) => [item.type, 0]));
+  const displayAmountTypes = isCreditCard
+    ? new Map(amountTypeValues.map((item) => [item.type, 0]))
+    : openingBalanceBreakdowns(metadata, initialBalanceValue, amountTypeValues);
   for (const [amountType, delta] of activity.deltas) {
-    displayAmountTypes.set(amountType, (displayAmountTypes.get(amountType) ?? 0) + delta);
+    displayAmountTypes.set(amountType, roundCurrencyValue((displayAmountTypes.get(amountType) ?? 0) + delta));
   }
   const storedMonthlyBudgetLimit = optionalNumericValue(metadata.monthly_budget_limit);
   const storedCreditLimit = optionalNumericValue(metadata.credit_limit);
   const monthlyBudgetLimit = isCreditCard ? (storedCreditLimit ?? storedMonthlyBudgetLimit) : storedMonthlyBudgetLimit;
   const cashBalanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
   const creditLimitValue = isCreditCard ? roundCurrencyValue(monthlyBudgetLimit ?? 0) : 0;
-  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(activity.creditUsed, 0)) : 0;
-  const creditAvailableValue = isCreditCard ? roundCurrencyValue(Math.max(creditLimitValue - creditUsedValue, 0)) : 0;
+  const creditUsedValue = isCreditCard ? roundCurrencyValue(activity.creditUsed) : 0;
+  const creditAvailableValue = isCreditCard ? roundCurrencyValue(creditLimitValue - creditUsedValue) : 0;
   const creditMinimumPaymentValue = isCreditCard ? roundCurrencyValue(Math.max(numericValue(metadata.credit_minimum_payment), 0)) : 0;
   const creditStatementDay = isCreditCard ? dayOfMonthValue(metadata.credit_statement_day) : null;
   const creditPaymentDueDay = isCreditCard ? dayOfMonthValue(metadata.credit_payment_due_day) : null;

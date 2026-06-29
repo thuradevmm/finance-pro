@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 
+import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { formatMmk } from "@/lib/currency";
 import type { TransactionFormData } from "@/lib/transactions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -12,6 +13,7 @@ type ActionResult = { error?: string; transactionIds?: string[] };
 
 type AccountRow = {
   id: string;
+  initial_balance?: number | string | null;
   metadata?: unknown;
   name?: string | null;
   type: string | null;
@@ -34,11 +36,24 @@ type TransactionRow = {
   type: string | null;
 };
 
+type MutationTransaction = Pick<TransactionRow, "id" | "metadata" | "related_entity_id" | "related_entity_type" | "type">;
+
 type DebtRow = {
   id: string;
   metadata: unknown;
   payment_account_id: string | null;
+  repaid_amount?: number | string | null;
   status: string | null;
+  total_amount?: number | string | null;
+};
+
+type CreditCardDebtImpact = "charge" | "repayment" | "";
+
+type CategoryRow = {
+  id: string;
+  is_active: boolean | null;
+  metadata: unknown;
+  name: string | null;
 };
 
 const transactionLinkedPaths = [
@@ -96,9 +111,22 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
+function metadataArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
 function numericValue(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function roundCurrencyValue(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function postedStatusAffectsBalance(value: unknown) {
+  const status = String(value ?? "cleared").trim().toLowerCase();
+  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
 function optionalNumericValue(value: unknown) {
@@ -116,6 +144,14 @@ function dayOfMonthValue(value: unknown) {
 
 function normalizeAmountType(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "General";
+}
+
+function storedAccountAmountValue(record: Record<string, unknown>) {
+  for (const key of ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"]) {
+    const value = optionalNumericValue(record[key]);
+    if (value != null) return value;
+  }
+  return null;
 }
 
 function normalizeAccountType(value: unknown) {
@@ -163,13 +199,42 @@ function creditLimitFromMetadata(metadata: Record<string, unknown>) {
   return numericValue(metadata.credit_limit ?? metadata.monthly_budget_limit);
 }
 
-function isCreditCardAccount(account: AccountRow | null) {
-  return normalizeAccountType(account?.type) === "credit_card";
+function openingBalanceForAmountType(account: AccountRow, amountType: string) {
+  const openingBalance = numericValue(account.initial_balance);
+  const metadata = metadataRecord(account.metadata);
+  const metadataAmountTypes = Array.isArray(metadata.amount_types)
+    ? metadata.amount_types
+      .map((item) => metadataRecord(item))
+      .map((item) => ({
+        amountValue: storedAccountAmountValue(item),
+        type: normalizeAmountType(item.type),
+      }))
+      .filter((item) => item.type.trim() !== "")
+    : [];
+
+  const openingBalanceType = typeof metadata.opening_balance_amount_type === "string"
+    ? normalizeAmountType(metadata.opening_balance_amount_type)
+    : metadataAmountTypes[0]?.type ?? "Operation";
+
+  if (openingBalance !== 0) return openingBalanceType.toLowerCase() === normalizeAmountType(amountType).toLowerCase() ? openingBalance : 0;
+
+  const requestedType = normalizeAmountType(amountType).toLowerCase();
+  const matchingMetadataAmountType = metadataAmountTypes.find((item) => item.type.toLowerCase() === requestedType);
+  const legacySplitAmount = requestedType === "operation"
+    ? optionalNumericValue(metadata.operation_amount)
+    : requestedType === "saving"
+      ? optionalNumericValue(metadata.saving_amount)
+      : null;
+
+  if (legacySplitAmount != null && (matchingMetadataAmountType?.amountValue == null || matchingMetadataAmountType.amountValue === 0)) return legacySplitAmount;
+  if (matchingMetadataAmountType?.amountValue != null) return matchingMetadataAmountType.amountValue;
+
+  if (legacySplitAmount != null) return legacySplitAmount;
+  return 0;
 }
 
-function isActiveDebt(row: DebtRow) {
-  const status = String(row.status ?? metadataRecord(row.metadata).status ?? "").toLowerCase();
-  return status !== "paid" && status !== "archived";
+function isCreditCardAccount(account: AccountRow | null) {
+  return normalizeAccountType(account?.type) === "credit_card";
 }
 
 function transactionMutationError(message: string) {
@@ -253,7 +318,7 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
   const amountType = normalizeAmountType(input.accountAmountType);
   const { data: account, error: accountError } = await supabase
     .from("accounts")
-    .select("id,type,metadata")
+    .select("id,type,metadata,initial_balance")
     .eq("id", input.accountId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -277,15 +342,19 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
     let usedAmount = 0;
     const ignoredIds = new Set(ignoredTransactionIds);
     for (const transaction of transactions as TransactionRow[]) {
-      if (ignoredIds.has(transaction.id) || transaction.account_id !== input.accountId) continue;
-      if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
+      if (ignoredIds.has(transaction.id)) continue;
+      if (!postedStatusAffectsBalance(transaction.status)) continue;
 
       const transactionType = String(transaction.type ?? "").toLowerCase();
       const direction = transferDirection(metadataRecord(transaction.metadata));
-      const amount = numericValue(transaction.amount);
-      if (transactionType === "expense") usedAmount += amount;
-      if (transactionType === "income") usedAmount -= amount;
-      if (transactionType === "transfer") usedAmount += direction === "credit" ? -amount : amount;
+      const amount = Math.abs(numericValue(transaction.amount));
+      if (transaction.account_id === input.accountId) {
+        if (transactionType === "expense") usedAmount += amount;
+        if (transactionType === "income") usedAmount -= amount;
+        if (transactionType === "transfer") usedAmount += direction === "credit" ? -amount : amount;
+      } else if (transactionType === "transfer" && !direction && transaction.transfer_account_id === input.accountId) {
+        usedAmount -= amount;
+      }
     }
 
     const availableLimit = Math.max(creditLimit - usedAmount, 0);
@@ -294,11 +363,11 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
       : null;
   }
 
-  let availableAmount = 0;
+  let availableAmount = openingBalanceForAmountType(account as AccountRow, amountType);
   const ignoredIds = new Set(ignoredTransactionIds);
   for (const transaction of transactions as TransactionRow[]) {
     if (ignoredIds.has(transaction.id)) continue;
-    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
+    if (!postedStatusAffectsBalance(transaction.status)) continue;
 
     const transactionType = String(transaction.type ?? "").toLowerCase();
     const metadata = metadataRecord(transaction.metadata);
@@ -306,7 +375,7 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
     const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
     const direction = transferDirection(metadata);
 
-    const amount = numericValue(transaction.amount);
+    const amount = Math.abs(numericValue(transaction.amount));
     if (transaction.account_id === input.accountId && transactionAmountType === amountType) {
       if (transactionType === "income") availableAmount += amount;
       if (transactionType === "expense") availableAmount -= amount;
@@ -347,28 +416,288 @@ async function getCreditCardAccountForTransaction(input: TransactionFormData, us
   return { account: isCreditCardAccount(transferAccount) ? transferAccount : null };
 }
 
+function creditCardDebtAccountId(debt: DebtRow) {
+  const metadata = metadataRecord(debt.metadata);
+  if (typeof metadata.credit_card_account_id === "string") return metadata.credit_card_account_id;
+  if (typeof metadata.auto_credit_card_account_id === "string") return metadata.auto_credit_card_account_id;
+  return debt.payment_account_id ?? "";
+}
+
+function isManualCreditCardDebt(debt: DebtRow) {
+  const metadata = metadataRecord(debt.metadata);
+  if (metadata.manual_credit_card_terms === true || metadata.auto_credit_card_terms === false) return true;
+  if (metadata.auto_credit_card_account_id || metadata.auto_credit_card_terms === true) return false;
+  return true;
+}
+
+function debtStatusKey(debt: DebtRow) {
+  return String(debt.status ?? metadataRecord(debt.metadata).status ?? "").toLowerCase();
+}
+
+function creditCardImpactForInput(input: TransactionFormData, creditCardAccountId: string): CreditCardDebtImpact {
+  const transactionType = input.type.toLowerCase();
+  const usesCreditCardAccount = input.accountId === creditCardAccountId;
+  const paysCreditCardAccount = input.type === "Transfer" && input.transferAccountId === creditCardAccountId;
+
+  if (usesCreditCardAccount && paysCreditCardAccount) return "";
+  if (usesCreditCardAccount && transactionType === "expense") return "charge";
+  if (usesCreditCardAccount && transactionType === "income") return "repayment";
+  if (usesCreditCardAccount && transactionType === "transfer") return "charge";
+  if (paysCreditCardAccount) return "repayment";
+  return "";
+}
+
+function isDebtCategory(row: CategoryRow) {
+  if (row.is_active === false) return false;
+  const metadata = metadataRecord(row.metadata);
+  const categoryType = String(metadata.category_type ?? "").trim().toLowerCase();
+  if (categoryType === "debt" || categoryType === "debts") return true;
+  return metadataArray(metadata.scopes).some((scope) => String(scope).toLowerCase() === "debts");
+}
+
+function normalizeCategoryName(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+async function findOrCreateCreditCardDebtCategoryId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,name,is_active,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+
+  if (error) return null;
+
+  const debtCategories = (data as CategoryRow[]).filter(isDebtCategory);
+  const preferredCategory = debtCategories.find((category) => normalizeCategoryName(category.name).includes("credit"))
+    ?? debtCategories[0];
+  if (preferredCategory) return preferredCategory.id;
+
+  const style = getCategoryTypeStyle("Debt");
+  for (const name of ["Credit Card Debt", "Credit Card Liability", "Debt"]) {
+    const { data: createdCategory, error: createError } = await supabase
+      .from("categories")
+      .insert({
+        color: style.color,
+        icon: style.icon,
+        is_active: true,
+        is_default: false,
+        metadata: {
+          category_type: "Debt",
+          description: "Automatically created for credit card debt tracking.",
+          scopes: ["Debts", "Reports"],
+          system_created: true,
+        },
+        name,
+        type: "expense",
+        user_id: userId,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (!createError && createdCategory?.id) return createdCategory.id as string;
+    if (createError?.code !== "23505") break;
+  }
+
+  return null;
+}
+
+function creditCardImpactForTransaction(transaction: TransactionRow, creditCardAccountId: string): CreditCardDebtImpact {
+  const transactionType = String(transaction.type ?? "").toLowerCase();
+  const metadata = metadataRecord(transaction.metadata);
+  const direction = transferDirection(metadata);
+  const usesCreditCardAccount = transaction.account_id === creditCardAccountId;
+  const paysCreditCardAccount = transaction.transfer_account_id === creditCardAccountId;
+
+  if (usesCreditCardAccount && paysCreditCardAccount) return "";
+  if (transactionType === "transfer") {
+    if (direction) {
+      if (!usesCreditCardAccount) return "";
+      return direction === "debit" ? "charge" : "repayment";
+    }
+    if (usesCreditCardAccount) return "charge";
+    if (paysCreditCardAccount) return "repayment";
+    return "";
+  }
+  if (usesCreditCardAccount && transactionType === "expense") return "charge";
+  if (usesCreditCardAccount && transactionType === "income") return "repayment";
+  return "";
+}
+
+async function creditCardDebtBalance(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debt: DebtRow,
+  creditCardAccountId: string,
+) {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id,account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "debt")
+    .eq("related_entity_id", debt.id)
+    .is("deleted_at", null);
+
+  if (error) return { error: error.message };
+
+  const metadata = metadataRecord(debt.metadata);
+  let chargedAmount = numericValue(debt.total_amount) || numericValue(metadata.total_amount);
+  let repaidAmount = numericValue(debt.repaid_amount) || numericValue(metadata.repaid_amount);
+
+  for (const transaction of data as TransactionRow[]) {
+    if (!postedStatusAffectsBalance(transaction.status)) continue;
+
+    const impact = creditCardImpactForTransaction(transaction, creditCardAccountId);
+    const amount = Math.abs(numericValue(transaction.amount));
+    if (impact === "charge") chargedAmount = roundCurrencyValue(chargedAmount + amount);
+    if (impact === "repayment") repaidAmount = roundCurrencyValue(repaidAmount + amount);
+  }
+
+  return {
+    chargedAmount,
+    repaidAmount,
+    remainingAmount: roundCurrencyValue(Math.max(chargedAmount - repaidAmount, 0)),
+  };
+}
+
+async function updateCreditCardDebtSnapshot(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debt: DebtRow,
+  balance: { remainingAmount: number },
+) {
+  const metadata = metadataRecord(debt.metadata);
+  const isManualTerms = isManualCreditCardDebt(debt);
+  const nextStatus = balance.remainingAmount <= 0.005 ? "paid" : "active";
+  const monthlyPayment = nextStatus === "paid" ? 0 : balance.remainingAmount;
+  const currentStatus = String(debt.status ?? metadata.status ?? "").toLowerCase();
+  const currentMonthlyPayment = numericValue(metadata.monthly_payment);
+
+  if (isManualTerms) {
+    if (balance.remainingAmount > 0.005 || currentStatus === "paid") return null;
+
+    const { error } = await supabase
+      .from("debts")
+      .update({
+        metadata: {
+          ...metadata,
+          paid_at: new Date().toISOString(),
+          status: "paid",
+        },
+        status: "paid",
+      })
+      .eq("id", debt.id)
+      .eq("user_id", userId);
+
+    return error?.message ?? null;
+  }
+
+  if (currentStatus === nextStatus && Math.abs(currentMonthlyPayment - monthlyPayment) <= 0.005) return null;
+
+  const payload = {
+    metadata: {
+      ...metadata,
+      duration_months: 1,
+      auto_credit_card_terms: true,
+      manual_credit_card_terms: false,
+      monthly_payment: monthlyPayment,
+      requires_full_payment: true,
+      status: nextStatus,
+      ...(nextStatus === "paid" ? { paid_at: new Date().toISOString() } : {}),
+    },
+    monthly_payment: monthlyPayment,
+    status: nextStatus,
+  };
+
+  const { error } = await supabase
+    .from("debts")
+    .update(payload)
+    .eq("id", debt.id)
+    .eq("user_id", userId);
+
+  return error?.message ?? null;
+}
+
+async function reconcileCreditCardDebt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtId: string,
+) {
+  if (!debtId) return null;
+
+  const { data: debtData, error: debtError } = await supabase
+    .from("debts")
+    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata")
+    .eq("id", debtId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (debtError) return debtError.message;
+  if (!debtData) return null;
+
+  const debt = debtData as DebtRow;
+  const accountId = creditCardDebtAccountId(debt);
+  if (!accountId) return null;
+
+  const balance = await creditCardDebtBalance(supabase, userId, debt, accountId);
+  if ("error" in balance) return balance.error;
+  return updateCreditCardDebtSnapshot(supabase, userId, debt, balance);
+}
+
+async function reconcileCreditCardDebtIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtIds: Array<string | null | undefined>,
+) {
+  for (const debtId of Array.from(new Set(debtIds.filter((id): id is string => Boolean(id))))) {
+    await reconcileCreditCardDebt(supabase, userId, debtId);
+  }
+}
+
+async function getDebtIdsForTransactionIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  transactionIds: string[],
+) {
+  if (transactionIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("related_entity_id,related_entity_type")
+    .eq("user_id", userId)
+    .in("id", transactionIds);
+
+  if (error) throw new Error(error.message);
+  return (data as Pick<TransactionRow, "related_entity_id" | "related_entity_type">[])
+    .filter((transaction) => transaction.related_entity_type === "debt" && transaction.related_entity_id)
+    .map((transaction) => transaction.related_entity_id as string);
+}
+
 async function findCreditCardDebtId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   account: AccountRow,
-  referenceDateValue?: string,
+  referenceDateValue: string | undefined,
+  options: { createIfMissing: boolean; initialChargeAmount?: number },
 ) {
   const { data: debts, error: debtsError } = await supabase
     .from("debts")
-    .select("id,status,payment_account_id,metadata")
+    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (debtsError) return { error: debtsError.message };
 
-  const debtRows = (debts as DebtRow[]).filter(isActiveDebt);
-  const explicitDebt = debtRows.find((debt) => {
-    const metadata = metadataRecord(debt.metadata);
-    return metadata.credit_card_account_id === account.id || metadata.auto_credit_card_account_id === account.id;
-  });
-  if (explicitDebt) return { debtId: explicitDebt.id };
-
+  const debtRows = (debts as DebtRow[]).filter((debt) => debtStatusKey(debt) !== "archived");
+  const creditCardDebtIds = new Set(debtRows
+    .filter((debt) => creditCardDebtAccountId(debt) === account.id)
+    .map((debt) => debt.id));
   const { data: linkedTransactions, error: linkedError } = await supabase
     .from("transactions")
     .select("related_entity_id")
@@ -377,50 +706,69 @@ async function findCreditCardDebtId(
     .or(`account_id.eq.${account.id},transfer_account_id.eq.${account.id}`)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(50);
 
   if (linkedError) return { error: linkedError.message };
 
-  const activeDebtIds = new Set(debtRows.map((debt) => debt.id));
-  const linkedDebt = (linkedTransactions as Pick<TransactionRow, "related_entity_id">[])
-    .find((transaction) => transaction.related_entity_id && activeDebtIds.has(transaction.related_entity_id));
-  if (linkedDebt?.related_entity_id) return { debtId: linkedDebt.related_entity_id };
+  for (const transaction of linkedTransactions as Pick<TransactionRow, "related_entity_id">[]) {
+    if (transaction.related_entity_id) creditCardDebtIds.add(transaction.related_entity_id);
+  }
+
+  const creditCardDebtRows = debtRows.filter((debt) => creditCardDebtIds.has(debt.id));
+
+  for (const debt of creditCardDebtRows.filter((row) => debtStatusKey(row) !== "paid")) {
+    const balance = await creditCardDebtBalance(supabase, userId, debt, account.id);
+    if ("error" in balance) return { error: balance.error };
+    const snapshotError = await updateCreditCardDebtSnapshot(supabase, userId, debt, balance);
+    if (snapshotError) return { error: snapshotError };
+    if (balance.remainingAmount > 0.005) return { debtId: debt.id };
+  }
+
+  if (!options.createIfMissing) return { debtId: null };
 
   const metadata = metadataRecord(account.metadata);
   const creditLimit = creditLimitFromMetadata(metadata);
   const creditStatementDay = dayOfMonthValue(metadata.credit_statement_day);
   const creditPaymentDueDay = dayOfMonthValue(metadata.credit_payment_due_day);
   const creditMinimumPayment = Math.max(numericValue(metadata.credit_minimum_payment), 0);
+  const monthlyPayment = Math.max(numericValue(options.initialChargeAmount), 0);
   const startDate = parseDateInput(referenceDateValue) ?? new Date();
   const startDateValue = formatDateInput(startDate);
   const nextPaymentDateValue = creditPaymentDueDay
     ? formatDateInput(nextMonthlyDateForDay(creditPaymentDueDay, startDate))
     : formatDateInput(addMonths(startDate, 1));
+  const categoryId = await findOrCreateCreditCardDebtCategoryId(supabase, userId);
   const debtPayload = {
+    category_id: categoryId,
     description: `Automatically tracks credit card transactions for ${account.name ?? "Credit Card"}.`,
     lender: account.name ?? "Credit Card",
     metadata: {
       auto_credit_card_account_id: account.id,
+      auto_credit_card_terms: true,
+      category_id: categoryId,
       credit_card_account_id: account.id,
       credit_minimum_payment: creditMinimumPayment,
       credit_payment_due_day: creditPaymentDueDay,
       credit_statement_day: creditStatementDay,
-      duration_months: 0,
+      duration_months: 1,
       interest_rate: 0,
       interest_rate_period: "yearly",
       lender: account.name ?? "Credit Card",
-      monthly_payment: creditMinimumPayment,
+      monthly_payment: monthlyPayment,
       next_payment_date: nextPaymentDateValue,
       notes: `Automatically tracks credit card transactions for ${account.name ?? "Credit Card"}.`,
       payment_account_id: account.id,
+      payoff_date: nextPaymentDateValue,
       repaid_amount: 0,
+      requires_full_payment: true,
+      manual_credit_card_terms: false,
       start_date: startDateValue,
       status: "active",
       total_amount: 0,
       type: "Credit Card",
       ...(creditLimit > 0 ? { credit_limit: creditLimit } : {}),
     },
-    monthly_payment: creditMinimumPayment,
+    monthly_payment: monthlyPayment,
     name: `${account.name ?? "Credit Card"} Credit Card Debt`,
     next_payment_date: nextPaymentDateValue,
     payment_account_id: account.id,
@@ -447,10 +795,20 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
   if ("error" in accountResult) return { error: accountResult.error };
   if (!accountResult.account) return input;
 
+  const impact = creditCardImpactForInput(input, accountResult.account.id);
+  if (!impact) return input;
+
   const { supabase } = await authenticatedClient();
-  const debtResult = await findCreditCardDebtId(supabase, userId, accountResult.account, input.date);
+  const debtResult = await findCreditCardDebtId(supabase, userId, accountResult.account, input.date, {
+    createIfMissing: impact === "charge",
+    initialChargeAmount: impact === "charge" ? input.amount : 0,
+  });
   if ("error" in debtResult) return { error: debtResult.error };
-  if (!debtResult.debtId) return { error: "Unable to link a credit card debt record." };
+  if (!debtResult.debtId) {
+    return input.relatedEntityType === "debt" && !input.relatedEntityId
+      ? { ...input, relatedEntityId: "", relatedEntityType: "none" as const }
+      : input;
+  }
 
   return {
     ...input,
@@ -479,14 +837,14 @@ async function getLinkedTransactionIds(supabase: Awaited<ReturnType<typeof creat
 async function fetchTransactionForMutation(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transactionId: string) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id,metadata,type")
+    .select("id,metadata,related_entity_id,related_entity_type,type")
     .eq("id", transactionId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return data as Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+  return data as MutationTransaction | null;
 }
 
 async function archiveLinkedTransactions(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transaction: Pick<TransactionRow, "id" | "metadata">) {
@@ -501,13 +859,17 @@ async function archiveLinkedTransactions(supabase: Awaited<ReturnType<typeof cre
   return linkedIds;
 }
 
+function linkedDebtIdFromInput(input: TransactionFormData) {
+  return input.relatedEntityType === "debt" ? input.relatedEntityId : "";
+}
+
 export async function createTransaction(input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
+  const validationError = await validateAvailableAmount(input, user.id);
+  if (validationError) return { error: validationError };
   const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
   if ("error" in resolvedInput) return { error: resolvedInput.error };
-  const validationError = await validateAvailableAmount(resolvedInput, user.id);
-  if (validationError) return { error: validationError };
   if (resolvedInput.type === "Transfer") {
     const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id));
     if (error) return { error: transactionMutationError(error.message) };
@@ -515,6 +877,7 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
     const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
     if (error) return { error: transactionMutationError(error.message) };
   }
+  await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths();
   return {};
 }
@@ -522,20 +885,22 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
 export async function updateTransaction(transactionId: string, input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  let existingTransaction: Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+  let existingTransaction: MutationTransaction | null;
   let ignoredTransactionIds: string[];
+  let previousDebtIds: string[];
   try {
     existingTransaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
     if (!existingTransaction) return { error: "Transaction not found." };
     ignoredTransactionIds = await getLinkedTransactionIds(supabase, user.id, existingTransaction);
+    previousDebtIds = await getDebtIdsForTransactionIds(supabase, user.id, ignoredTransactionIds);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Unable to load transaction." };
   }
 
+  const validationError = await validateAvailableAmount(input, user.id, ignoredTransactionIds);
+  if (validationError) return { error: validationError };
   const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
   if ("error" in resolvedInput) return { error: resolvedInput.error };
-  const validationError = await validateAvailableAmount(resolvedInput, user.id, ignoredTransactionIds);
-  if (validationError) return { error: validationError };
 
   const existingGroupId = transferGroupId(metadataRecord(existingTransaction.metadata));
   const existingType = String(existingTransaction.type ?? "").toLowerCase();
@@ -555,6 +920,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
       const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
       if (error) return { error: transactionMutationError(error.message) };
     }
+    await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
     revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
     return {};
   }
@@ -562,6 +928,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
   const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(resolvedInput)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: transactionMutationError(error.message) };
   if (!data) return { error: "Transaction not found." };
+  await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
   return {};
 }
@@ -570,11 +937,14 @@ export async function deleteTransaction(transactionId: string): Promise<ActionRe
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
 
-  let transaction: Pick<TransactionRow, "id" | "metadata" | "type"> | null;
+  let transaction: MutationTransaction | null;
   try {
     transaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
     if (!transaction) return { error: "Transaction not found." };
+    const linkedIds = await getLinkedTransactionIds(supabase, user.id, transaction);
+    const previousDebtIds = await getDebtIdsForTransactionIds(supabase, user.id, linkedIds);
     const transactionIds = await archiveLinkedTransactions(supabase, user.id, transaction);
+    await reconcileCreditCardDebtIds(supabase, user.id, previousDebtIds);
     revalidateTransactionLinkedPaths();
     return { transactionIds };
   } catch (error) {
@@ -642,6 +1012,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
 
     const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id));
     if (error) return { error: transactionMutationError(error.message) };
+    await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(reverseInput)]);
     revalidateTransactionLinkedPaths();
     return {};
   }
@@ -671,6 +1042,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
   });
 
   if (error) return { error: transactionMutationError(error.message) };
+  await reconcileCreditCardDebtIds(supabase, user.id, [source.related_entity_type === "debt" ? source.related_entity_id : ""]);
   revalidateTransactionLinkedPaths();
   return {};
 }
