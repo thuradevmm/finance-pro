@@ -161,7 +161,7 @@ npm run db:login
 npm run db:link -- --project-ref YOUR_PROJECT_REF
 npm run db:migration:check
 npm run db:remote:migrations
-npx supabase db push
+npx supabase db push --include-all
 ```
 
 Do not run linked resets as a normal deployment step. Back up the remote database before applying data-changing migrations.
@@ -174,6 +174,7 @@ npm run db:types
 
 Current migrations:
 
+- `202606180001_baseline_schema.sql`
 - `202606190001_auth_and_rls.sql`
 - `202606220001_remove_shared_default_categories.sql`
 - `202606220002_category_cleanup.sql`
@@ -185,6 +186,8 @@ Current migrations:
 - `202606260002_allow_same_account_amount_type_transfers.sql`
 - `202606270001_transfer_ledger_pairs.sql`
 - `202606290001_credit_card_debt_existing_data_alignment.sql`
+
+`202606180001_baseline_schema.sql` is a backfilled baseline for fresh local databases. If a linked remote already has later migrations but shows this baseline as local-only, use `npx supabase db push --include-all` after reviewing `npm run db:remote:migrations`.
 
 ## Supabase Migration Flow
 
@@ -233,7 +236,7 @@ npm run db:types:local
 
 ```bash
 npm run db:remote:migrations
-npx supabase db push
+npx supabase db push --include-all
 npm run db:types
 ```
 
@@ -257,7 +260,7 @@ When a local code change depends on a migration, run this against the linked pro
 ```bash
 npm run db:migration:check
 npm run db:remote:migrations
-npx supabase db push
+npx supabase db push --include-all
 npm run db:types
 ```
 
