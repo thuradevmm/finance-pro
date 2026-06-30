@@ -2,9 +2,9 @@
 
 A modern personal finance management MVP built with Next.js, TypeScript, Tailwind CSS, Supabase Auth, Supabase PostgreSQL, and Row Level Security.
 
-FinancePro helps a single owner manage personal financial records across accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. The app is designed as a clean browser-based replacement for spreadsheet-based tracking, with Myanmar Kyat as the main working currency.
+FinancePro helps a single owner manage personal financial records across accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. The app is designed as a clean browser-based replacement for spreadsheet-based tracking, with Myanmar Kyat as the main system currency.
 
-> MVP status: core financial CRUD flows are connected to Supabase. Some future pages such as dashboard reports, documents, future planning, people payments, profile, and settings are still placeholder-level.
+> MVP status: core financial CRUD flows are connected to Supabase. Dashboard, reports, documents, future planning, scenario budgeting, people payments, profile, settings, and admin-panel functionality are still placeholder-level or not implemented.
 
 ## Tech Stack
 
@@ -35,13 +35,17 @@ Prisma is not used.
 ### Financial Data
 
 - Accounts and wallets
+- Account amount types
+- Credit card accounts and credit terms
 - Categories with page-specific category types
-- Transactions
-- Budgets
-- Savings goals
-- Debts
-- Subscriptions
-- Assets
+- Income, expense, and transfer transactions
+- Transaction-driven account balances
+- Budgets with actual spending calculation
+- Savings goals with linked savings activity
+- Debts with repayment planning and credit card debt tracking
+- Subscriptions with recurring billing and reminders
+- Assets with purchase and usage tracking
+- Transaction links to budgets, savings goals, debts, subscriptions, and assets
 
 ### Category Flow
 
@@ -64,21 +68,178 @@ Category types are separated by usage:
 - Server-only keys are used only on the server for temporary no-email auth recovery flows.
 - No mock data is used for Supabase-backed MVP pages.
 
-## Screens and Flows
+## Current System Flow
+
+### Entry and Authentication
+
+1. `/` redirects to `/dashboard`.
+2. Supabase session handling protects all non-public routes.
+3. Unauthenticated users are redirected to `/login` with the requested path preserved in `next`.
+4. Authenticated users are redirected away from `/login`, `/register`, and `/forgot-password` to `/dashboard`.
+5. `/update-password` remains available for password recovery.
+6. Login supports remember-me session persistence and an idle timeout.
+7. Registration uses Supabase email confirmation when email services are enabled.
+8. When email services are disabled, registration creates the account through the server-only key and shows a private recovery code.
+9. Forgot password uses either Supabase reset email or the private recovery-code flow, depending on `NEXT_PUBLIC_EMAIL_SERVICES_ENABLED`.
+
+### Initial Data Setup
+
+New users start without shared default categories. The intended setup order is:
+
+1. Create categories for each area that will be used.
+2. Create accounts and wallets.
+3. Record transactions against those accounts and categories.
+4. Add budgets, savings goals, debts, subscriptions, and assets as needed.
+5. Link transactions to those records so progress and summaries are updated from actual financial activity.
+
+### Category Flow
+
+Category type controls where a category is available:
+
+- `Income` and `Expense` categories are used by transactions and budget actuals.
+- `Account` categories are used by accounts only.
+- `Savings Goal` categories are used by savings goals only.
+- `Debt` categories are used by debts only.
+- `Subscription` categories are used by subscriptions only.
+- `Asset` categories are used by assets only.
+
+### Account Flow
+
+Accounts support:
+
+- Bank Account, Savings, Credit Card, Digital Wallet, and Cash Wallet types
+- Active, Needs Review, and Archived statuses
+- Account categories
+- Card details where applicable
+- Credit limit, statement day, due day, and minimum payment for credit card accounts
+- Custom amount types for non-credit-card accounts
+- List, card, and lookup views
+- Search and filters by category, account type, and status
+- Direct links from accounts to filtered transactions
+
+Live account balances are transaction-driven. Legacy or imported `initial_balance` values remain stored for audit history, but current balance displays are calculated from posted transaction activity. Scheduled, cancelled, void, and failed transactions do not affect balances.
+
+### Transaction Flow
+
+Transactions support:
+
+- Income, Expense, and Transfer types
+- Amount, date, account, account amount type, category, status, and note
+- Transfer from-account and to-account selection
+- Transfer amount type selection for both sides
+- Same-account transfers when the source and destination amount types differ
+- Status values of `cleared`, `pending`, and `scheduled`
+- Search and filters by account, category, amount, date range, from account, to account, related account, and type
+
+Transactions can be linked to:
+
+- Budget
+- Savings goal
+- Debt
+- Subscription
+- Asset
+
+Credit card expenses and credit-card-related transfers are treated as debt activity. Credit card charges increase used credit, and credit card payments reduce used credit.
+
+### Budget Flow
+
+Budgets are created against expense categories. Each budget stores:
+
+- Monthly or yearly period
+- Budget amount
+- Start and end dates
+- Active or Paused status
+- Optional description
+
+Actual spending is calculated from non-scheduled expense transactions that use the same category and fall inside the budget period.
+
+### Savings Goal Flow
+
+Savings goals support:
+
+- Goal name
+- Active non-credit-card account link
+- Savings goal category style
+- Target amount
+- Target date
+- Notes
+
+Saved amount and progress include linked savings-goal transactions, so the goal moves forward when relevant transactions are recorded.
+
+### Debt Flow
+
+Debts support:
+
+- Debt name and lender
+- Total amount
+- Interest rate
+- Start date and duration
+- Status of Active, Overdue, or Paid
+- Debt category
+- Payment account
+- Notes
+- Repayment schedule preview
+- Debt payment calendar
+
+Debt summaries include remaining balance, repayment progress, and credit card used amount when credit card debt exists. Linked debt transactions update debt activity.
+
+### Subscription Flow
+
+Subscriptions support:
+
+- Subscription name
+- Billed amount
+- Billing currency
+- Exchange rate for non-MMK billing
+- Weekly, monthly, or yearly billing cycle
+- Next billing date
+- Subscription category
+- Payment account
+- Active, Paused, or Expiring status
+- Billing reminders
+- Notes
+
+Subscription summaries show recurring cost and upcoming billing commitments.
+
+### Asset Flow
+
+Assets support:
+
+- Asset name
+- Asset category
+- Purchase date and amount
+- Current value
+- Start-using date
+- Condition
+- Active, Sold, or Archived status
+- Notes
+
+Linked asset transactions can contribute to purchase amount tracking.
+
+## Screens and Status
 
 Implemented MVP pages:
 
 - Login
 - Register
 - Forgot password
+- Update password
 - Accounts
+- Add/Edit Account
 - Categories
+- Add/Edit Category
 - Transactions
+- Add/Edit Transaction
 - Budgets
+- Add/Edit Budget
 - Savings goals
+- Add/Edit Savings Goal
 - Debts
+- Add/Edit Debt
 - Subscriptions
+- Add/Edit Subscription
 - Assets
+- Add/Edit Asset
 
 Placeholder or future pages:
 
@@ -90,6 +251,7 @@ Placeholder or future pages:
 - People payments
 - Profile
 - Settings
+- Admin panel
 
 ## Environment Variables
 
@@ -186,6 +348,7 @@ Current migrations:
 - `202606260002_allow_same_account_amount_type_transfers.sql`
 - `202606270001_transfer_ledger_pairs.sql`
 - `202606290001_credit_card_debt_existing_data_alignment.sql`
+- `202606290002_transaction_driven_account_balances.sql`
 
 `202606180001_baseline_schema.sql` is a backfilled baseline for fresh local databases. If a linked remote already has later migrations but shows this baseline as local-only, use `npx supabase db push --include-all` after reviewing `npm run db:remote:migrations`.
 
