@@ -1,10 +1,22 @@
 # FinancePro
 
-A modern personal finance management MVP built with Next.js, TypeScript, Tailwind CSS, Supabase Auth, Supabase PostgreSQL, and Row Level Security.
+FinancePro is a personal financial management web application built with Next.js, TypeScript, Tailwind CSS, Supabase Auth, Supabase PostgreSQL, and Supabase Row Level Security.
 
-FinancePro helps a single owner manage personal financial records across accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. The app is designed as a clean browser-based replacement for spreadsheet-based tracking, with Myanmar Kyat as the main system currency.
+The app replaces spreadsheet-based tracking with structured records for accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. It is designed for one owner/main user and uses Myanmar Kyat as the main system currency.
 
-> MVP status: core financial CRUD flows are connected to Supabase. Dashboard, reports, documents, future planning, scenario budgeting, people payments, profile, settings, and admin-panel functionality are still placeholder-level or not implemented.
+> MVP status: core financial CRUD flows are connected to cloud Supabase. Dashboard, reports, documents, future planning, scenario budgeting, people payments, profile, settings, and admin-panel functionality are still placeholder-level or not implemented.
+
+## Cloud Supabase Only
+
+This project is configured to use a hosted Supabase project for authentication, database access, and application data. Local development means running the Next.js app on the developer machine while it connects to the cloud Supabase project.
+
+Do not configure the app to use a local Supabase database URL such as `http://localhost:54321` or `http://127.0.0.1:54321`. `NEXT_PUBLIC_SUPABASE_URL` must point to the hosted Supabase project:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+```
+
+Supabase CLI commands in this project are used for cloud project linking, migration checks, cloud migration deployment, and type generation. Local Supabase database reset/start workflows are not part of the normal project workflow.
 
 ## Tech Stack
 
@@ -47,23 +59,10 @@ Prisma is not used.
 - Assets with purchase and usage tracking
 - Transaction links to budgets, savings goals, debts, subscriptions, and assets
 
-### Category Flow
-
-New users start with no default categories. Each user must set up their own data from scratch.
-
-Category types are separated by usage:
-
-- `Income` and `Expense` categories are used for transaction-related flows.
-- `Account` categories are used only by accounts.
-- `Savings Goal` categories are used only by savings goals.
-- `Debt` categories are used only by debts.
-- `Subscription` categories are used only by subscriptions.
-- `Asset` categories are used only by assets.
-
 ### Data and Security
 
 - User-owned records are queried through the logged-in Supabase user.
-- RLS is expected to enforce user isolation in the database.
+- RLS is expected to enforce user isolation in the cloud database.
 - Client code uses only the Supabase public URL and publishable key.
 - Server-only keys are used only on the server for temporary no-email auth recovery flows.
 - No mock data is used for Supabase-backed MVP pages.
@@ -255,10 +254,10 @@ Placeholder or future pages:
 
 ## Environment Variables
 
-Create `.env.local` from `.env.example`.
+Create `.env.local` from `.env.example` and fill it with the cloud Supabase project values:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SECRET_KEY=
 NEXT_PUBLIC_EMAIL_SERVICES_ENABLED=false
@@ -268,9 +267,8 @@ NEXT_PUBLIC_SESSION_IDLE_TIMEOUT_MINUTES=30
 ### Variable Notes
 
 - `NEXT_PUBLIC_SUPABASE_URL`
-  - Supabase project URL.
-  - Local examples use `127.0.0.1:54321` or `localhost:54321`.
-  - Remote examples use `https://<project-ref>.supabase.co`.
+  - Hosted Supabase project URL.
+  - Must use the `https://YOUR_PROJECT_REF.supabase.co` format.
   - This value is exposed to browser code.
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
   - Browser-safe Supabase publishable key.
@@ -292,31 +290,38 @@ Install dependencies:
 npm install
 ```
 
-Start the development server:
+Start the Next.js development server:
 
 ```bash
 npm run dev
 ```
 
-Open:
+Open the app:
 
 ```bash
 http://localhost:3000
 ```
 
-## Supabase Setup
+The app will still use the cloud Supabase project while running on `localhost:3000`.
+
+## Supabase Cloud Setup
 
 In Supabase Dashboard:
 
-1. Create or open your Supabase project.
-2. Copy the project URL and publishable key from Project Settings → API.
+1. Create or open the cloud Supabase project.
+2. Copy the project URL and publishable key from Project Settings -> API.
 3. Add the values to `.env.local`.
 4. Configure Auth URL settings:
-   - Local site URL: `http://localhost:3000`
-   - Local redirect URL: `http://localhost:3000/auth/callback`
-   - Add your production URL before deploying.
+   - Local development site URL: `http://localhost:3000`
+   - Local development redirect URL: `http://localhost:3000/auth/callback`
+   - Production site URL and redirect URL for the deployed app
+5. Confirm Row Level Security policies are enabled before entering real financial data.
 
-Apply migrations to the linked Supabase project:
+## Cloud Migration Workflow
+
+Use the Supabase CLI against the linked cloud project. The CLI is installed as a project dependency, so a global Supabase install is not required.
+
+Initial link and migration deployment:
 
 ```bash
 npm run db:login
@@ -324,15 +329,44 @@ npm run db:link -- --project-ref YOUR_PROJECT_REF
 npm run db:migration:check
 npm run db:remote:migrations
 npx supabase db push --include-all
+npm run db:types
 ```
 
-Do not run linked resets as a normal deployment step. Back up the remote database before applying data-changing migrations.
+For a new schema change:
 
-Generate Supabase types after linking:
+1. Create a new migration:
+
+```bash
+npm run db:new -- migration_name
+```
+
+2. Edit the generated SQL file in `supabase/migrations`.
+3. Scan migrations for risky SQL:
+
+```bash
+npm run db:migration:check
+```
+
+4. Back up the cloud database if the migration changes existing data.
+5. Compare migration state with the linked cloud project:
+
+```bash
+npm run db:remote:migrations
+```
+
+6. Apply the migration to the linked cloud project:
+
+```bash
+npx supabase db push --include-all
+```
+
+7. Regenerate TypeScript database types from the linked cloud schema:
 
 ```bash
 npm run db:types
 ```
+
+Do not run linked database resets as a normal workflow. Never run `supabase db reset --linked` without an explicit backup and a clear recovery plan.
 
 Current migrations:
 
@@ -350,121 +384,7 @@ Current migrations:
 - `202606290001_credit_card_debt_existing_data_alignment.sql`
 - `202606290002_transaction_driven_account_balances.sql`
 
-`202606180001_baseline_schema.sql` is a backfilled baseline for fresh local databases. If a linked remote already has later migrations but shows this baseline as local-only, use `npx supabase db push --include-all` after reviewing `npm run db:remote:migrations`.
-
-## Supabase Migration Flow
-
-Use the npm scripts for Supabase CLI commands. The CLI is installed as a project dev dependency, so a global Supabase install is not required.
-
-Read the database safety docs before changing migrations:
-
-- `docs/supabase-workflow.md`
-- `docs/migration-checklist.md`
-
-### Local-first database change
-
-1. Start the local Supabase stack:
-
-```bash
-npm run db:start
-```
-
-2. Create a new migration file:
-
-```bash
-npm run db:new -- your_change_name
-```
-
-3. Edit the generated SQL file in `supabase/migrations`.
-4. Scan migrations for risky SQL:
-
-```bash
-npm run db:migration:check
-```
-
-5. Rebuild the local database from migrations only if it is acceptable to lose local unseeded rows:
-
-```bash
-npm run db:local:reset:safe
-```
-
-6. Regenerate local TypeScript database types:
-
-```bash
-npm run db:types:local
-```
-
-7. Run app checks and test the related screens.
-8. Push the verified migrations to the linked Supabase project only after a remote backup:
-
-```bash
-npm run db:remote:migrations
-npx supabase db push --include-all
-npm run db:types
-```
-
-### Remote-to-local schema sync
-
-Use this only when a schema change was made directly in Supabase Dashboard and needs to be captured locally.
-
-```bash
-npm run db:pull -- remote_schema_sync
-npm run db:migration:check
-npm run db:local:reset:safe
-npm run db:types:local
-```
-
-Review the generated migration before committing it. Do not edit migrations that have already been applied to a shared or production database; create a new migration instead.
-
-### Existing cloud database fixes
-
-When a local code change depends on a migration, run this against the linked project before testing the deployed or cloud-backed app:
-
-```bash
-npm run db:migration:check
-npm run db:remote:migrations
-npx supabase db push --include-all
-npm run db:types
-```
-
-### Two-laptop data sync
-
-Git syncs source code and migration files. It does not sync rows in laptop1's local Supabase database.
-
-Laptop1:
-
-```bash
-git pull
-npm run db:migration:check
-# Optional, only if preserving local rows for laptop2:
-npx supabase db dump --local --data-only --file laptop1-local-data.sql
-git push
-```
-
-Laptop2:
-
-```bash
-git pull
-npm run db:migration:check
-npm run db:start
-npm run db:local:migrations
-# Only rebuild local DB when local data loss is acceptable:
-npm run db:local:reset:safe
-```
-
-If laptop2 needs laptop1's local rows, copy the dump securely and restore it into laptop2 local Supabase only after checking for duplicate IDs and auth-user ownership issues.
-
-### Safe command summary
-
-- `npm run db:migration:check` scans migrations for destructive SQL.
-- `npm run db:local:status` checks the local Supabase stack.
-- `npm run db:local:migrations` lists local migration state.
-- `npm run db:local:reset:safe` prompts before running local reset.
-- `npm run db:remote:migrations` lists linked remote migration state.
-
-No package script runs `supabase db reset --linked`.
-
-## Available Scripts
+## Common Scripts
 
 ```bash
 npm run dev
@@ -473,20 +393,10 @@ npm run start
 npm run lint
 npm run db:login
 npm run db:link
-npm run db:status
-npm run db:local:status
 npm run db:migration:check
-npm run db:local:migrations
-npm run db:local:reset:safe
 npm run db:remote:migrations
-npm run db:start
-npm run db:stop
 npm run db:new -- migration_name
-npm run db:diff
-npm run db:pull -- migration_name
-npm run db:migration:list
 npm run db:types
-npm run db:types:local
 ```
 
 ## Verification
@@ -499,13 +409,20 @@ npm run lint
 npm run build
 ```
 
+For documentation-only changes, run:
+
+```bash
+git diff --check
+```
+
 ## Production Notes
 
-- Set all required environment variables in Vercel or your hosting provider.
+- Set all required environment variables in Vercel or the chosen hosting provider.
+- Use only the cloud Supabase project URL in every environment.
 - Do not expose Supabase secret or service-role keys to the browser.
 - Confirm RLS policies are enabled before using real financial data.
 - Confirm temporary no-email auth recovery is configured if `NEXT_PUBLIC_EMAIL_SERVICES_ENABLED=false`.
-- Run Supabase migrations before testing existing cloud data.
+- Run Supabase migrations against the linked cloud project before testing cloud data.
 
 ## Project Direction
 
