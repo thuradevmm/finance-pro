@@ -16,7 +16,7 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import type { TransactionFormData, TransactionRecord, TransactionRelatedOption } from "@/lib/transactions/supabase";
+import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import type { TransactionType } from "@/types/finance";
 
 type TransactionTypeOption = {
@@ -39,6 +39,16 @@ const automaticCreditCardDebtOption: TransactionRelatedOption = {
   label: "Automatic Credit Card Debt",
   type: "debt",
   value: "",
+};
+
+export type TransactionFormInitialValues = {
+  accountId?: string;
+  amount?: string;
+  date?: string;
+  note?: string;
+  relatedEntityId?: string;
+  relatedEntityType?: TransactionRelatedEntityType;
+  type?: TransactionType;
 };
 
 function FieldLabel({ children }: { children: string }) {
@@ -121,20 +131,22 @@ function editedTransactionBalanceAdjustment(transaction: TransactionRecord | und
 export function AddTransactionForm({
   accounts,
   categories,
+  initialValues,
   relatedOptions,
   transaction,
 }: {
   accounts: AccountRecord[];
   categories: CategoryRecord[];
+  initialValues?: TransactionFormInitialValues;
   relatedOptions: TransactionRelatedOption[];
   transaction?: TransactionRecord;
 }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
-  const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? "Expense");
-  const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : "");
-  const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? new Date().toISOString().slice(0, 10));
+  const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
+  const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : initialValues?.amount ?? "");
+  const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? initialValues?.date ?? new Date().toISOString().slice(0, 10));
   const initialTransferFromAccountId = transaction?.type === "Transfer" ? transaction.transferFromAccountId || transaction.accountId : transaction?.accountId;
   const initialTransferToAccountId = transaction?.type === "Transfer" ? transaction.transferToAccountId || transaction.transferAccountId : transaction?.transferAccountId;
   const initialTransferFromAmountType = transaction?.type === "Transfer" && transaction.transferDirection === "Credit"
@@ -143,17 +155,21 @@ export function AddTransactionForm({
   const initialTransferToAmountType = transaction?.type === "Transfer" && transaction.transferDirection === "Credit"
     ? transaction.accountAmountType
     : transaction?.transferAccountAmountType;
-  const [accountId, setAccountId] = useState(initialTransferFromAccountId ?? accounts[0]?.id ?? "");
-  const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accountAmountTypeOptionsFor(accounts[0])[0] ?? "Operation");
+  const initialAccountId = initialTransferFromAccountId ?? initialValues?.accountId ?? accounts[0]?.id ?? "";
+  const initialAccount = accounts.find((account) => account.id === initialAccountId) ?? accounts[0];
+  const [accountId, setAccountId] = useState(initialAccountId);
+  const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accountAmountTypeOptionsFor(initialAccount)[0] ?? "Operation");
   const [transferToAccountId, setTransferToAccountId] = useState(initialTransferToAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
   const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? accountAmountTypeOptionsFor(accounts.find((account) => account.id !== accountId) ?? accounts[0])[0] ?? "Operation");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
-  const [note, setNote] = useState(transaction?.note ?? "");
+  const [note, setNote] = useState(transaction?.note ?? initialValues?.note ?? "");
   const [relatedOptionValue, setRelatedOptionValue] = useState(
     transaction?.relatedEntityType && transaction.relatedEntityType !== "none"
       ? `${transaction.relatedEntityType}:${transaction.relatedEntityId}`
+      : initialValues?.relatedEntityType && initialValues.relatedEntityType !== "none"
+        ? `${initialValues.relatedEntityType}:${initialValues.relatedEntityId ?? ""}`
       : "none:",
   );
   const [showErrors, setShowErrors] = useState(false);
@@ -182,12 +198,13 @@ export function AddTransactionForm({
   const isCreditCardCharge = isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
   const isCreditCardPayment = isTransfer && isCreditCardAccount(selectedTransferAccount);
   const autoLinksCreditCardDebt = isCreditCardCharge || isCreditCardPayment;
+  const usesExplicitPageLink = Boolean(selectedRelatedOption && selectedRelatedOption.type !== "none" && selectedRelatedOption.type !== "debt");
   const debtRelatedOptions = useMemo(() => relatedOptions.filter((option) => option.type === "debt"), [relatedOptions]);
   const impactOptions = useMemo(() => {
-    if (!autoLinksCreditCardDebt) return relatedOptions;
+    if (!autoLinksCreditCardDebt || usesExplicitPageLink) return relatedOptions;
     return [automaticCreditCardDebtOption, ...debtRelatedOptions];
-  }, [autoLinksCreditCardDebt, debtRelatedOptions, relatedOptions]);
-  const effectiveRelatedOption = autoLinksCreditCardDebt && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
+  }, [autoLinksCreditCardDebt, debtRelatedOptions, relatedOptions, usesExplicitPageLink]);
+  const effectiveRelatedOption = autoLinksCreditCardDebt && !usesExplicitPageLink && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
     ? impactOptions[0] ?? selectedRelatedOption
     : selectedRelatedOption;
   const amountNumber = Number(amount);

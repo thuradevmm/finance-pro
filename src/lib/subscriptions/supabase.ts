@@ -4,7 +4,7 @@ import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmk } from "@/lib/currency
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import type { BillingCycle, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
+import type { BillingCycle, SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
 
 export type SubscriptionFormData = {
   accountId: string;
@@ -45,6 +45,36 @@ type SubscriptionRow = {
   status?: string | null;
 };
 
+type SubscriptionPaymentRow = {
+  amount: number | string | null;
+  created_at: string | null;
+  id: string;
+  metadata: unknown;
+  payment_date: string | null;
+  subscription_id: string;
+  transaction_id: string | null;
+};
+
+type SubscriptionTransactionPaymentRow = {
+  amount: number | string | null;
+  created_at: string | null;
+  id: string;
+  metadata: unknown;
+  related_entity_id: string | null;
+  status: string | null;
+  transaction_date: string | null;
+  type: string | null;
+};
+
+type SubscriptionPaymentFallback = {
+  amount: number;
+  billingDueDate: string;
+  id: string;
+  paymentDate: string;
+  sortValue: string;
+  transactionId: string;
+};
+
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
 }
@@ -72,6 +102,11 @@ function formatDate(value: string) {
   return formatDisplayDate(value);
 }
 
+function formatDateInput(value: Date) {
+  if (Number.isNaN(value.getTime())) return "";
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
 function normalizeCurrency(value: unknown) {
   const currency = typeof value === "string" ? value.trim().toUpperCase() : "";
   return currency || SYSTEM_CURRENCY;
@@ -83,12 +118,38 @@ function dateOnly(value: string) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function todayOnly() {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+function addMonths(date: Date, monthCount: number) {
+  const next = new Date(date);
+  const day = next.getDate();
+  next.setMonth(next.getMonth() + monthCount);
+  if (next.getDate() !== day) next.setDate(0);
+  return next;
+}
+
+function addBillingCycle(date: Date, cycle: BillingCycle) {
+  const next = new Date(date);
+  if (cycle === "Weekly") {
+    next.setDate(next.getDate() + 7);
+    return next;
+  }
+  if (cycle === "Yearly") {
+    const month = next.getMonth();
+    next.setFullYear(next.getFullYear() + 1);
+    if (next.getMonth() !== month) next.setDate(0);
+    return next;
+  }
+  return addMonths(next, 1);
+}
+
 function daysUntil(value: string) {
   const date = dateOnly(value);
   if (!date) return null;
-  const today = new Date();
-  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.ceil((date.getTime() - todayOnly.getTime()) / 86_400_000);
+  return Math.ceil((date.getTime() - todayOnly().getTime()) / 86_400_000);
 }
 
 function reminderStatus(nextBillingDate: string, reminderEnabled: boolean, reminderDaysBefore: number) {
@@ -117,7 +178,106 @@ function exchangeRateLabel(currency: string, exchangeRate: number) {
   return `1 ${currency} = ${formatMmk(exchangeRate)}`;
 }
 
-function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>): SubscriptionRecordWithValues {
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
+function paidCycleLabel(cycle: BillingCycle) {
+  if (cycle === "Weekly") return "Paid this week";
+  if (cycle === "Yearly") return "Paid this year";
+  return "Paid this month";
+}
+
+function paymentStatusDetail(status: SubscriptionPaymentStatus, days: number | null, lastPaidDate: string, nextBillingDate: string) {
+  if (status === "Paid") return lastPaidDate ? `Last paid ${lastPaidDate}. Next billing ${nextBillingDate}.` : `Next billing ${nextBillingDate}.`;
+  if (status === "Paused") return "Billing is paused for this subscription.";
+  if (status === "No schedule") return "Add a next billing date to track this subscription.";
+  if (status === "Overdue") return days === null ? "Billing date is overdue." : `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue.`;
+  if (status === "Due soon") return days === 0 ? "Due today." : `Due in ${days} day${days === 1 ? "" : "s"}.`;
+  return `Upcoming on ${nextBillingDate}.`;
+}
+
+function paymentStatus({
+  billingCycle,
+  lastPaidBillingDate,
+  lastPaidDate,
+  nextBillingDate,
+  status,
+}: {
+  billingCycle: BillingCycle;
+  lastPaidBillingDate: string;
+  lastPaidDate: string;
+  nextBillingDate: string;
+  status: SubscriptionStatus;
+}) {
+  const nextDate = dateOnly(nextBillingDate);
+  const paidBillingDate = dateOnly(lastPaidBillingDate);
+  const days = daysUntil(nextBillingDate);
+  const nextBillingDisplay = nextBillingDate ? formatDate(nextBillingDate) : "-";
+  const lastPaidDisplay = lastPaidDate ? formatDate(lastPaidDate) : "";
+  const isPaidForCurrentPeriod = Boolean(paidBillingDate && nextDate && paidBillingDate < nextDate && nextDate > todayOnly());
+
+  let value: SubscriptionPaymentStatus = "Upcoming";
+  if (status === "Paused") value = "Paused";
+  else if (!nextBillingDate || days === null) value = "No schedule";
+  else if (isPaidForCurrentPeriod) value = "Paid";
+  else if (days < 0) value = "Overdue";
+  else if (days <= 7) value = "Due soon";
+
+  return {
+    isPaidForCurrentPeriod,
+    paidCycleLabel: paidCycleLabel(billingCycle),
+    paymentStatus: value,
+    paymentStatusDetail: paymentStatusDetail(value, days, lastPaidDisplay, nextBillingDisplay),
+  };
+}
+
+function isPostedExpensePayment(transaction: SubscriptionTransactionPaymentRow, reversedTransactionIds: Set<string>) {
+  const status = String(transaction.status ?? "cleared").trim().toLowerCase();
+  return (
+    String(transaction.type ?? "").toLowerCase() === "expense" &&
+    !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status) &&
+    !reversedTransactionIds.has(transaction.id)
+  );
+}
+
+function paymentFallbackFromPaymentRow(payment: SubscriptionPaymentRow): SubscriptionPaymentFallback {
+  const metadata = metadataRecord(payment.metadata);
+  const paymentDate = payment.payment_date ?? payment.created_at?.slice(0, 10) ?? "";
+  return {
+    amount: Math.abs(numericValue(payment.amount)),
+    billingDueDate: metadataString(metadata, "billing_due_date"),
+    id: payment.id,
+    paymentDate,
+    sortValue: `${paymentDate}T${payment.created_at ?? ""}`,
+    transactionId: payment.transaction_id ?? "",
+  };
+}
+
+function paymentFallbackFromTransaction(transaction: SubscriptionTransactionPaymentRow): SubscriptionPaymentFallback {
+  const paymentDate = transaction.transaction_date ?? transaction.created_at?.slice(0, 10) ?? "";
+  return {
+    amount: Math.abs(numericValue(transaction.amount)),
+    billingDueDate: metadataString(metadataRecord(transaction.metadata), "subscription_billing_due_date"),
+    id: transaction.id,
+    paymentDate,
+    sortValue: `${paymentDate}T${transaction.created_at ?? ""}`,
+    transactionId: transaction.id,
+  };
+}
+
+function latestPaymentFallback(payments: SubscriptionPaymentFallback[]) {
+  return [...payments].sort((first, second) => second.sortValue.localeCompare(first.sortValue))[0];
+}
+
+function effectiveNextBillingDate(nextBillingDate: string, cycle: BillingCycle, fallbackBillingDueDate: string, hasMetadataPayment: boolean) {
+  if (hasMetadataPayment || !nextBillingDate || !fallbackBillingDueDate || fallbackBillingDueDate < nextBillingDate) return nextBillingDate;
+  const billingDueDate = dateOnly(fallbackBillingDueDate);
+  return billingDueDate ? formatDateInput(addBillingCycle(billingDueDate, cycle)) : nextBillingDate;
+}
+
+function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>, payments: SubscriptionPaymentFallback[] = []): SubscriptionRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
@@ -126,9 +286,28 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
   const billingCurrency = normalizeCurrency(metadata.billing_currency);
   const billedAmountValue = numericValue(metadata.billed_amount, amountValue);
   const exchangeRate = billingCurrency === SYSTEM_CURRENCY ? 1 : numericValue(metadata.exchange_rate, amountValue > 0 && billedAmountValue > 0 ? amountValue / billedAmountValue : 0);
-  const nextBillingDateValue = row.next_billing_date ?? (typeof metadata.next_billing_date === "string" ? metadata.next_billing_date : "");
   const reminderEnabled = normalizeReminderEnabled(row.reminder_enabled, metadata.reminder_enabled);
   const reminderDaysBefore = normalizeReminderDays(row.reminder_days_before ?? metadata.reminder_days_before);
+  const billingCycle = normalizeCycle(row.billing_cycle ?? metadata.billing_cycle);
+  const status = normalizeStatus(row.status ?? metadata.status);
+  const fallbackPayment = latestPaymentFallback(payments);
+  const metadataLastPaymentDate = metadataString(metadata, "last_payment_date");
+  const lastPaidDateValue = metadataLastPaymentDate || fallbackPayment?.paymentDate || "";
+  const lastPaidBillingDateValue = metadataString(metadata, "last_paid_billing_date") || fallbackPayment?.billingDueDate || "";
+  const nextBillingDateValue = effectiveNextBillingDate(
+    row.next_billing_date ?? (typeof metadata.next_billing_date === "string" ? metadata.next_billing_date : ""),
+    billingCycle,
+    fallbackPayment?.billingDueDate ?? "",
+    Boolean(metadataLastPaymentDate),
+  );
+  const lastPaidAmountValue = metadataLastPaymentDate ? numericValue(metadata.last_payment_amount) : fallbackPayment?.amount ?? 0;
+  const payment = paymentStatus({
+    billingCycle,
+    lastPaidBillingDate: lastPaidBillingDateValue,
+    lastPaidDate: lastPaidDateValue,
+    nextBillingDate: nextBillingDateValue,
+    status,
+  });
 
   return {
     accountId,
@@ -144,17 +323,27 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     createdAtValue: row.created_at ?? "",
     icon: category?.icon ?? "subscriptions",
     id: row.id,
+    isPaidForCurrentPeriod: payment.isPaidForCurrentPeriod,
+    lastPaidAmount: lastPaidDateValue ? formatMmk(lastPaidAmountValue) : "-",
+    lastPaidBillingDate: lastPaidBillingDateValue ? formatDate(lastPaidBillingDateValue) : "-",
+    lastPaidBillingDateValue,
+    lastPaidDate: lastPaidDateValue ? formatDate(lastPaidDateValue) : "-",
+    lastPaidDateValue,
+    lastPaymentTransactionId: metadataString(metadata, "last_payment_transaction_id") || fallbackPayment?.transactionId || "",
     name: row.name,
     nextBillingDate: formatDate(nextBillingDateValue),
     nextBillingDateTimeValue: combineDateWithTimestampTime(nextBillingDateValue, row.created_at),
     nextBillingDateValue,
     paymentAccount: accounts.get(accountId)?.name ?? "No account selected",
+    paidCycleLabel: payment.paidCycleLabel,
+    paymentStatus: payment.paymentStatus,
+    paymentStatusDetail: payment.paymentStatusDetail,
     exchangeRate,
     exchangeRateLabel: exchangeRateLabel(billingCurrency, exchangeRate),
     reminderDaysBefore,
     reminderEnabled,
     reminderStatus: reminderStatus(nextBillingDateValue, reminderEnabled, reminderDaysBefore),
-    status: normalizeStatus(row.status ?? metadata.status),
+    status,
     tone: category?.tone ?? "text-[#0058be]",
   };
 }
@@ -165,8 +354,57 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data as SubscriptionRow[])
-    .map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c]))))
+  const rows = data as SubscriptionRow[];
+  const subscriptionIds = rows.map((row) => row.id);
+  const paymentsBySubscription = new Map<string, SubscriptionPaymentFallback[]>();
+
+  if (subscriptionIds.length > 0) {
+    const [paymentsResult, transactionsResult] = await Promise.all([
+      supabase
+        .from("subscription_payments")
+        .select("id,subscription_id,transaction_id,amount,payment_date,metadata,created_at")
+        .eq("user_id", userId)
+        .in("subscription_id", subscriptionIds),
+      supabase
+        .from("transactions")
+        .select("id,related_entity_id,type,amount,status,transaction_date,metadata,created_at")
+        .eq("user_id", userId)
+        .eq("related_entity_type", "subscription")
+        .in("related_entity_id", subscriptionIds)
+        .is("deleted_at", null),
+    ]);
+
+    if (paymentsResult.error) throw new Error(paymentsResult.error.message);
+    if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+
+    const paymentRows = paymentsResult.data as SubscriptionPaymentRow[];
+    const paymentTransactionIds = new Set(paymentRows.map((payment) => payment.transaction_id).filter((id): id is string => Boolean(id)));
+    for (const payment of paymentRows) {
+      const items = paymentsBySubscription.get(payment.subscription_id) ?? [];
+      items.push(paymentFallbackFromPaymentRow(payment));
+      paymentsBySubscription.set(payment.subscription_id, items);
+    }
+
+    const transactionRows = transactionsResult.data as SubscriptionTransactionPaymentRow[];
+    const reversedTransactionIds = new Set(
+      transactionRows
+        .map((transaction) => {
+          const reversedId = metadataString(metadataRecord(transaction.metadata), "reversed_transaction_id");
+          const status = String(transaction.status ?? "cleared").trim().toLowerCase();
+          return reversedId && !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status) ? reversedId : "";
+        })
+        .filter(Boolean),
+    );
+    for (const transaction of transactionRows.filter((item) => isPostedExpensePayment(item, reversedTransactionIds) && !paymentTransactionIds.has(item.id))) {
+      if (!transaction.related_entity_id) continue;
+      const items = paymentsBySubscription.get(transaction.related_entity_id) ?? [];
+      items.push(paymentFallbackFromTransaction(transaction));
+      paymentsBySubscription.set(transaction.related_entity_id, items);
+    }
+  }
+
+  return rows
+    .map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c])), paymentsBySubscription.get(row.id) ?? []))
     .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""));
 }
 
@@ -181,7 +419,7 @@ export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithVa
     { label: "Monthly Cost", value: formatMmk(monthly), icon: "subscriptions", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
     { label: "Yearly Estimate", value: formatMmk(monthly * 12), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Subscriptions", value: String(subscriptions.filter((s) => s.status === "Active").length), icon: "subscriptions", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Reminders", value: String(subscriptions.filter((s) => s.reminderEnabled).length), icon: "bell", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Paid Current Cycle", value: String(subscriptions.filter((s) => s.isPaidForCurrentPeriod).length), icon: "check", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
   ];
 }
 
@@ -204,6 +442,8 @@ export function getUpcomingSubscriptionBillings(subscriptions: SubscriptionRecor
         id: subscription.id,
         isNext: index === 0,
         name: subscription.name,
+        paymentStatus: subscription.paymentStatus,
+        paymentStatusDetail: subscription.paymentStatusDetail,
         reminderDue,
         reminderLabel: subscription.reminderStatus,
       };

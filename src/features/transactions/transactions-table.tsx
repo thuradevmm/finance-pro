@@ -233,36 +233,6 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     showSuccess("Transaction deleted successfully.");
   }
 
-  function csvCell(value: string) {
-    return `"${value.replace(/"/g, "\"\"")}"`;
-  }
-
-  function exportSelectedTransactions() {
-    if (selectedVisibleTransactions.length === 0) return;
-
-    const headers = ["Date", "Type", "Category", "Account", "Amount Type", "Amount", "Note", "Reflects"];
-    const rows = selectedVisibleTransactions.map((transaction) => [
-      transaction.date,
-      transaction.type,
-      transaction.category,
-      transaction.account,
-      transaction.accountAmountType,
-      transaction.amount,
-      transaction.note,
-      getImpactLabel(transaction),
-    ]);
-    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
-
   async function deleteSelectedTransactions() {
     if (selectedVisibleTransactions.length === 0) return;
 
@@ -330,13 +300,13 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         }`}
       >
         <p className="text-sm font-medium">
-          {hasSelectedTransactions ? `${selectedVisibleCount} selected for bulk actions` : "Select transactions to export or delete multiple records."}
+          {hasSelectedTransactions ? `${selectedVisibleCount} selected for bulk actions` : "Select transactions to delete multiple records."}
         </p>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#f8f9ff] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!hasSelectedTransactions}
-            onClick={exportSelectedTransactions}
+            className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-[#f8f9ff] px-3 text-sm font-semibold text-[#76777d] opacity-70"
+            disabled
+            title="Export is currently unavailable."
             type="button"
           >
             <Icon className="size-4" name="download" />

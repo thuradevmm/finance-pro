@@ -93,6 +93,8 @@ export type SubscriptionStatus = "Active" | "Paused" | "Expiring";
 
 export type BillingCycle = "Weekly" | "Monthly" | "Yearly";
 
+export type SubscriptionPaymentStatus = "Due soon" | "No schedule" | "Overdue" | "Paid" | "Paused" | "Upcoming";
+
 export type SubscriptionRecord = {
   id: string;
   name: string;
@@ -106,11 +108,21 @@ export type SubscriptionRecord = {
   paymentAccount: string;
   nextBillingDate: string;
   nextBillingDateTimeValue?: string;
+  lastPaidAmount: string;
+  lastPaidBillingDate: string;
+  lastPaidBillingDateValue: string;
+  lastPaidDate: string;
+  lastPaidDateValue: string;
+  lastPaymentTransactionId: string;
+  paidCycleLabel: string;
+  paymentStatus: SubscriptionPaymentStatus;
+  paymentStatusDetail: string;
   status: SubscriptionStatus;
   category: string;
   reminderDaysBefore: number;
   reminderEnabled: boolean;
   reminderStatus: string;
+  isPaidForCurrentPeriod: boolean;
   icon: IconName;
   tone: string;
   bg: string;
@@ -126,6 +138,8 @@ export type UpcomingSubscriptionBilling = {
   exchangeRateLabel: string;
   icon: IconName;
   isNext?: boolean;
+  paymentStatus: SubscriptionPaymentStatus;
+  paymentStatusDetail: string;
   reminderLabel: string;
   reminderDue: boolean;
 };

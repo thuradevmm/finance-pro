@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
-import { AddTransactionForm } from "@/features/transactions/add-transaction-form";
+import { AddTransactionForm, type TransactionFormInitialValues } from "@/features/transactions/add-transaction-form";
 import { getAccounts } from "@/lib/accounts/supabase";
 import { getAssets } from "@/lib/assets/supabase";
 import { getBudgets } from "@/lib/budgets/supabase";
@@ -29,7 +29,17 @@ function relatedOptions(
   ];
 }
 
-export default async function AddTransactionPage() {
+function searchParamValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function AddTransactionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ subscription?: string | string[] }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const requestedSubscriptionId = searchParamValue(resolvedSearchParams.subscription);
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   const accounts = user ? await getAccounts(supabase, user.id) : [];
@@ -43,6 +53,18 @@ export default async function AddTransactionPage() {
       getAssets(supabase, user.id, categories),
     ])
     : [[], [], [], [], []];
+  const requestedSubscription = requestedSubscriptionId ? subscriptions.find((subscription) => subscription.id === requestedSubscriptionId) : undefined;
+  const initialValues: TransactionFormInitialValues | undefined = requestedSubscription
+    ? {
+      accountId: requestedSubscription.accountId,
+      amount: String(requestedSubscription.amountValue),
+      date: new Date().toISOString().slice(0, 10),
+      note: `Subscription payment: ${requestedSubscription.name}`,
+      relatedEntityId: requestedSubscription.id,
+      relatedEntityType: "subscription",
+      type: "Expense",
+    }
+    : undefined;
 
   return (
     <AppShell
@@ -53,8 +75,8 @@ export default async function AddTransactionPage() {
       topSearchLabel="Search transactions"
       topSearchPlaceholder="Search transactions..."
     >
-      <PageHeader description="Record a new financial activity." title="Add Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} relatedOptions={relatedOptions(budgets, savingsGoals, debts, subscriptions, assets)} />
+      <PageHeader description={requestedSubscription ? `Record payment for ${requestedSubscription.name}.` : "Record a new financial activity."} title="Add Transaction" />
+      <AddTransactionForm accounts={accounts} categories={categories} initialValues={initialValues} relatedOptions={relatedOptions(budgets, savingsGoals, debts, subscriptions, assets)} />
     </AppShell>
   );
 }

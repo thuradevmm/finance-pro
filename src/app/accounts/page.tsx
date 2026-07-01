@@ -541,7 +541,9 @@ export default function AccountsPage() {
         actions={
           <>
             <button
-              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] shadow-sm transition hover:bg-[#eff4ff]"
+              className="inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-semibold text-[#76777d] opacity-70 shadow-sm"
+              disabled
+              title="Export is currently unavailable."
               type="button"
             >
               <Icon className="size-4" name="download" />

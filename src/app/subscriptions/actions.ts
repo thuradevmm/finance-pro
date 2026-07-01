@@ -8,6 +8,17 @@ import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { error?: string };
 
+const paymentMetadataKeys = [
+  "billing_anchor_date",
+  "last_paid_billing_date",
+  "last_payment_amount",
+  "last_payment_date",
+  "last_payment_transaction_id",
+  "last_subscription_reconciled_at",
+  "paid_cycle_count",
+  "subscription_payment_cutoff_date",
+];
+
 async function authenticatedClient() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
@@ -23,6 +34,7 @@ function payload(input: SubscriptionFormData) {
     metadata: {
       account_id: input.accountId || null,
       amount: input.amount,
+      billing_anchor_date: input.nextBillingDate || null,
       billed_amount: input.billedAmount,
       billing_cycle: input.billingCycle.toLowerCase(),
       billing_currency: input.billingCurrency,
@@ -60,6 +72,41 @@ function withoutColumn(currentPayload: SubscriptionPayload, column: string): Sub
     [column]: value,
   };
   return nextPayload;
+}
+
+function metadataRecord(metadata: unknown) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+}
+
+async function paymentAwarePayload(
+  supabase: Awaited<ReturnType<typeof authenticatedClient>>["supabase"],
+  subscriptionId: string,
+  userId: string,
+  input: SubscriptionFormData,
+) {
+  const nextPayload = payload(input);
+  const { data } = await supabase
+    .from("subscriptions")
+    .select("metadata,next_billing_date")
+    .eq("id", subscriptionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) return nextPayload;
+
+  const existingMetadata = metadataRecord(data.metadata);
+  const existingNextBillingDate = typeof data.next_billing_date === "string" ? data.next_billing_date : "";
+  if (existingNextBillingDate && existingNextBillingDate !== input.nextBillingDate) return nextPayload;
+
+  return {
+    ...nextPayload,
+    metadata: {
+      ...nextPayload.metadata,
+      ...Object.fromEntries(paymentMetadataKeys.filter((key) => key in existingMetadata).map((key) => [key, existingMetadata[key]])),
+    },
+  };
 }
 
 async function insertSubscription(
@@ -103,7 +150,7 @@ export async function createSubscription(input: SubscriptionFormData): Promise<A
 export async function updateSubscription(subscriptionId: string, input: SubscriptionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, payload(input));
+  const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, await paymentAwarePayload(supabase, subscriptionId, user.id, input));
   if (result.error) return result;
   revalidatePath("/subscriptions");
   revalidatePath(`/subscriptions/${subscriptionId}/edit`);

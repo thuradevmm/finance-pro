@@ -47,6 +47,36 @@ type DebtRow = {
   total_amount?: number | string | null;
 };
 
+type SubscriptionRow = {
+  amount: number | string | null;
+  billing_cycle: string | null;
+  id: string;
+  metadata: unknown;
+  next_billing_date: string | null;
+  status: string | null;
+};
+
+type SubscriptionPaymentRow = {
+  amount: number | string | null;
+  created_at: string | null;
+  id: string;
+  metadata: unknown;
+  note: string | null;
+  payment_date: string | null;
+  subscription_id: string;
+  transaction_id: string | null;
+};
+
+type SubscriptionPaymentEvidence = {
+  amount: number;
+  billingDueDate: string;
+  id: string;
+  note: string | null;
+  paymentDate: string;
+  source: "linked_transaction" | "payment_record";
+  transactionId: string | null;
+};
+
 type CreditCardDebtImpact = "charge" | "repayment" | "";
 
 type CategoryRow = {
@@ -165,6 +195,20 @@ function addMonths(date: Date, monthCount: number) {
   const day = next.getDate();
   next.setMonth(next.getMonth() + monthCount);
   if (next.getDate() !== day) next.setDate(0);
+  return next;
+}
+
+function addDays(date: Date, dayCount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + dayCount);
+  return next;
+}
+
+function addYears(date: Date, yearCount: number) {
+  const next = new Date(date);
+  const month = next.getMonth();
+  next.setFullYear(next.getFullYear() + yearCount);
+  if (next.getMonth() !== month) next.setDate(0);
   return next;
 }
 
@@ -348,6 +392,11 @@ function isManualCreditCardDebt(debt: DebtRow) {
   if (metadata.manual_credit_card_terms === true || metadata.auto_credit_card_terms === false) return true;
   if (metadata.auto_credit_card_account_id || metadata.auto_credit_card_terms === true) return false;
   return true;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
 }
 
 function debtStatusKey(debt: DebtRow) {
@@ -711,6 +760,8 @@ async function findCreditCardDebtId(
 }
 
 async function resolveCreditCardDebtLink(input: TransactionFormData, userId: string) {
+  if (input.relatedEntityType !== "debt" && input.relatedEntityType !== "none") return input;
+
   const accountResult = await getCreditCardAccountForTransaction(input, userId);
   if ("error" in accountResult) return { error: accountResult.error };
   if (!accountResult.account) return input;
@@ -783,6 +834,261 @@ function linkedDebtIdFromInput(input: TransactionFormData) {
   return input.relatedEntityType === "debt" ? input.relatedEntityId : "";
 }
 
+function linkedSubscriptionIdFromInput(input: TransactionFormData) {
+  return input.relatedEntityType === "subscription" ? input.relatedEntityId : "";
+}
+
+async function getSubscriptionIdsForTransactionIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  transactionIds: string[],
+) {
+  if (transactionIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("related_entity_id,related_entity_type")
+    .eq("user_id", userId)
+    .in("id", transactionIds);
+
+  if (error) throw new Error(error.message);
+  return (data as Pick<TransactionRow, "related_entity_id" | "related_entity_type">[])
+    .filter((transaction) => transaction.related_entity_type === "subscription" && transaction.related_entity_id)
+    .map((transaction) => transaction.related_entity_id as string);
+}
+
+function normalizeBillingCycle(value: unknown) {
+  const cycle = String(value ?? "").trim().toLowerCase();
+  if (cycle === "weekly") return "weekly";
+  if (cycle === "yearly" || cycle === "annual") return "yearly";
+  return "monthly";
+}
+
+function addBillingCycle(date: Date, cycle: string) {
+  if (cycle === "weekly") return addDays(date, 7);
+  if (cycle === "yearly") return addYears(date, 1);
+  return addMonths(date, 1);
+}
+
+function isReversalTransaction(transaction: Pick<TransactionRow, "metadata" | "status">) {
+  const metadata = metadataRecord(transaction.metadata);
+  return postedStatusAffectsBalance(transaction.status) && typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id;
+}
+
+function isPostedSubscriptionExpense(transaction: TransactionRow, reversedTransactionIds: Set<string>) {
+  return (
+    String(transaction.type ?? "").toLowerCase() === "expense" &&
+    postedStatusAffectsBalance(transaction.status) &&
+    !reversedTransactionIds.has(transaction.id)
+  );
+}
+
+function compareSubscriptionPayments(first: SubscriptionPaymentEvidence, second: SubscriptionPaymentEvidence) {
+  if (first.paymentDate !== second.paymentDate) return first.paymentDate.localeCompare(second.paymentDate);
+  return first.id.localeCompare(second.id);
+}
+
+function subscriptionBillingAnchor(subscription: SubscriptionRow, metadata: Record<string, unknown>) {
+  return metadataString(metadata, "billing_anchor_date")
+    || subscription.next_billing_date
+    || metadataString(metadata, "next_billing_date")
+    || metadataString(metadata, "start_date")
+    || formatDateInput(new Date());
+}
+
+function previousBillingCycleDate(date: Date, cycle: string) {
+  if (cycle === "weekly") return addDays(date, -7);
+  if (cycle === "yearly") return addYears(date, -1);
+  return addMonths(date, -1);
+}
+
+function paymentEvidenceFromTransaction(transaction: TransactionRow): SubscriptionPaymentEvidence {
+  const metadata = metadataRecord(transaction.metadata);
+  return {
+    amount: Math.abs(numericValue(transaction.amount)),
+    billingDueDate: metadataString(metadata, "subscription_billing_due_date"),
+    id: transaction.id,
+    note: transaction.note ?? transaction.description ?? transaction.title ?? null,
+    paymentDate: transaction.transaction_date ?? formatDateInput(new Date()),
+    source: "linked_transaction",
+    transactionId: transaction.id,
+  };
+}
+
+function paymentEvidenceFromPaymentRow(payment: SubscriptionPaymentRow): SubscriptionPaymentEvidence {
+  const metadata = metadataRecord(payment.metadata);
+  return {
+    amount: Math.abs(numericValue(payment.amount)),
+    billingDueDate: metadataString(metadata, "billing_due_date"),
+    id: payment.id,
+    note: payment.note,
+    paymentDate: payment.payment_date ?? formatDateInput(new Date()),
+    source: "payment_record",
+    transactionId: payment.transaction_id,
+  };
+}
+
+function isGeneratedSubscriptionPayment(payment: SubscriptionPaymentRow) {
+  return metadataRecord(payment.metadata).source === "linked_transaction";
+}
+
+function legacySubscriptionPaymentCutoff(subscription: SubscriptionRow, metadata: Record<string, unknown>, cycle: string, anchorValue: string) {
+  const existingCutoff = metadataString(metadata, "subscription_payment_cutoff_date");
+  if (existingCutoff) return existingCutoff;
+  if (metadataString(metadata, "billing_anchor_date")) return "";
+
+  const anchorDate = parseDateInput(anchorValue) ?? parseDateInput(subscription.next_billing_date);
+  return anchorDate ? formatDateInput(previousBillingCycleDate(anchorDate, cycle)) : "";
+}
+
+function buildSubscriptionPaymentSchedule(subscription: SubscriptionRow, payments: SubscriptionPaymentEvidence[]) {
+  const metadata = metadataRecord(subscription.metadata);
+  const cycle = normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle);
+  const anchorValue = subscriptionBillingAnchor(subscription, metadata);
+  const cutoffDate = legacySubscriptionPaymentCutoff(subscription, metadata, cycle, anchorValue);
+  let dueDate = parseDateInput(anchorValue) ?? new Date();
+  const sortedPayments = payments
+    .filter((payment) => payment.billingDueDate || !cutoffDate || payment.paymentDate >= cutoffDate)
+    .sort(compareSubscriptionPayments);
+  const snapshots = sortedPayments.map((payment) => {
+    const billingDueDate = payment.billingDueDate || formatDateInput(dueDate);
+    const explicitDueDate = parseDateInput(billingDueDate);
+    dueDate = addBillingCycle(explicitDueDate && explicitDueDate > dueDate ? explicitDueDate : dueDate, cycle);
+    return {
+      billingDueDate,
+      payment,
+    };
+  });
+
+  return {
+    anchorDate: anchorValue,
+    cutoffDate,
+    nextBillingDate: formatDateInput(dueDate),
+    snapshots,
+  };
+}
+
+async function reconcileSubscriptionPayments(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  subscriptionId: string,
+) {
+  if (!subscriptionId) return null;
+
+  const { data: subscriptionData, error: subscriptionError } = await supabase
+    .from("subscriptions")
+    .select("id,amount,billing_cycle,next_billing_date,status,metadata")
+    .eq("id", subscriptionId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (subscriptionError) return subscriptionError.message;
+  if (!subscriptionData) return null;
+
+  const subscription = subscriptionData as SubscriptionRow;
+  const { data: transactionData, error: transactionError } = await supabase
+    .from("transactions")
+    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "subscription")
+    .eq("related_entity_id", subscriptionId)
+    .is("deleted_at", null);
+
+  if (transactionError) return transactionError.message;
+
+  const { data: paymentData, error: paymentError } = await supabase
+    .from("subscription_payments")
+    .select("id,subscription_id,transaction_id,amount,payment_date,note,metadata,created_at")
+    .eq("user_id", userId)
+    .eq("subscription_id", subscriptionId);
+
+  if (paymentError) return paymentError.message;
+
+  const transactionRows = transactionData as TransactionRow[];
+  const reversedTransactionIds = new Set(
+    transactionRows
+      .map((transaction) => isReversalTransaction(transaction))
+      .filter((id): id is string => Boolean(id)),
+  );
+  const existingPaymentRows = paymentData as SubscriptionPaymentRow[];
+  const manualPaymentEvidences = existingPaymentRows
+    .filter((payment) => !isGeneratedSubscriptionPayment(payment))
+    .map(paymentEvidenceFromPaymentRow);
+  const manualPaymentTransactionIds = new Set(manualPaymentEvidences.map((payment) => payment.transactionId).filter((id): id is string => Boolean(id)));
+  const linkedPaymentEvidences = transactionRows
+    .filter((transaction) => isPostedSubscriptionExpense(transaction, reversedTransactionIds))
+    .filter((transaction) => !manualPaymentTransactionIds.has(transaction.id))
+    .map(paymentEvidenceFromTransaction);
+  const paymentSchedule = buildSubscriptionPaymentSchedule(subscription, [...manualPaymentEvidences, ...linkedPaymentEvidences]);
+  const paymentSnapshots = paymentSchedule.snapshots;
+  const metadata = metadataRecord(subscription.metadata);
+  const lastSnapshot = paymentSnapshots[paymentSnapshots.length - 1];
+  const lastPayment = lastSnapshot?.payment;
+
+  const { error: deletePaymentError } = await supabase
+    .from("subscription_payments")
+    .delete()
+    .eq("user_id", userId)
+    .eq("subscription_id", subscriptionId)
+    .eq("metadata->>source", "linked_transaction");
+
+  if (deletePaymentError) return deletePaymentError.message;
+
+  const linkedPaymentSnapshots = paymentSnapshots.filter(({ payment }) => payment.source === "linked_transaction" && payment.transactionId);
+  if (linkedPaymentSnapshots.length > 0) {
+    const { error: insertPaymentError } = await supabase.from("subscription_payments").insert(
+      linkedPaymentSnapshots.map(({ billingDueDate, payment }) => ({
+        amount: payment.amount,
+        metadata: {
+          billing_due_date: billingDueDate,
+          billing_cycle: normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle),
+          source: "linked_transaction",
+        },
+        note: payment.note,
+        payment_date: payment.paymentDate,
+        subscription_id: subscriptionId,
+        transaction_id: payment.transactionId,
+        user_id: userId,
+      })),
+    );
+
+    if (insertPaymentError) return insertPaymentError.message;
+  }
+
+  const { error: updateSubscriptionError } = await supabase
+    .from("subscriptions")
+    .update({
+      metadata: {
+        ...metadata,
+        billing_anchor_date: paymentSchedule.anchorDate,
+        last_paid_billing_date: lastSnapshot?.billingDueDate ?? null,
+        last_payment_amount: lastPayment?.amount ?? null,
+        last_payment_date: lastPayment?.paymentDate ?? null,
+        last_payment_transaction_id: lastPayment?.transactionId ?? null,
+        last_subscription_reconciled_at: new Date().toISOString(),
+        next_billing_date: paymentSchedule.nextBillingDate,
+        paid_cycle_count: paymentSnapshots.length,
+        subscription_payment_cutoff_date: paymentSchedule.cutoffDate || null,
+      },
+      next_billing_date: paymentSchedule.nextBillingDate,
+    })
+    .eq("id", subscriptionId)
+    .eq("user_id", userId);
+
+  return updateSubscriptionError?.message ?? null;
+}
+
+async function reconcileSubscriptionIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  subscriptionIds: Array<string | null | undefined>,
+) {
+  for (const subscriptionId of Array.from(new Set(subscriptionIds.filter((id): id is string => Boolean(id))))) {
+    await reconcileSubscriptionPayments(supabase, userId, subscriptionId);
+  }
+}
+
 export async function createTransaction(input: TransactionFormData): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
@@ -790,16 +1096,20 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
   if (validationError) return { error: validationError };
   const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
   if ("error" in resolvedInput) return { error: resolvedInput.error };
+  let transactionIds: string[] = [];
   if (resolvedInput.type === "Transfer") {
-    const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id));
+    const { data, error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id)).select("id");
     if (error) return { error: transactionMutationError(error.message) };
+    transactionIds = (data as Pick<TransactionRow, "id">[] | null)?.map((transaction) => transaction.id) ?? [];
   } else {
-    const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
+    const { data, error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id }).select("id").maybeSingle();
     if (error) return { error: transactionMutationError(error.message) };
+    if (data?.id) transactionIds = [data.id as string];
   }
   await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(resolvedInput)]);
+  await reconcileSubscriptionIds(supabase, user.id, [linkedSubscriptionIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths();
-  return {};
+  return { transactionIds };
 }
 
 export async function updateTransaction(transactionId: string, input: TransactionFormData): Promise<ActionResult> {
@@ -808,11 +1118,13 @@ export async function updateTransaction(transactionId: string, input: Transactio
   let existingTransaction: MutationTransaction | null;
   let ignoredTransactionIds: string[];
   let previousDebtIds: string[];
+  let previousSubscriptionIds: string[];
   try {
     existingTransaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
     if (!existingTransaction) return { error: "Transaction not found." };
     ignoredTransactionIds = await getLinkedTransactionIds(supabase, user.id, existingTransaction);
     previousDebtIds = await getDebtIdsForTransactionIds(supabase, user.id, ignoredTransactionIds);
+    previousSubscriptionIds = await getSubscriptionIdsForTransactionIds(supabase, user.id, ignoredTransactionIds);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Unable to load transaction." };
   }
@@ -841,6 +1153,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
       if (error) return { error: transactionMutationError(error.message) };
     }
     await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
+    await reconcileSubscriptionIds(supabase, user.id, [...previousSubscriptionIds, linkedSubscriptionIdFromInput(resolvedInput)]);
     revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
     return {};
   }
@@ -849,6 +1162,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
   if (error) return { error: transactionMutationError(error.message) };
   if (!data) return { error: "Transaction not found." };
   await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
+  await reconcileSubscriptionIds(supabase, user.id, [...previousSubscriptionIds, linkedSubscriptionIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
   return {};
 }
@@ -863,8 +1177,10 @@ export async function deleteTransaction(transactionId: string): Promise<ActionRe
     if (!transaction) return { error: "Transaction not found." };
     const linkedIds = await getLinkedTransactionIds(supabase, user.id, transaction);
     const previousDebtIds = await getDebtIdsForTransactionIds(supabase, user.id, linkedIds);
+    const previousSubscriptionIds = await getSubscriptionIdsForTransactionIds(supabase, user.id, linkedIds);
     const transactionIds = await archiveLinkedTransactions(supabase, user.id, transaction);
     await reconcileCreditCardDebtIds(supabase, user.id, previousDebtIds);
+    await reconcileSubscriptionIds(supabase, user.id, previousSubscriptionIds);
     revalidateTransactionLinkedPaths();
     return { transactionIds };
   } catch (error) {
@@ -933,6 +1249,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
     const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id));
     if (error) return { error: transactionMutationError(error.message) };
     await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(reverseInput)]);
+    await reconcileSubscriptionIds(supabase, user.id, [linkedSubscriptionIdFromInput(reverseInput)]);
     revalidateTransactionLinkedPaths();
     return {};
   }
@@ -963,6 +1280,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
 
   if (error) return { error: transactionMutationError(error.message) };
   await reconcileCreditCardDebtIds(supabase, user.id, [source.related_entity_type === "debt" ? source.related_entity_id : ""]);
+  await reconcileSubscriptionIds(supabase, user.id, [source.related_entity_type === "subscription" ? source.related_entity_id : ""]);
   revalidateTransactionLinkedPaths();
   return {};
 }
