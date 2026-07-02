@@ -42,6 +42,7 @@ export function TextInput({
             isDate ? "pr-12" : ""
           } ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
           onChange={(event) => onChange?.(event.target.value)}
+          onWheel={type === "number" ? (event) => event.currentTarget.blur() : undefined}
           placeholder={placeholder}
           type={type}
           value={value}

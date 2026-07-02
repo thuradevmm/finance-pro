@@ -24,15 +24,15 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
 
   return (
     <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
+      <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
         <label className="relative block min-w-0">
           <span className="sr-only">Date from</span>
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
+          <span className="pointer-events-none absolute left-3 top-1/2 w-10 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
             From
           </span>
           <input
             aria-label="Date from"
-            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-14 pr-10 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-16 pr-10 text-left text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateFrom", event.target.value)}
             type="date"
             value={filters.dateFrom}
@@ -41,12 +41,12 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange }: 
         </label>
         <label className="relative block min-w-0">
           <span className="sr-only">Date to</span>
-          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
+          <span className="pointer-events-none absolute left-3 top-1/2 w-10 -translate-y-1/2 text-xs font-semibold uppercase text-[#76777d]">
             To
           </span>
           <input
             aria-label="Date to"
-            className="min-h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-10 pr-10 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+            className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white pl-16 pr-10 text-left text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
             onChange={(event) => onFilterChange("dateTo", event.target.value)}
             type="date"
             value={filters.dateTo}

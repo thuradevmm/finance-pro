@@ -323,6 +323,7 @@ export function AddTransactionForm({
                     aria-invalid={amountHasError}
                     className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
                     onChange={(event) => setAmount(event.target.value)}
+                    onWheel={(event) => event.currentTarget.blur()}
                     placeholder="0"
                     type="number"
                     value={amount}
