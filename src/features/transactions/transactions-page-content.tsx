@@ -41,10 +41,19 @@ function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function addYears(date: Date, yearCount: number) {
+  const nextDate = new Date(date);
+  const month = nextDate.getMonth();
+  nextDate.setFullYear(nextDate.getFullYear() + yearCount);
+  if (nextDate.getMonth() !== month) nextDate.setDate(0);
+  return nextDate;
+}
+
 function defaultDateRange() {
+  const today = new Date();
   return {
-    dateFrom: "",
-    dateTo: "",
+    dateFrom: formatDateInput(addYears(today, -1)),
+    dateTo: formatDateInput(today),
   };
 }
 
@@ -164,6 +173,12 @@ export function TransactionsPageContent({ accounts, filterOptions, initialAccoun
 
     setFilters((currentFilters) => {
       const nextFilters = { ...currentFilters, [key]: normalizedValue };
+      if (key === "dateFrom" && normalizedValue && nextFilters.dateTo && normalizedValue > nextFilters.dateTo) {
+        nextFilters.dateTo = normalizedValue;
+      }
+      if (key === "dateTo" && normalizedValue && nextFilters.dateFrom && normalizedValue < nextFilters.dateFrom) {
+        nextFilters.dateFrom = normalizedValue;
+      }
       if (key === "type") {
         setActiveTab(normalizedValue === "Type" ? "All" : (normalizedValue as TransactionTab));
         if (normalizedValue !== "Transfer") {
