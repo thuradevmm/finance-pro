@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 
 import { createTransaction, updateTransaction } from "@/app/transactions/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { DateInput } from "@/components/ui/date-input";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
@@ -333,10 +334,7 @@ export function AddTransactionForm({
               </div>
               <div>
                 <FieldLabel>Date</FieldLabel>
-                <div className="relative">
-                  <input className={`h-12 w-full rounded-lg border bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${dateHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`} onChange={(event) => setTransactionDate(event.target.value)} type="date" value={transactionDate} />
-                  <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
-                </div>
+                <DateInput error={dateHasError} label="Date" onChange={setTransactionDate} value={transactionDate} />
                 {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Transaction date is required.</p> : null}
               </div>
             </div>

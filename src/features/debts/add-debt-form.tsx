@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { createDebt, updateDebt } from "@/app/debts/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
+import { DateInput } from "@/components/ui/date-input";
 import { Icon } from "@/components/ui/icon";
 import { FieldLabel, FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { LoadingButton } from "@/components/ui/loading-state";
@@ -169,12 +170,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <FieldLabel>Next Payment Date</FieldLabel>
-              <input
-                className="h-12 w-full rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-medium text-[#0b1c30] outline-none"
-                readOnly
-                type="date"
-                value={nextPaymentDate}
-              />
+              <DateInput label="Next Payment Date" readOnly showIcon={false} tone="muted" value={nextPaymentDate} />
             </div>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
               <span className="block text-xs font-bold uppercase text-[#45464d]">Payoff Date</span>

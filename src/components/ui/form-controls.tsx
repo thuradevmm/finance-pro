@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { DateInput } from "@/components/ui/date-input";
 import { Icon } from "@/components/ui/icon";
 
 export function FieldLabel({ children }: { children: string }) {
@@ -35,20 +36,19 @@ export function TextInput({
   return (
     <div className="min-w-0">
       <FieldLabel>{label}</FieldLabel>
-      <div className={isDate ? "relative" : undefined}>
+      {isDate ? (
+        <DateInput error={error} label={label} onChange={onChange} placeholder={placeholder} value={value} />
+      ) : (
         <input
           aria-invalid={error}
-          className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${
-            isDate ? "pr-12" : ""
-          } ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
+          className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
           onChange={(event) => onChange?.(event.target.value)}
           onWheel={type === "number" ? (event) => event.currentTarget.blur() : undefined}
           placeholder={placeholder}
           type={type}
           value={value}
         />
-        {isDate ? <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" /> : null}
-      </div>
+      )}
     </div>
   );
 }
