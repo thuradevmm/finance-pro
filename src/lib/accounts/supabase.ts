@@ -210,10 +210,6 @@ function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
       })
       .filter((item) => item.type.trim() !== "");
 
-    for (const [key, value] of legacySplitValues) {
-      if (!amountTypes.some((item) => amountTypeKey(item.type) === key)) amountTypes.push(value);
-    }
-
     if (amountTypes.length > 0) return amountTypes;
   }
 
@@ -229,6 +225,22 @@ function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
 
 function transactionBalanceBreakdowns(amountTypeValues: { type: string }[]) {
   const breakdowns = new Map(amountTypeValues.map((item) => [item.type, 0]));
+  return breakdowns;
+}
+
+function displayAmountTypeBreakdowns(
+  amountTypeValues: { type: string }[],
+  deltas: Map<string, number>,
+) {
+  const breakdowns = transactionBalanceBreakdowns(amountTypeValues);
+  const fallbackAmountType = amountTypeValues[0]?.type ?? "General";
+  const activeAmountTypeByKey = new Map(amountTypeValues.map((item) => [amountTypeKey(item.type), item.type]));
+
+  for (const [amountType, delta] of deltas) {
+    const displayAmountType = activeAmountTypeByKey.get(amountTypeKey(amountType)) ?? fallbackAmountType;
+    breakdowns.set(displayAmountType, roundCurrencyValue((breakdowns.get(displayAmountType) ?? 0) + delta));
+  }
+
   return breakdowns;
 }
 
@@ -254,10 +266,7 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   const amountTypeValues = normalizeAmountTypeValues(metadata);
   const displayAmountTypes = isCreditCard
     ? new Map(amountTypeValues.map((item) => [item.type, 0]))
-    : transactionBalanceBreakdowns(amountTypeValues);
-  for (const [amountType, delta] of activity.deltas) {
-    displayAmountTypes.set(amountType, roundCurrencyValue((displayAmountTypes.get(amountType) ?? 0) + delta));
-  }
+    : displayAmountTypeBreakdowns(amountTypeValues, activity.deltas);
   const storedMonthlyBudgetLimit = optionalNumericValue(metadata.monthly_budget_limit);
   const storedCreditLimit = optionalNumericValue(metadata.credit_limit);
   const monthlyBudgetLimit = isCreditCard ? (storedCreditLimit ?? storedMonthlyBudgetLimit) : storedMonthlyBudgetLimit;

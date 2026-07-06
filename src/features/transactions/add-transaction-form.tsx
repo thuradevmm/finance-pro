@@ -12,9 +12,10 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { formatMmkPreview } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
+import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
@@ -89,6 +90,15 @@ function formatPreviewAmount(amount: string, type: TransactionType) {
   if (type === "Income") return formatMmkPreview(value, "positive");
   if (type === "Expense") return formatMmkPreview(value, "negative");
   return formatMmkPreview(value);
+}
+
+function parseAmountInput(value: string) {
+  const number = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function isCreditCardAccount(account: AccountRecord | undefined) {
@@ -166,6 +176,7 @@ export function AddTransactionForm({
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
   const [note, setNote] = useState(transaction?.note ?? initialValues?.note ?? "");
+  const [subscriptionPaymentDraft, setSubscriptionPaymentDraft] = useState({ billedAmount: "", exchangeRate: "", key: "" });
   const [relatedOptionValue, setRelatedOptionValue] = useState(
     transaction?.relatedEntityType && transaction.relatedEntityType !== "none"
       ? `${transaction.relatedEntityType}:${transaction.relatedEntityId}`
@@ -200,14 +211,51 @@ export function AddTransactionForm({
   const isCreditCardPayment = isTransfer && isCreditCardAccount(selectedTransferAccount);
   const autoLinksCreditCardDebt = isCreditCardCharge || isCreditCardPayment;
   const usesExplicitPageLink = Boolean(selectedRelatedOption && selectedRelatedOption.type !== "none" && selectedRelatedOption.type !== "debt");
-  const debtRelatedOptions = useMemo(() => relatedOptions.filter((option) => option.type === "debt"), [relatedOptions]);
   const impactOptions = useMemo(() => {
     if (!autoLinksCreditCardDebt || usesExplicitPageLink) return relatedOptions;
-    return [automaticCreditCardDebtOption, ...debtRelatedOptions];
-  }, [autoLinksCreditCardDebt, debtRelatedOptions, relatedOptions, usesExplicitPageLink]);
+    return [automaticCreditCardDebtOption, ...relatedOptions];
+  }, [autoLinksCreditCardDebt, relatedOptions, usesExplicitPageLink]);
   const effectiveRelatedOption = autoLinksCreditCardDebt && !usesExplicitPageLink && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
     ? impactOptions[0] ?? selectedRelatedOption
     : selectedRelatedOption;
+  const debtPayoffSummary = useMemo(() => {
+    const payoff = effectiveRelatedOption?.debtPayoff;
+    if (!payoff) return null;
+    return calculateDebtPayoffSummary({
+      interestRate: payoff.interestRate,
+      interestRatePeriod: payoff.interestRatePeriod,
+      numberOfMonths: payoff.durationMonths,
+      openingRepaidAmount: payoff.openingRepaidAmount,
+      principal: payoff.totalAmount,
+      referenceDate: transactionDate,
+      repayments: payoff.repayments,
+      settledAt: payoff.settledAt,
+      settledEarly: payoff.settledEarly,
+      startDate: payoff.startDate,
+    });
+  }, [effectiveRelatedOption, transactionDate]);
+  const debtPayoffQuote = debtPayoffSummary?.currentQuote;
+  const subscriptionPayment = effectiveRelatedOption?.subscriptionPayment;
+  const subscriptionPaymentKey = subscriptionPayment ? `${effectiveRelatedOption?.type}:${effectiveRelatedOption?.value}` : "";
+  const subscriptionBilledAmount = subscriptionPayment && subscriptionPaymentDraft.key === subscriptionPaymentKey
+    ? subscriptionPaymentDraft.billedAmount
+    : subscriptionPayment ? String(subscriptionPayment.billedAmount || "") : "";
+  const subscriptionExchangeRate = subscriptionPayment && subscriptionPaymentDraft.key === subscriptionPaymentKey
+    ? subscriptionPaymentDraft.exchangeRate
+    : subscriptionPayment && subscriptionPayment.billingCurrency !== SYSTEM_CURRENCY ? String(subscriptionPayment.exchangeRate || "") : "";
+  const subscriptionPaymentBilledAmountValue = subscriptionPayment
+    ? parseAmountInput(subscriptionBilledAmount) || subscriptionPayment.billedAmount
+    : 0;
+  const subscriptionPaymentExchangeRateValue = subscriptionPayment
+    ? subscriptionPayment.billingCurrency === SYSTEM_CURRENCY
+      ? 1
+      : parseAmountInput(subscriptionExchangeRate) || subscriptionPayment.exchangeRate
+    : 0;
+  const subscriptionPaymentAmountValue = subscriptionPayment
+    ? roundMoney(subscriptionPaymentBilledAmountValue * subscriptionPaymentExchangeRateValue)
+    : 0;
+  const isForeignSubscriptionPayment = Boolean(subscriptionPayment && subscriptionPayment.billingCurrency !== SYSTEM_CURRENCY);
+  const hasSecondaryCreditCardDebtImpact = isCreditCardCharge && Boolean(effectiveRelatedOption && effectiveRelatedOption.type !== "none" && effectiveRelatedOption.type !== "debt");
   const amountNumber = Number(amount);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;
@@ -242,6 +290,36 @@ export function AddTransactionForm({
     setTransferAccountAmountType(accountAmountTypeOptionsFor(nextAccount)[0] ?? "General");
   }
 
+  function updateSubscriptionPaymentDraft(field: "billedAmount" | "exchangeRate", value: string) {
+    setSubscriptionPaymentDraft((currentDraft) => ({
+      billedAmount: field === "billedAmount"
+        ? value
+        : currentDraft.key === subscriptionPaymentKey ? currentDraft.billedAmount : subscriptionBilledAmount,
+      exchangeRate: field === "exchangeRate"
+        ? value
+        : currentDraft.key === subscriptionPaymentKey ? currentDraft.exchangeRate : subscriptionExchangeRate,
+      key: subscriptionPaymentKey,
+    }));
+  }
+
+  function handleUseDebtPayoffAmount() {
+    if (!debtPayoffQuote || debtPayoffQuote.payoffAmount <= 0) return;
+    if (selectedType !== "Expense") handleTypeChange("Expense");
+    setAmount(String(debtPayoffQuote.payoffAmount));
+    if (!note.trim() && effectiveRelatedOption?.label) {
+      setNote(`${effectiveRelatedOption.label.replace(/^Debt:\s*/, "")} payoff`);
+    }
+  }
+
+  function handleUseSubscriptionPaymentAmount() {
+    if (!subscriptionPayment || subscriptionPaymentAmountValue <= 0) return;
+    if (selectedType !== "Expense") handleTypeChange("Expense");
+    setAmount(String(subscriptionPaymentAmountValue));
+    if (!note.trim() && effectiveRelatedOption?.label) {
+      setNote(`${effectiveRelatedOption.label.replace(/^Subscription:\s*/, "")} payment`);
+    }
+  }
+
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
@@ -260,6 +338,14 @@ export function AddTransactionForm({
       relatedEntityId: effectiveRelatedOption?.value ?? "",
       relatedEntityType: effectiveRelatedOption?.type ?? "none",
       status,
+      subscriptionPayment: subscriptionPayment && subscriptionPaymentBilledAmountValue > 0 && subscriptionPaymentExchangeRateValue > 0
+        ? {
+          billedAmount: subscriptionPaymentBilledAmountValue,
+          billingCurrency: subscriptionPayment.billingCurrency,
+          billingDueDate: subscriptionPayment.nextBillingDate || transactionDate,
+          exchangeRate: subscriptionPaymentExchangeRateValue,
+        }
+        : undefined,
       title: note.trim() || `${selectedType} transaction`,
       transferAccountId: isTransfer ? effectiveTransferToAccountId : "",
       transferAccountAmountType: isTransfer ? effectiveTransferAccountAmountType : "",
@@ -383,11 +469,116 @@ export function AddTransactionForm({
 
           <FormCard title="Transaction Impact">
             <SelectInput
-              label={autoLinksCreditCardDebt ? "Credit Card Debt" : "Reflect To Page"}
+              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt ? "Credit Card Debt" : "Reflect To Page"}
               onChange={handleRelatedOptionChange}
               options={impactOptions.map((option) => option.label)}
               value={effectiveRelatedOption?.label ?? "No linked record"}
             />
+            {hasSecondaryCreditCardDebtImpact ? (
+              <div className="mt-4 grid gap-3 rounded-lg border border-[#fecaca] bg-[#fffafa] p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+                <span className="grid size-10 place-items-center rounded-md bg-[#fff1f0] text-[#b42318]">
+                  <Icon className="size-5" name="credit" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase text-[#b42318]">Additional Impact</p>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Automatic Credit Card Debt</p>
+                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This credit card charge will keep the selected primary impact and increase the card debt balance.</p>
+                </div>
+              </div>
+            ) : null}
+            {subscriptionPayment ? (
+              <div className="mt-4 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase text-[#45464d]">Subscription Payment</p>
+                    <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{subscriptionPayment.billingCycle} billing · {subscriptionPayment.nextBillingDate ? formatDisplayDate(subscriptionPayment.nextBillingDate) : "No due date"}</p>
+                  </div>
+                  <button
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937]"
+                    onClick={handleUseSubscriptionPaymentAmount}
+                    type="button"
+                  >
+                    <Icon className="size-4" name="check" />
+                    Use Amount
+                  </button>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <FieldLabel>Billed Amount</FieldLabel>
+                    <input
+                      className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                      onChange={(event) => updateSubscriptionPaymentDraft("billedAmount", event.target.value)}
+                      onWheel={(event) => event.currentTarget.blur()}
+                      type="number"
+                      value={subscriptionBilledAmount}
+                    />
+                  </div>
+                  {isForeignSubscriptionPayment ? (
+                    <div>
+                      <FieldLabel>Payment Exchange Rate</FieldLabel>
+                      <input
+                        className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                        onChange={(event) => updateSubscriptionPaymentDraft("exchangeRate", event.target.value)}
+                        onWheel={(event) => event.currentTarget.blur()}
+                        type="number"
+                        value={subscriptionExchangeRate}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <FieldLabel>Payment Exchange Rate</FieldLabel>
+                      <div className="flex h-11 items-center rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d]">No conversion</div>
+                    </div>
+                  )}
+                </div>
+                <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Billed</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatCurrencyAmount(subscriptionPaymentBilledAmountValue, subscriptionPayment.billingCurrency)}</ResponsiveAmount></dd>
+                  </div>
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Rate</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{isForeignSubscriptionPayment ? `1 ${subscriptionPayment.billingCurrency} = ${formatMmkPreview(subscriptionPaymentExchangeRateValue)}` : "No conversion"}</ResponsiveAmount></dd>
+                  </div>
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Payment</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatMmkPreview(subscriptionPaymentAmountValue)}</ResponsiveAmount></dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
+            {debtPayoffQuote && debtPayoffQuote.payoffAmount > 0 ? (
+              <div className="mt-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase text-[#0058be]">Debt Payoff</p>
+                    <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(debtPayoffQuote.asOfDate)}</p>
+                  </div>
+                  <button
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937]"
+                    onClick={handleUseDebtPayoffAmount}
+                    type="button"
+                  >
+                    <Icon className="size-4" name="check" />
+                    Use Payoff
+                  </button>
+                </div>
+                <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Principal</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatMmkPreview(debtPayoffQuote.principalOutstandingAmount)}</ResponsiveAmount></dd>
+                  </div>
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Interest</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatMmkPreview(debtPayoffQuote.accruedInterestAmount)}</ResponsiveAmount></dd>
+                  </div>
+                  <div className="min-w-0 rounded-md bg-white px-3 py-2">
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Payoff</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatMmkPreview(debtPayoffQuote.payoffAmount)}</ResponsiveAmount></dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
           </FormCard>
 
           {formError ? (

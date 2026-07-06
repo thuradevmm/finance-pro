@@ -4,7 +4,8 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
-import { formatMmk } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatMmk } from "@/lib/currency";
+import { calculateDebtPayoffSummary, type DebtDatedRepayment, type DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { buildAccountLedgerActivities, normalizeAmountType } from "@/lib/ledger";
 import type { TransactionFormData } from "@/lib/transactions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -40,11 +41,16 @@ type MutationTransaction = Pick<TransactionRow, "id" | "metadata" | "related_ent
 
 type DebtRow = {
   id: string;
+  interest_rate?: number | string | null;
   metadata: unknown;
+  monthly_payment?: number | string | null;
+  next_payment_date?: string | null;
   payment_account_id: string | null;
   repaid_amount?: number | string | null;
+  start_date?: string | null;
   status: string | null;
   total_amount?: number | string | null;
+  type?: string | null;
 };
 
 type SubscriptionRow = {
@@ -69,7 +75,11 @@ type SubscriptionPaymentRow = {
 
 type SubscriptionPaymentEvidence = {
   amount: number;
+  billedAmount: number;
+  billingCurrency: string;
   billingDueDate: string;
+  configuredExchangeRate: number;
+  exchangeRate: number;
   id: string;
   note: string | null;
   paymentDate: string;
@@ -78,6 +88,12 @@ type SubscriptionPaymentEvidence = {
 };
 
 type CreditCardDebtImpact = "charge" | "repayment" | "";
+
+type CreditCardDebtResolution = {
+  debtId: string;
+  input: TransactionFormData;
+  metadata: TransactionExtraMetadata;
+};
 
 type CategoryRow = {
   id: string;
@@ -113,7 +129,9 @@ function revalidateTransactionLinkedPaths(extraPaths: string[] = []) {
   }
 }
 
-function singleTransactionPayload(input: TransactionFormData) {
+type TransactionExtraMetadata = Record<string, unknown>;
+
+function singleTransactionPayload(input: TransactionFormData, extraMetadata: TransactionExtraMetadata = {}) {
   return {
     account_id: input.accountId || null,
     amount: input.amount,
@@ -124,6 +142,7 @@ function singleTransactionPayload(input: TransactionFormData) {
     metadata: {
       account_amount_type: input.accountAmountType,
       transfer_account_amount_type: null,
+      ...extraMetadata,
     },
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
@@ -258,7 +277,7 @@ function transferDirection(metadata: Record<string, unknown>) {
   return "";
 }
 
-function transferPairPayload(input: TransactionFormData, userId: string, groupId: string = randomUUID()) {
+function transferPairPayload(input: TransactionFormData, userId: string, groupId: string = randomUUID(), extraMetadata: TransactionExtraMetadata = {}) {
   const title = input.title.trim() || "Transfer transaction";
   const note = input.note.trim() || null;
   const relatedEntityId = input.relatedEntityType === "none" ? null : input.relatedEntityId || null;
@@ -287,6 +306,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         account_amount_type: input.accountAmountType,
         counter_account_amount_type: input.transferAccountAmountType,
         counter_account_id: input.transferAccountId,
+        ...extraMetadata,
         transfer_direction: "debit",
         transfer_group_id: groupId,
         transfer_account_amount_type: input.transferAccountAmountType,
@@ -300,6 +320,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         account_amount_type: input.transferAccountAmountType,
         counter_account_amount_type: input.accountAmountType,
         counter_account_id: input.accountId,
+        ...extraMetadata,
         transfer_direction: "credit",
         transfer_group_id: groupId,
         transfer_account_amount_type: input.accountAmountType,
@@ -385,6 +406,17 @@ function creditCardDebtAccountId(debt: DebtRow) {
   if (typeof metadata.credit_card_account_id === "string") return metadata.credit_card_account_id;
   if (typeof metadata.auto_credit_card_account_id === "string") return metadata.auto_credit_card_account_id;
   return debt.payment_account_id ?? "";
+}
+
+function normalizeDebtType(value: unknown) {
+  return String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function isCreditCardDebt(debt: DebtRow) {
+  const metadata = metadataRecord(debt.metadata);
+  return typeof metadata.credit_card_account_id === "string"
+    || typeof metadata.auto_credit_card_account_id === "string"
+    || normalizeDebtType(debt.type ?? metadata.type) === "creditcard";
 }
 
 function isManualCreditCardDebt(debt: DebtRow) {
@@ -507,8 +539,7 @@ async function creditCardDebtBalance(
     .from("transactions")
     .select("id,account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
     .eq("user_id", userId)
-    .eq("related_entity_type", "debt")
-    .eq("related_entity_id", debt.id)
+    .or(`account_id.eq.${creditCardAccountId},transfer_account_id.eq.${creditCardAccountId}`)
     .is("deleted_at", null);
 
   if (error) return { error: error.message };
@@ -519,6 +550,10 @@ async function creditCardDebtBalance(
 
   for (const transaction of data as TransactionRow[]) {
     if (!postedStatusAffectsBalance(transaction.status)) continue;
+    const transactionMetadata = metadataRecord(transaction.metadata);
+    const primaryDebtLink = transaction.related_entity_type === "debt" && transaction.related_entity_id === debt.id;
+    const secondaryDebtLink = metadataString(transactionMetadata, "credit_card_debt_id") === debt.id;
+    if (!primaryDebtLink && !secondaryDebtLink) continue;
 
     const impact = creditCardImpactForTransaction(transaction, creditCardAccountId);
     const amount = Math.abs(numericValue(transaction.amount));
@@ -628,6 +663,153 @@ async function reconcileCreditCardDebtIds(
   }
 }
 
+function normalizeDebtInterestRatePeriod(value: unknown): DebtInterestRatePeriod {
+  return String(value ?? "").toLowerCase() === "monthly" ? "Monthly" : "Yearly";
+}
+
+function wholeMonthsBetween(startValue: string, endValue: string) {
+  const start = parseDateInput(startValue);
+  const end = parseDateInput(endValue);
+  if (!start || !end || end <= start) return 0;
+
+  const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth();
+  return Math.max(monthCount + (end.getDate() > start.getDate() ? 1 : 0), 1);
+}
+
+function standardDebtTransactionImpact(transaction: TransactionRow) {
+  const type = String(transaction.type ?? "").toLowerCase();
+  const direction = transferDirection(metadataRecord(transaction.metadata));
+  if (type === "transfer" && direction === "credit") return "";
+  if (type === "expense" || type === "income" || type === "transfer") return "repayment";
+  return "";
+}
+
+async function standardDebtRepayments(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtId: string,
+): Promise<{ error?: string; repayments: DebtDatedRepayment[] }> {
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "debt")
+    .eq("related_entity_id", debtId)
+    .is("deleted_at", null);
+
+  if (error) return { error: error.message, repayments: [] };
+
+  return {
+    repayments: (data as TransactionRow[]).flatMap((transaction) => {
+      if (!postedStatusAffectsBalance(transaction.status)) return [];
+      if (!standardDebtTransactionImpact(transaction)) return [];
+      const amountValue = Math.abs(numericValue(transaction.amount));
+      const dateValue = transaction.transaction_date ?? "";
+      if (amountValue <= 0 || !dateValue) return [];
+      return [{ amountValue, dateValue }];
+    }),
+  };
+}
+
+async function reconcileStandardDebt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtId: string,
+) {
+  if (!debtId) return null;
+
+  const { data: debtData, error: debtError } = await supabase
+    .from("debts")
+    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata,type,interest_rate,start_date,next_payment_date,monthly_payment")
+    .eq("id", debtId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (debtError) return debtError.message;
+  if (!debtData) return null;
+
+  const debt = debtData as DebtRow;
+  if (isCreditCardDebt(debt) || debtStatusKey(debt) === "archived") return null;
+
+  const metadata = metadataRecord(debt.metadata);
+  const principal = numericValue(debt.total_amount) || numericValue(metadata.total_amount);
+  const startDate = debt.start_date ?? metadataString(metadata, "start_date");
+  if (principal <= 0 || !startDate) return null;
+
+  const repaymentsResult = await standardDebtRepayments(supabase, userId, debtId);
+  if (repaymentsResult.error) return repaymentsResult.error;
+
+  const payoffDate = metadataString(metadata, "payoff_date");
+  const durationMonths = Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, payoffDate)), 0);
+  const currentStatus = debtStatusKey(debt);
+  const settledAt = metadataString(metadata, "early_payoff_date") || metadataString(metadata, "paid_at").slice(0, 10);
+  const hasEarlyPayoffSettlement = metadata.early_payoff === true
+    || (currentStatus === "paid" && numericValue(metadata.remaining_principal) <= 0.005 && Boolean(settledAt));
+  const summary = calculateDebtPayoffSummary({
+    interestRate: numericValue(debt.interest_rate) || numericValue(metadata.interest_rate),
+    interestRatePeriod: normalizeDebtInterestRatePeriod(metadata.interest_rate_period),
+    numberOfMonths: durationMonths,
+    openingRepaidAmount: numericValue(debt.repaid_amount) || numericValue(metadata.repaid_amount),
+    principal,
+    referenceDate: formatDateInput(new Date()),
+    repayments: repaymentsResult.repayments,
+    settledAt,
+    settledEarly: hasEarlyPayoffSettlement,
+    startDate,
+  });
+  const nextStatus = summary.isPaidOff ? "paid" : "active";
+  if (!summary.isPaidOff && currentStatus !== "paid") return null;
+
+  const reconciledAt = new Date().toISOString();
+  const nextMetadata = {
+    ...metadata,
+    early_payoff: summary.isEarlyPayoff,
+    early_payoff_amount: summary.isEarlyPayoff ? summary.settlementAmount : null,
+    early_payoff_date: summary.isEarlyPayoff ? summary.paidAt : null,
+    early_payoff_interest_amount: summary.isEarlyPayoff ? summary.settlementInterestAmount : null,
+    early_payoff_principal_amount: summary.isEarlyPayoff ? summary.settlementPrincipalAmount : null,
+    last_debt_reconciled_at: reconciledAt,
+    paid_at: summary.isPaidOff ? metadataString(metadata, "paid_at") || (summary.paidAt ? `${summary.paidAt}T00:00:00.000Z` : reconciledAt) : null,
+    principal_paid: summary.principalPaid,
+    remaining_principal: summary.remainingPrincipal,
+    status: nextStatus,
+  };
+
+  const { error } = await supabase
+    .from("debts")
+    .update({
+      metadata: nextMetadata,
+      monthly_payment: summary.isPaidOff ? 0 : numericValue(debt.monthly_payment) || numericValue(metadata.monthly_payment),
+      next_payment_date: summary.isPaidOff ? null : debt.next_payment_date ?? (metadataString(metadata, "next_payment_date") || null),
+      status: nextStatus,
+    })
+    .eq("id", debtId)
+    .eq("user_id", userId);
+
+  return error?.message ?? null;
+}
+
+async function reconcileStandardDebtIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtIds: Array<string | null | undefined>,
+) {
+  for (const debtId of Array.from(new Set(debtIds.filter((id): id is string => Boolean(id))))) {
+    await reconcileStandardDebt(supabase, userId, debtId);
+  }
+}
+
+async function reconcileDebtIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtIds: Array<string | null | undefined>,
+) {
+  const uniqueDebtIds = Array.from(new Set(debtIds.filter((id): id is string => Boolean(id))));
+  await reconcileCreditCardDebtIds(supabase, userId, uniqueDebtIds);
+  await reconcileStandardDebtIds(supabase, userId, uniqueDebtIds);
+}
+
 async function getDebtIdsForTransactionIds(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -637,14 +819,18 @@ async function getDebtIdsForTransactionIds(
 
   const { data, error } = await supabase
     .from("transactions")
-    .select("related_entity_id,related_entity_type")
+    .select("metadata,related_entity_id,related_entity_type")
     .eq("user_id", userId)
     .in("id", transactionIds);
 
   if (error) throw new Error(error.message);
-  return (data as Pick<TransactionRow, "related_entity_id" | "related_entity_type">[])
-    .filter((transaction) => transaction.related_entity_type === "debt" && transaction.related_entity_id)
-    .map((transaction) => transaction.related_entity_id as string);
+  const debtIds = new Set<string>();
+  for (const transaction of data as Pick<TransactionRow, "metadata" | "related_entity_id" | "related_entity_type">[]) {
+    if (transaction.related_entity_type === "debt" && transaction.related_entity_id) debtIds.add(transaction.related_entity_id);
+    const creditCardDebtId = metadataString(metadataRecord(transaction.metadata), "credit_card_debt_id");
+    if (creditCardDebtId) debtIds.add(creditCardDebtId);
+  }
+  return [...debtIds];
 }
 
 async function findCreditCardDebtId(
@@ -759,32 +945,52 @@ async function findCreditCardDebtId(
   return { debtId: createdDebt.id as string };
 }
 
-async function resolveCreditCardDebtLink(input: TransactionFormData, userId: string) {
-  if (input.relatedEntityType !== "debt" && input.relatedEntityType !== "none") return input;
-
+async function resolveCreditCardDebtLink(input: TransactionFormData, userId: string): Promise<CreditCardDebtResolution | { error: string }> {
   const accountResult = await getCreditCardAccountForTransaction(input, userId);
-  if ("error" in accountResult) return { error: accountResult.error };
-  if (!accountResult.account) return input;
+  if ("error" in accountResult) return { error: accountResult.error ?? "Unable to load credit card account." };
+  if (!accountResult.account) return { debtId: "", input, metadata: {} };
 
   const impact = creditCardImpactForInput(input, accountResult.account.id);
-  if (!impact) return input;
+  if (!impact) return { debtId: "", input, metadata: {} };
 
   const { supabase } = await authenticatedClient();
   const debtResult = await findCreditCardDebtId(supabase, userId, accountResult.account, input.date, {
     createIfMissing: impact === "charge",
     initialChargeAmount: impact === "charge" ? input.amount : 0,
   });
-  if ("error" in debtResult) return { error: debtResult.error };
+  if ("error" in debtResult) return { error: debtResult.error ?? "Unable to load credit card debt." };
   if (!debtResult.debtId) {
-    return input.relatedEntityType === "debt" && !input.relatedEntityId
-      ? { ...input, relatedEntityId: "", relatedEntityType: "none" as const }
-      : input;
+    return {
+      debtId: "",
+      input: input.relatedEntityType === "debt" && !input.relatedEntityId
+        ? { ...input, relatedEntityId: "", relatedEntityType: "none" as const }
+        : input,
+      metadata: {},
+    };
+  }
+
+  if (input.relatedEntityType === "debt" || input.relatedEntityType === "none") {
+    return {
+      debtId: debtResult.debtId,
+      input: {
+        ...input,
+        relatedEntityId: debtResult.debtId,
+        relatedEntityType: "debt" as const,
+      },
+      metadata: {},
+    };
   }
 
   return {
-    ...input,
-    relatedEntityId: debtResult.debtId,
-    relatedEntityType: "debt" as const,
+    debtId: debtResult.debtId,
+    input,
+    metadata: {
+      credit_card_account_id: accountResult.account.id,
+      credit_card_debt_id: debtResult.debtId,
+      credit_card_debt_impact: impact,
+      secondary_related_entity_id: debtResult.debtId,
+      secondary_related_entity_type: "debt",
+    },
   };
 }
 
@@ -864,6 +1070,68 @@ function normalizeBillingCycle(value: unknown) {
   return "monthly";
 }
 
+function normalizeCurrency(value: unknown) {
+  const currency = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return currency || SYSTEM_CURRENCY;
+}
+
+function positiveNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+async function subscriptionPaymentMetadataForInput(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: TransactionFormData,
+): Promise<{ error?: string; metadata: TransactionExtraMetadata }> {
+  if (input.relatedEntityType !== "subscription" || !input.relatedEntityId) return { metadata: {} };
+
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("id,amount,billing_cycle,next_billing_date,status,metadata")
+    .eq("id", input.relatedEntityId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) return { error: error.message, metadata: {} };
+  if (!data) return { metadata: {} };
+
+  const subscription = data as SubscriptionRow;
+  const metadata = metadataRecord(subscription.metadata);
+  const billingCurrency = normalizeCurrency(input.subscriptionPayment?.billingCurrency ?? metadata.billing_currency);
+  const configuredBilledAmount = positiveNumber(metadata.billed_amount) || positiveNumber(subscription.amount);
+  const configuredExchangeRate = billingCurrency === SYSTEM_CURRENCY
+    ? 1
+    : positiveNumber(metadata.exchange_rate) || (configuredBilledAmount > 0 ? roundCurrencyValue(positiveNumber(subscription.amount) / configuredBilledAmount) : 0);
+  const billedAmount = positiveNumber(input.subscriptionPayment?.billedAmount) || configuredBilledAmount;
+  const exchangeRate = billingCurrency === SYSTEM_CURRENCY
+    ? 1
+    : positiveNumber(input.subscriptionPayment?.exchangeRate) || configuredExchangeRate;
+  const expectedPaymentAmount = roundCurrencyValue(billedAmount * exchangeRate);
+  const configuredPaymentAmount = roundCurrencyValue(billedAmount * configuredExchangeRate);
+  const billingDueDate = input.subscriptionPayment?.billingDueDate
+    || subscription.next_billing_date
+    || metadataString(metadata, "next_billing_date")
+    || metadataString(metadata, "billing_anchor_date")
+    || input.date;
+
+  return {
+    metadata: {
+      subscription_billed_amount: billedAmount,
+      subscription_billing_currency: billingCurrency,
+      subscription_billing_cycle: normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle),
+      subscription_billing_due_date: billingDueDate,
+      subscription_configured_exchange_rate: configuredExchangeRate,
+      subscription_exchange_difference_amount: roundCurrencyValue(input.amount - configuredPaymentAmount),
+      subscription_expected_payment_amount: expectedPaymentAmount,
+      subscription_payment_amount: input.amount,
+      subscription_payment_exchange_rate: exchangeRate,
+    },
+  };
+}
+
 function addBillingCycle(date: Date, cycle: string) {
   if (cycle === "weekly") return addDays(date, 7);
   if (cycle === "yearly") return addYears(date, 1);
@@ -904,9 +1172,16 @@ function previousBillingCycleDate(date: Date, cycle: string) {
 
 function paymentEvidenceFromTransaction(transaction: TransactionRow): SubscriptionPaymentEvidence {
   const metadata = metadataRecord(transaction.metadata);
+  const amount = Math.abs(numericValue(transaction.amount));
+  const billedAmount = positiveNumber(metadata.subscription_billed_amount);
+  const exchangeRate = positiveNumber(metadata.subscription_payment_exchange_rate);
   return {
-    amount: Math.abs(numericValue(transaction.amount)),
+    amount,
+    billedAmount,
+    billingCurrency: metadataString(metadata, "subscription_billing_currency"),
     billingDueDate: metadataString(metadata, "subscription_billing_due_date"),
+    configuredExchangeRate: positiveNumber(metadata.subscription_configured_exchange_rate),
+    exchangeRate: exchangeRate || (billedAmount > 0 ? roundCurrencyValue(amount / billedAmount) : 0),
     id: transaction.id,
     note: transaction.note ?? transaction.description ?? transaction.title ?? null,
     paymentDate: transaction.transaction_date ?? formatDateInput(new Date()),
@@ -917,9 +1192,16 @@ function paymentEvidenceFromTransaction(transaction: TransactionRow): Subscripti
 
 function paymentEvidenceFromPaymentRow(payment: SubscriptionPaymentRow): SubscriptionPaymentEvidence {
   const metadata = metadataRecord(payment.metadata);
+  const amount = Math.abs(numericValue(payment.amount));
+  const billedAmount = positiveNumber(metadata.billed_amount);
+  const exchangeRate = positiveNumber(metadata.payment_exchange_rate);
   return {
-    amount: Math.abs(numericValue(payment.amount)),
+    amount,
+    billedAmount,
+    billingCurrency: metadataString(metadata, "billing_currency"),
     billingDueDate: metadataString(metadata, "billing_due_date"),
+    configuredExchangeRate: positiveNumber(metadata.configured_exchange_rate),
+    exchangeRate: exchangeRate || (billedAmount > 0 ? roundCurrencyValue(amount / billedAmount) : 0),
     id: payment.id,
     note: payment.note,
     paymentDate: payment.payment_date ?? formatDateInput(new Date()),
@@ -1023,6 +1305,11 @@ async function reconcileSubscriptionPayments(
   const paymentSchedule = buildSubscriptionPaymentSchedule(subscription, [...manualPaymentEvidences, ...linkedPaymentEvidences]);
   const paymentSnapshots = paymentSchedule.snapshots;
   const metadata = metadataRecord(subscription.metadata);
+  const defaultBillingCurrency = normalizeCurrency(metadata.billing_currency);
+  const defaultBilledAmount = positiveNumber(metadata.billed_amount) || positiveNumber(subscription.amount);
+  const defaultExchangeRate = defaultBillingCurrency === SYSTEM_CURRENCY
+    ? 1
+    : positiveNumber(metadata.exchange_rate) || (defaultBilledAmount > 0 ? roundCurrencyValue(positiveNumber(subscription.amount) / defaultBilledAmount) : 0);
   const lastSnapshot = paymentSnapshots[paymentSnapshots.length - 1];
   const lastPayment = lastSnapshot?.payment;
 
@@ -1038,19 +1325,31 @@ async function reconcileSubscriptionPayments(
   const linkedPaymentSnapshots = paymentSnapshots.filter(({ payment }) => payment.source === "linked_transaction" && payment.transactionId);
   if (linkedPaymentSnapshots.length > 0) {
     const { error: insertPaymentError } = await supabase.from("subscription_payments").insert(
-      linkedPaymentSnapshots.map(({ billingDueDate, payment }) => ({
-        amount: payment.amount,
-        metadata: {
-          billing_due_date: billingDueDate,
-          billing_cycle: normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle),
-          source: "linked_transaction",
-        },
-        note: payment.note,
-        payment_date: payment.paymentDate,
-        subscription_id: subscriptionId,
-        transaction_id: payment.transactionId,
-        user_id: userId,
-      })),
+      linkedPaymentSnapshots.map(({ billingDueDate, payment }) => {
+        const billingCurrency = payment.billingCurrency || defaultBillingCurrency;
+        const billedAmount = payment.billedAmount || defaultBilledAmount;
+        const exchangeRate = billingCurrency === SYSTEM_CURRENCY ? 1 : payment.exchangeRate || defaultExchangeRate;
+        const configuredExchangeRate = billingCurrency === SYSTEM_CURRENCY ? 1 : payment.configuredExchangeRate || defaultExchangeRate;
+
+        return {
+          amount: payment.amount,
+          metadata: {
+            billed_amount: billedAmount,
+            billing_currency: billingCurrency,
+            billing_due_date: billingDueDate,
+            billing_cycle: normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle),
+            configured_exchange_rate: configuredExchangeRate,
+            exchange_difference_amount: roundCurrencyValue(payment.amount - (billedAmount * configuredExchangeRate)),
+            payment_exchange_rate: exchangeRate,
+            source: "linked_transaction",
+          },
+          note: payment.note,
+          payment_date: payment.paymentDate,
+          subscription_id: subscriptionId,
+          transaction_id: payment.transactionId,
+          user_id: userId,
+        };
+      }),
     );
 
     if (insertPaymentError) return insertPaymentError.message;
@@ -1063,6 +1362,10 @@ async function reconcileSubscriptionPayments(
         ...metadata,
         billing_anchor_date: paymentSchedule.anchorDate,
         last_paid_billing_date: lastSnapshot?.billingDueDate ?? null,
+        last_payment_billed_amount: lastPayment?.billedAmount || defaultBilledAmount || null,
+        last_payment_billing_currency: lastPayment?.billingCurrency || defaultBillingCurrency,
+        last_payment_configured_exchange_rate: lastPayment?.configuredExchangeRate || defaultExchangeRate || null,
+        last_payment_exchange_rate: lastPayment?.exchangeRate || defaultExchangeRate || null,
         last_payment_amount: lastPayment?.amount ?? null,
         last_payment_date: lastPayment?.paymentDate ?? null,
         last_payment_transaction_id: lastPayment?.transactionId ?? null,
@@ -1094,19 +1397,26 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
   if (!user) return { error: "You must be signed in." };
   const validationError = await validateAvailableAmount(input, user.id);
   if (validationError) return { error: validationError };
-  const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
-  if ("error" in resolvedInput) return { error: resolvedInput.error };
+  const creditCardDebtResolution = await resolveCreditCardDebtLink(input, user.id);
+  if ("error" in creditCardDebtResolution) return { error: creditCardDebtResolution.error };
+  const resolvedInput = creditCardDebtResolution.input;
+  const subscriptionMetadataResult = await subscriptionPaymentMetadataForInput(supabase, user.id, resolvedInput);
+  if (subscriptionMetadataResult.error) return { error: subscriptionMetadataResult.error };
+  const extraMetadata = {
+    ...creditCardDebtResolution.metadata,
+    ...subscriptionMetadataResult.metadata,
+  };
   let transactionIds: string[] = [];
   if (resolvedInput.type === "Transfer") {
-    const { data, error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id)).select("id");
+    const { data, error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, randomUUID(), extraMetadata)).select("id");
     if (error) return { error: transactionMutationError(error.message) };
     transactionIds = (data as Pick<TransactionRow, "id">[] | null)?.map((transaction) => transaction.id) ?? [];
   } else {
-    const { data, error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id }).select("id").maybeSingle();
+    const { data, error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput, extraMetadata), user_id: user.id }).select("id").maybeSingle();
     if (error) return { error: transactionMutationError(error.message) };
     if (data?.id) transactionIds = [data.id as string];
   }
-  await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(resolvedInput)]);
+  await reconcileDebtIds(supabase, user.id, [linkedDebtIdFromInput(resolvedInput), creditCardDebtResolution.debtId]);
   await reconcileSubscriptionIds(supabase, user.id, [linkedSubscriptionIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths();
   return { transactionIds };
@@ -1131,8 +1441,15 @@ export async function updateTransaction(transactionId: string, input: Transactio
 
   const validationError = await validateAvailableAmount(input, user.id, ignoredTransactionIds);
   if (validationError) return { error: validationError };
-  const resolvedInput = await resolveCreditCardDebtLink(input, user.id);
-  if ("error" in resolvedInput) return { error: resolvedInput.error };
+  const creditCardDebtResolution = await resolveCreditCardDebtLink(input, user.id);
+  if ("error" in creditCardDebtResolution) return { error: creditCardDebtResolution.error };
+  const resolvedInput = creditCardDebtResolution.input;
+  const subscriptionMetadataResult = await subscriptionPaymentMetadataForInput(supabase, user.id, resolvedInput);
+  if (subscriptionMetadataResult.error) return { error: subscriptionMetadataResult.error };
+  const extraMetadata = {
+    ...creditCardDebtResolution.metadata,
+    ...subscriptionMetadataResult.metadata,
+  };
 
   const existingGroupId = transferGroupId(metadataRecord(existingTransaction.metadata));
   const existingType = String(existingTransaction.type ?? "").toLowerCase();
@@ -1146,22 +1463,22 @@ export async function updateTransaction(transactionId: string, input: Transactio
     }
 
     if (resolvedInput.type === "Transfer") {
-      const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, existingGroupId || randomUUID()));
+      const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, existingGroupId || randomUUID(), extraMetadata));
       if (error) return { error: transactionMutationError(error.message) };
     } else {
-      const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput), user_id: user.id });
+      const { error } = await supabase.from("transactions").insert({ ...singleTransactionPayload(resolvedInput, extraMetadata), user_id: user.id });
       if (error) return { error: transactionMutationError(error.message) };
     }
-    await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
+    await reconcileDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput), creditCardDebtResolution.debtId]);
     await reconcileSubscriptionIds(supabase, user.id, [...previousSubscriptionIds, linkedSubscriptionIdFromInput(resolvedInput)]);
     revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
     return {};
   }
 
-  const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(resolvedInput)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
+  const { data, error } = await supabase.from("transactions").update(singleTransactionPayload(resolvedInput, extraMetadata)).eq("id", transactionId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: transactionMutationError(error.message) };
   if (!data) return { error: "Transaction not found." };
-  await reconcileCreditCardDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput)]);
+  await reconcileDebtIds(supabase, user.id, [...previousDebtIds, linkedDebtIdFromInput(resolvedInput), creditCardDebtResolution.debtId]);
   await reconcileSubscriptionIds(supabase, user.id, [...previousSubscriptionIds, linkedSubscriptionIdFromInput(resolvedInput)]);
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
   return {};
@@ -1179,7 +1496,7 @@ export async function deleteTransaction(transactionId: string): Promise<ActionRe
     const previousDebtIds = await getDebtIdsForTransactionIds(supabase, user.id, linkedIds);
     const previousSubscriptionIds = await getSubscriptionIdsForTransactionIds(supabase, user.id, linkedIds);
     const transactionIds = await archiveLinkedTransactions(supabase, user.id, transaction);
-    await reconcileCreditCardDebtIds(supabase, user.id, previousDebtIds);
+    await reconcileDebtIds(supabase, user.id, previousDebtIds);
     await reconcileSubscriptionIds(supabase, user.id, previousSubscriptionIds);
     revalidateTransactionLinkedPaths();
     return { transactionIds };
@@ -1248,7 +1565,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
 
     const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id));
     if (error) return { error: transactionMutationError(error.message) };
-    await reconcileCreditCardDebtIds(supabase, user.id, [linkedDebtIdFromInput(reverseInput)]);
+    await reconcileDebtIds(supabase, user.id, [linkedDebtIdFromInput(reverseInput)]);
     await reconcileSubscriptionIds(supabase, user.id, [linkedSubscriptionIdFromInput(reverseInput)]);
     revalidateTransactionLinkedPaths();
     return {};
@@ -1279,7 +1596,10 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
   });
 
   if (error) return { error: transactionMutationError(error.message) };
-  await reconcileCreditCardDebtIds(supabase, user.id, [source.related_entity_type === "debt" ? source.related_entity_id : ""]);
+  await reconcileDebtIds(supabase, user.id, [
+    source.related_entity_type === "debt" ? source.related_entity_id : "",
+    metadataString(metadata, "credit_card_debt_id"),
+  ]);
   await reconcileSubscriptionIds(supabase, user.id, [source.related_entity_type === "subscription" ? source.related_entity_id : ""]);
   revalidateTransactionLinkedPaths();
   return {};

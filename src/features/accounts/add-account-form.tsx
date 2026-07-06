@@ -180,6 +180,10 @@ function optionalDayInput(value: string) {
   return number >= 1 && number <= 31 ? number : null;
 }
 
+function amountTypeKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
 export function AddAccountForm({ account, categories, returnTo = "/accounts" }: { account?: AccountRecord; categories: CategoryRecord[]; returnTo?: string }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
@@ -219,9 +223,11 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
   const isCreditCard = selectedType === "Credit Card";
+  const namedAmountTypes = amountTypes.map((item) => item.type.trim()).filter(Boolean);
+  const hasDuplicateAmountTypes = new Set(namedAmountTypes.map(amountTypeKey)).size !== namedAmountTypes.length;
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
-  const amountTypesHaveError = showErrors && !isCreditCard && amountTypes.some((item) => item.type.trim() === "");
+  const amountTypesHaveError = showErrors && !isCreditCard && (amountTypes.some((item) => item.type.trim() === "") || hasDuplicateAmountTypes);
   const hasCard = isCreditCard || cardType !== "No Card";
   const cardTypeHasError = showErrors && isCreditCard && cardType === "No Card";
   const cardHasError = showErrors && hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
@@ -256,6 +262,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
     const normalizedAmountTypes = amountTypes.map((item) => ({ type: item.type.trim() }));
     const effectiveAmountTypes = isCreditCard ? [{ type: defaultAmountTypeName }] : normalizedAmountTypes;
     const hasInvalidAmountTypes = !isCreditCard && (normalizedAmountTypes.length === 0 || normalizedAmountTypes.some((item) => item.type === ""));
+    const hasDuplicateNormalizedAmountTypes = !isCreditCard && new Set(normalizedAmountTypes.map((item) => amountTypeKey(item.type))).size !== normalizedAmountTypes.length;
     const hasInvalidCard = hasCard && (cardNumber.trim() === "" || cardSecurityCode.trim() === "" || cardExpiryCode.trim() === "");
     const hasInvalidCreditLimit = isCreditCard && (!Number.isFinite(creditLimitValue) || creditLimitValue <= 0);
     const hasInvalidCreditStatementDay = isCreditCard && creditStatementDay.trim() !== "" && optionalDayInput(creditStatementDay) == null;
@@ -264,6 +271,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
     const hasErrors = accountName.trim() === ""
       || institution.trim() === ""
       || hasInvalidAmountTypes
+      || hasDuplicateNormalizedAmountTypes
       || hasInvalidCard
       || hasInvalidCreditLimit
       || hasInvalidCreditStatementDay
@@ -450,7 +458,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
                   </div>
                 ))}
               </div>
-              {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Each amount type needs a name.</p> : null}
+              {amountTypesHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">{hasDuplicateAmountTypes ? "Amount type names must be unique." : "Each amount type needs a name."}</p> : null}
               <div className="mt-4 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 text-sm font-semibold text-[#45464d]">
                 Amount values are calculated from transaction activity.
               </div>

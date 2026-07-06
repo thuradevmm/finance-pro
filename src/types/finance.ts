@@ -109,11 +109,13 @@ export type SubscriptionRecord = {
   nextBillingDate: string;
   nextBillingDateTimeValue?: string;
   lastPaidAmount: string;
+  lastPaidBilledAmount: string;
   lastPaidBillingDate: string;
   lastPaidBillingDateValue: string;
   lastPaidDate: string;
   lastPaidDateValue: string;
   lastPaymentTransactionId: string;
+  lastPaymentExchangeRateLabel: string;
   paidCycleLabel: string;
   paymentStatus: SubscriptionPaymentStatus;
   paymentStatusDetail: string;

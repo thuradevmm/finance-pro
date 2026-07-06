@@ -68,7 +68,11 @@ type SubscriptionTransactionPaymentRow = {
 
 type SubscriptionPaymentFallback = {
   amount: number;
+  billedAmount: number;
+  billingCurrency: string;
   billingDueDate: string;
+  configuredExchangeRate: number;
+  exchangeRate: number;
   id: string;
   paymentDate: string;
   sortValue: string;
@@ -245,9 +249,16 @@ function isPostedExpensePayment(transaction: SubscriptionTransactionPaymentRow, 
 function paymentFallbackFromPaymentRow(payment: SubscriptionPaymentRow): SubscriptionPaymentFallback {
   const metadata = metadataRecord(payment.metadata);
   const paymentDate = payment.payment_date ?? payment.created_at?.slice(0, 10) ?? "";
+  const amount = Math.abs(numericValue(payment.amount));
+  const billedAmount = numericValue(metadata.billed_amount);
+  const exchangeRate = numericValue(metadata.payment_exchange_rate);
   return {
-    amount: Math.abs(numericValue(payment.amount)),
+    amount,
+    billedAmount,
+    billingCurrency: metadataString(metadata, "billing_currency"),
     billingDueDate: metadataString(metadata, "billing_due_date"),
+    configuredExchangeRate: numericValue(metadata.configured_exchange_rate),
+    exchangeRate: exchangeRate || (billedAmount > 0 ? amount / billedAmount : 0),
     id: payment.id,
     paymentDate,
     sortValue: `${paymentDate}T${payment.created_at ?? ""}`,
@@ -257,9 +268,17 @@ function paymentFallbackFromPaymentRow(payment: SubscriptionPaymentRow): Subscri
 
 function paymentFallbackFromTransaction(transaction: SubscriptionTransactionPaymentRow): SubscriptionPaymentFallback {
   const paymentDate = transaction.transaction_date ?? transaction.created_at?.slice(0, 10) ?? "";
+  const metadata = metadataRecord(transaction.metadata);
+  const amount = Math.abs(numericValue(transaction.amount));
+  const billedAmount = numericValue(metadata.subscription_billed_amount);
+  const exchangeRate = numericValue(metadata.subscription_payment_exchange_rate);
   return {
-    amount: Math.abs(numericValue(transaction.amount)),
-    billingDueDate: metadataString(metadataRecord(transaction.metadata), "subscription_billing_due_date"),
+    amount,
+    billedAmount,
+    billingCurrency: metadataString(metadata, "subscription_billing_currency"),
+    billingDueDate: metadataString(metadata, "subscription_billing_due_date"),
+    configuredExchangeRate: numericValue(metadata.subscription_configured_exchange_rate),
+    exchangeRate: exchangeRate || (billedAmount > 0 ? amount / billedAmount : 0),
     id: transaction.id,
     paymentDate,
     sortValue: `${paymentDate}T${transaction.created_at ?? ""}`,
@@ -301,6 +320,13 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     Boolean(metadataLastPaymentDate),
   );
   const lastPaidAmountValue = metadataLastPaymentDate ? numericValue(metadata.last_payment_amount) : fallbackPayment?.amount ?? 0;
+  const lastPaymentBillingCurrency = normalizeCurrency(metadata.last_payment_billing_currency || fallbackPayment?.billingCurrency || billingCurrency);
+  const lastPaymentBilledAmountValue = lastPaidDateValue
+    ? numericValue(metadata.last_payment_billed_amount, fallbackPayment?.billedAmount || billedAmountValue)
+    : 0;
+  const lastPaymentExchangeRateValue = lastPaidDateValue
+    ? numericValue(metadata.last_payment_exchange_rate, fallbackPayment?.exchangeRate || exchangeRate)
+    : 0;
   const payment = paymentStatus({
     billingCycle,
     lastPaidBillingDate: lastPaidBillingDateValue,
@@ -325,10 +351,12 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     id: row.id,
     isPaidForCurrentPeriod: payment.isPaidForCurrentPeriod,
     lastPaidAmount: lastPaidDateValue ? formatMmk(lastPaidAmountValue) : "-",
+    lastPaidBilledAmount: lastPaidDateValue ? formatCurrencyAmount(lastPaymentBilledAmountValue, lastPaymentBillingCurrency) : "-",
     lastPaidBillingDate: lastPaidBillingDateValue ? formatDate(lastPaidBillingDateValue) : "-",
     lastPaidBillingDateValue,
     lastPaidDate: lastPaidDateValue ? formatDate(lastPaidDateValue) : "-",
     lastPaidDateValue,
+    lastPaymentExchangeRateLabel: lastPaidDateValue ? exchangeRateLabel(lastPaymentBillingCurrency, lastPaymentExchangeRateValue) : "-",
     lastPaymentTransactionId: metadataString(metadata, "last_payment_transaction_id") || fallbackPayment?.transactionId || "",
     name: row.name,
     nextBillingDate: formatDate(nextBillingDateValue),

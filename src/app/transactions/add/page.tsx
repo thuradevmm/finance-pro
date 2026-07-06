@@ -23,8 +23,35 @@ function relatedOptions(
     { label: "No linked record", type: "none", value: "" },
     ...budgets.map((budget) => ({ label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
     ...savingsGoals.map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
-    ...debts.map((debt) => ({ label: `Debt: ${debt.name}`, type: "debt" as const, value: debt.id })),
-    ...subscriptions.map((subscription) => ({ label: `Subscription: ${subscription.name}`, type: "subscription" as const, value: subscription.id })),
+    ...debts.map((debt) => ({
+      debtPayoff: debt.isCreditCardDebt ? undefined : {
+        durationMonths: debt.durationMonths,
+        interestRate: debt.interestRateValue,
+        interestRatePeriod: debt.interestRatePeriod,
+        openingRepaidAmount: debt.storedRepaidAmountValue,
+        repayments: debt.repaymentActivity,
+        settledAt: debt.settledAtValue,
+        settledEarly: debt.status === "Paid" && Boolean(debt.settledAtValue),
+        startDate: debt.startDate,
+        totalAmount: debt.totalAmountValue,
+      },
+      label: `Debt: ${debt.name}`,
+      type: "debt" as const,
+      value: debt.id,
+    })),
+    ...subscriptions.map((subscription) => ({
+      label: `Subscription: ${subscription.name}`,
+      subscriptionPayment: {
+        amount: subscription.amountValue,
+        billedAmount: subscription.billedAmountValue,
+        billingCurrency: subscription.billingCurrency,
+        billingCycle: subscription.billingCycle,
+        exchangeRate: subscription.exchangeRate,
+        nextBillingDate: subscription.nextBillingDateValue,
+      },
+      type: "subscription" as const,
+      value: subscription.id,
+    })),
     ...assets.map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
   ];
 }

@@ -4,7 +4,7 @@ import type { IconName } from "@/components/ui/icon";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { buildEmiSchedule, formatDateInput, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
+import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
 import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { metadataRecord, normalizeAccountType, numericValue, roundCurrencyValue, transactionStatusAffectsBalance } from "@/lib/ledger";
 import type { DebtRecord, DebtStatus, SummaryMetric, UpcomingDebtPayment } from "@/types/finance";
@@ -43,11 +43,17 @@ export type DebtRecordWithValues = DebtRecord & {
   nextPaymentDateValue: string;
   notes: string;
   paymentAccountId: string;
+  payoffQuoteAmountValue: number;
+  payoffQuoteDateValue: string;
+  payoffQuoteInterestAmountValue: number;
+  payoffQuotePrincipalAmountValue: number;
   payoffDate: string;
   repaymentActivity: DebtLedgerActivity[];
   repaidAmountValue: number;
   remainingBalanceValue: number;
+  settledAtValue: string;
   startDate: string;
+  storedRepaidAmountValue: number;
   totalAmountValue: number;
   monthlyPaymentValue: number;
   type: string;
@@ -86,6 +92,7 @@ type LinkedTransactionRow = {
   account_id: string | null;
   amount: number | string | null;
   metadata: unknown;
+  related_entity_type: string | null;
   status: string | null;
   transaction_date: string | null;
   transfer_account_id: string | null;
@@ -122,6 +129,11 @@ function hasManualCreditCardTerms(metadata: Record<string, unknown>) {
   return true;
 }
 
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
 function transferDirection(metadata: Record<string, unknown>) {
   const direction = typeof metadata.transfer_direction === "string" ? metadata.transfer_direction.toLowerCase() : "";
   if (direction === "debit" || direction === "credit") return direction;
@@ -155,6 +167,13 @@ function transactionDebtImpact(transaction: LinkedTransactionRow, creditCardAcco
   if (type === "transfer" && direction === "credit") return "";
   if (type === "expense" || type === "income" || type === "transfer") return "repayment";
   return "";
+}
+
+function linkedDebtIdForTransaction(transaction: LinkedTransactionRow) {
+  const metadata = metadataRecord(transaction.metadata);
+  const creditCardDebtId = metadataString(metadata, "credit_card_debt_id");
+  if (creditCardDebtId) return creditCardDebtId;
+  return transaction.related_entity_type === "debt" ? transaction.related_entity_id ?? "" : "";
 }
 
 function normalizeInterestRatePeriod(value: unknown): DebtInterestRatePeriod {
@@ -278,8 +297,10 @@ function mapDebt(
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
   const chargeActivity = linkedChargeEntriesByDebtId.get(row.id) ?? [];
   const repaymentActivity = linkedRepaymentEntriesByDebtId.get(row.id) ?? [];
+  const storedRepaidAmountValue = numericValue(row.repaid_amount) || numericValue(metadata.repaid_amount);
+  const linkedRepaymentAmountValue = linkedRepaymentsByDebtId.get(row.id) ?? 0;
   const totalChargedAmountValue = (numericValue(row.total_amount) || numericValue(metadata.total_amount)) + (linkedChargesByDebtId.get(row.id) ?? 0);
-  const repaidAmountValue = (numericValue(row.repaid_amount) || numericValue(metadata.repaid_amount)) + (linkedRepaymentsByDebtId.get(row.id) ?? 0);
+  const repaidAmountValue = storedRepaidAmountValue + linkedRepaymentAmountValue;
   const creditCardUsedAmountValue = isCreditCard ? Math.max(totalChargedAmountValue - repaidAmountValue, 0) : 0;
   const totalAmountValue = isCreditCard ? creditCardUsedAmountValue : totalChargedAmountValue;
   const interestRatePeriod = normalizeInterestRatePeriod(metadata.interest_rate_period);
@@ -301,15 +322,41 @@ function mapDebt(
       startDate,
     })
     : null;
-  const monthlyPaymentValue = isCreditCard && !usesManualCreditCardTerms
-    ? creditCardUsedAmountValue
-    : emiSchedule?.monthlyPayment || storedMonthlyPaymentValue;
-  const payoffDate = emiSchedule?.payoffDate || storedPayoffDate;
-  const nextPaymentDateValue = isCreditCard
-    ? storedNextPaymentDateValue
-    : emiSchedule?.nextPaymentDate || storedNextPaymentDateValue;
-  const remaining = isCreditCard ? creditCardUsedAmountValue : emiSchedule?.remainingPrincipal ?? Math.max(totalAmountValue - repaidAmountValue, 0);
-  const repaidPrincipalValue = emiSchedule?.principalPaid ?? repaidAmountValue;
+  const settledAtValue = typeof metadata.early_payoff_date === "string"
+    ? metadata.early_payoff_date
+    : typeof metadata.paid_at === "string"
+      ? metadata.paid_at.slice(0, 10)
+      : "";
+  const hasEarlyPayoffSettlement = metadata.early_payoff === true
+    || (String(row.status ?? metadata.status ?? "").toLowerCase() === "paid" && numericValue(metadata.remaining_principal) <= 0.005 && Boolean(settledAtValue));
+  const payoffSummary = !isCreditCard && totalAmountValue > 0
+    ? calculateDebtPayoffSummary({
+      interestRate: interestRateValue,
+      interestRatePeriod,
+      numberOfMonths: durationMonths,
+      openingRepaidAmount: storedRepaidAmountValue,
+      principal: totalAmountValue,
+      referenceDate: formatDateInput(new Date()),
+      repayments: repaymentActivity,
+      settledAt: settledAtValue,
+      settledEarly: hasEarlyPayoffSettlement,
+      startDate,
+    })
+    : null;
+  const remaining = isCreditCard ? creditCardUsedAmountValue : payoffSummary?.remainingPrincipal ?? emiSchedule?.remainingPrincipal ?? Math.max(totalAmountValue - repaidAmountValue, 0);
+  const isPaid = remaining <= 0.005;
+  const monthlyPaymentValue = isPaid
+    ? 0
+    : isCreditCard && !usesManualCreditCardTerms
+      ? creditCardUsedAmountValue
+      : emiSchedule?.monthlyPayment || storedMonthlyPaymentValue;
+  const payoffDate = payoffSummary?.isEarlyPayoff ? payoffSummary.paidAt : emiSchedule?.payoffDate || storedPayoffDate;
+  const nextPaymentDateValue = isPaid
+    ? ""
+    : isCreditCard
+      ? storedNextPaymentDateValue
+      : emiSchedule?.nextPaymentDate || storedNextPaymentDateValue;
+  const repaidPrincipalValue = payoffSummary?.principalPaid ?? emiSchedule?.principalPaid ?? repaidAmountValue;
   const progressPercent = isCreditCard && !usesManualCreditCardTerms
     ? remaining <= 0 ? 100 : 0
     : totalAmountValue > 0 ? Math.min(Math.round((repaidPrincipalValue / totalAmountValue) * 100), 100) : 0;
@@ -336,6 +383,10 @@ function mapDebt(
     nextPaymentDateValue,
     notes: row.description ?? (typeof metadata.notes === "string" ? metadata.notes : ""),
     paymentAccountId: row.payment_account_id ?? (typeof metadata.payment_account_id === "string" ? metadata.payment_account_id : ""),
+    payoffQuoteAmountValue: payoffSummary?.currentQuote.payoffAmount ?? 0,
+    payoffQuoteDateValue: payoffSummary?.currentQuote.asOfDate ?? "",
+    payoffQuoteInterestAmountValue: payoffSummary?.currentQuote.accruedInterestAmount ?? 0,
+    payoffQuotePrincipalAmountValue: payoffSummary?.currentQuote.principalOutstandingAmount ?? 0,
     payoffDate,
     progressPercent,
     repaymentActivity,
@@ -343,8 +394,10 @@ function mapDebt(
     remainingBalanceValue: remaining,
     repaidAmount: formatMmk(repaidAmountValue),
     repaidAmountValue,
+    settledAtValue: payoffSummary?.paidAt ?? settledAtValue,
     startDate,
     status: isCreditCard && !usesManualCreditCardTerms ? normalizeCreditCardDebtStatus(row.status ?? metadata.status, remaining) : normalizeStatus(row.status ?? metadata.status, remaining),
+    storedRepaidAmountValue,
     totalAmount: formatMmk(totalAmountValue),
     totalAmountValue,
     type,
@@ -357,7 +410,7 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
 
   const [debtsResult, transactionsResult, accountsResult] = await Promise.all([
     debtsQuery,
-    supabase.from("transactions").select("related_entity_id,account_id,transfer_account_id,type,amount,metadata,status,transaction_date").eq("user_id", userId).eq("related_entity_type", "debt").is("deleted_at", null),
+    supabase.from("transactions").select("related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date").eq("user_id", userId).is("deleted_at", null),
     supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
   ]);
   const error = debtsResult.error ?? transactionsResult.error ?? accountsResult.error;
@@ -371,7 +424,8 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
   const linkedRepaymentEntriesByDebtId = new Map<string, DebtLedgerActivity[]>();
   const linkedRepaymentsByDebtId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
-    if (!transaction.related_entity_id) continue;
+    const debtId = linkedDebtIdForTransaction(transaction);
+    if (!debtId) continue;
     if (!transactionStatusAllowsDebtImpact(transaction.status)) continue;
     const amount = Math.abs(numericValue(transaction.amount));
     if (amount <= 0) continue;
@@ -382,11 +436,11 @@ export async function getDebts(supabase: SupabaseClient, userId: string, categor
     const targetMap = impact === "charge" ? linkedChargesByDebtId : linkedRepaymentsByDebtId;
     const targetEntryMap = impact === "charge" ? linkedChargeEntriesByDebtId : linkedRepaymentEntriesByDebtId;
 
-    targetMap.set(transaction.related_entity_id, (targetMap.get(transaction.related_entity_id) ?? 0) + amount);
+    targetMap.set(debtId, (targetMap.get(debtId) ?? 0) + amount);
     if (transaction.transaction_date) {
-      const entries = targetEntryMap.get(transaction.related_entity_id) ?? [];
+      const entries = targetEntryMap.get(debtId) ?? [];
       entries.push({ amountValue: amount, dateValue: transaction.transaction_date });
-      targetEntryMap.set(transaction.related_entity_id, entries);
+      targetEntryMap.set(debtId, entries);
     }
   }
   return (debtsResult.data as DebtRow[])

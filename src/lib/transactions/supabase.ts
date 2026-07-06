@@ -1,12 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { formatMmk, formatMmkPreview } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatMmk, formatMmkPreview } from "@/lib/currency";
 import { combineDateWithTimestampTime, formatDisplayDate } from "@/lib/date-format";
 import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import type { DebtDatedRepayment, DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { summarizeLedgerTransactions } from "@/lib/ledger";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
+
+export type TransactionSubscriptionPaymentSnapshot = {
+  billedAmount: number;
+  billingCurrency: string;
+  billingDueDate: string;
+  exchangeRate: number;
+};
 
 export type TransactionRecord = Transaction & {
   accountId: string;
@@ -22,12 +30,32 @@ export type TransactionRecord = Transaction & {
   transferAccountId: string;
   transferAccountAmountType: AccountAmountType;
   transferToAccountId: string;
+  subscriptionPayment?: TransactionSubscriptionPaymentSnapshot;
 };
 
 export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type TransactionRelatedOption = {
+  debtPayoff?: {
+    durationMonths: number;
+    interestRate: number;
+    interestRatePeriod: DebtInterestRatePeriod;
+    openingRepaidAmount: number;
+    repayments: DebtDatedRepayment[];
+    settledAt: string;
+    settledEarly: boolean;
+    startDate: string;
+    totalAmount: number;
+  };
   label: string;
+  subscriptionPayment?: {
+    amount: number;
+    billedAmount: number;
+    billingCurrency: string;
+    billingCycle: string;
+    exchangeRate: number;
+    nextBillingDate: string;
+  };
   type: TransactionRelatedEntityType;
   value: string;
 };
@@ -42,6 +70,12 @@ export type TransactionFormData = {
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
   status: string;
+  subscriptionPayment?: {
+    billedAmount: number;
+    billingCurrency: string;
+    exchangeRate: number;
+    billingDueDate: string;
+  };
   title: string;
   transferAccountId: string;
   transferAccountAmountType: AccountAmountType;
@@ -70,6 +104,21 @@ function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
     : {};
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value : "";
+}
+
+function positiveMetadataNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function normalizeCurrency(value: unknown) {
+  const currency = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return currency || SYSTEM_CURRENCY;
 }
 
 function normalizeAccountAmountType(value: unknown): AccountAmountType {
@@ -122,6 +171,23 @@ function isPostedTransaction(transaction: Pick<TransactionRecord, "status">) {
   return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
+function subscriptionPaymentSnapshot(row: TransactionRow, metadata: Record<string, unknown>): TransactionSubscriptionPaymentSnapshot | undefined {
+  if (row.related_entity_type !== "subscription") return undefined;
+
+  const billedAmount = positiveMetadataNumber(metadata.subscription_billed_amount);
+  const exchangeRate = positiveMetadataNumber(metadata.subscription_payment_exchange_rate);
+  const billingCurrency = metadataString(metadata, "subscription_billing_currency");
+  const billingDueDate = metadataString(metadata, "subscription_billing_due_date");
+  if (billedAmount <= 0 && exchangeRate <= 0 && !billingCurrency && !billingDueDate) return undefined;
+
+  return {
+    billedAmount,
+    billingCurrency: normalizeCurrency(billingCurrency),
+    billingDueDate,
+    exchangeRate,
+  };
+}
+
 function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
@@ -148,6 +214,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     : "";
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
+  const subscriptionPayment = subscriptionPaymentSnapshot(row, metadata);
 
   return {
     account: accountLabel,
@@ -176,6 +243,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     transferToAccount,
     transferToAccountId,
     type,
+    ...(subscriptionPayment ? { subscriptionPayment } : {}),
     ...(row.related_entity_type === "asset" ? { linkedAssetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "budget" ? { linkedBudgetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "debt" ? { linkedDebtId: row.related_entity_id ?? undefined } : {}),

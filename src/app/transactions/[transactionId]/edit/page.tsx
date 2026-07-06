@@ -12,7 +12,7 @@ import { getSavingsGoals } from "@/lib/savings-goals/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSubscriptions } from "@/lib/subscriptions/supabase";
-import { getTransaction, type TransactionRelatedOption } from "@/lib/transactions/supabase";
+import { getTransaction, type TransactionRecord, type TransactionRelatedOption } from "@/lib/transactions/supabase";
 
 function relatedOptions(
   budgets: Awaited<ReturnType<typeof getBudgets>>,
@@ -20,13 +20,51 @@ function relatedOptions(
   debts: Awaited<ReturnType<typeof getDebts>>,
   subscriptions: Awaited<ReturnType<typeof getSubscriptions>>,
   assets: Awaited<ReturnType<typeof getAssets>>,
+  transaction?: TransactionRecord,
 ): TransactionRelatedOption[] {
   return [
     { label: "No linked record", type: "none", value: "" },
     ...budgets.map((budget) => ({ label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
     ...savingsGoals.map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
-    ...debts.map((debt) => ({ label: `Debt: ${debt.name}`, type: "debt" as const, value: debt.id })),
-    ...subscriptions.map((subscription) => ({ label: `Subscription: ${subscription.name}`, type: "subscription" as const, value: subscription.id })),
+    ...debts.map((debt) => ({
+      debtPayoff: debt.isCreditCardDebt ? undefined : {
+        durationMonths: debt.durationMonths,
+        interestRate: debt.interestRateValue,
+        interestRatePeriod: debt.interestRatePeriod,
+        openingRepaidAmount: debt.storedRepaidAmountValue,
+        repayments: debt.repaymentActivity,
+        settledAt: debt.settledAtValue,
+        settledEarly: debt.status === "Paid" && Boolean(debt.settledAtValue),
+        startDate: debt.startDate,
+        totalAmount: debt.totalAmountValue,
+      },
+      label: `Debt: ${debt.name}`,
+      type: "debt" as const,
+      value: debt.id,
+    })),
+    ...subscriptions.map((subscription) => ({
+      label: `Subscription: ${subscription.name}`,
+      subscriptionPayment: {
+        amount: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
+          ? transaction.amountValue
+          : subscription.amountValue,
+        billedAmount: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
+          ? transaction.subscriptionPayment?.billedAmount || subscription.billedAmountValue
+          : subscription.billedAmountValue,
+        billingCurrency: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
+          ? transaction.subscriptionPayment?.billingCurrency || subscription.billingCurrency
+          : subscription.billingCurrency,
+        billingCycle: subscription.billingCycle,
+        exchangeRate: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
+          ? transaction.subscriptionPayment?.exchangeRate || subscription.exchangeRate
+          : subscription.exchangeRate,
+        nextBillingDate: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
+          ? transaction.subscriptionPayment?.billingDueDate || subscription.nextBillingDateValue
+          : subscription.nextBillingDateValue,
+      },
+      type: "subscription" as const,
+      value: subscription.id,
+    })),
     ...assets.map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
   ];
 }
@@ -58,7 +96,7 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description="Update transaction details and linked financial impacts." title="Edit Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} relatedOptions={relatedOptions(budgets, savingsGoals, debts, subscriptions, assets)} transaction={transaction} />
+      <AddTransactionForm accounts={accounts} categories={categories} relatedOptions={relatedOptions(budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
     </AppShell>
   );
 }

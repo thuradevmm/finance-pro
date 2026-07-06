@@ -19,6 +19,31 @@ export type EmiPaymentAllocation = EmiSchedulePayment & {
   paidPrincipalValue: number;
 };
 
+export type DebtDatedRepayment = {
+  amountValue: number;
+  dateValue: string;
+};
+
+export type DebtPayoffQuote = {
+  accruedInterestAmount: number;
+  asOfDate: string;
+  payoffAmount: number;
+  principalOutstandingAmount: number;
+};
+
+export type DebtPayoffSummary = {
+  currentQuote: DebtPayoffQuote;
+  isPaidOff: boolean;
+  isEarlyPayoff: boolean;
+  paidAt: string;
+  principalPaid: number;
+  remainingPrincipal: number;
+  settlementAmount: number;
+  settlementInterestAmount: number;
+  settlementPrincipalAmount: number;
+  totalPaid: number;
+};
+
 export type DebtRepaymentSchedule = {
   firstInterestAmount: number;
   firstPrincipalAmount: number;
@@ -43,7 +68,16 @@ type BuildEmiScheduleInput = {
   startDate: string;
 };
 
+type CalculateDebtPayoffSummaryInput = BuildEmiScheduleInput & {
+  openingRepaidAmount?: number;
+  referenceDate?: string;
+  repayments?: DebtDatedRepayment[];
+  settledAt?: string;
+  settledEarly?: boolean;
+};
+
 const dayMs = 86_400_000;
+const payoffTolerance = 0.005;
 
 function finitePositiveValue(value: number) {
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -84,6 +118,69 @@ function startOfDateTimestamp(value: Date) {
   const date = new Date(value);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
+}
+
+function compareDebtRepayments(first: DebtDatedRepayment, second: DebtDatedRepayment) {
+  const firstDate = parseDateInput(first.dateValue);
+  const secondDate = parseDateInput(second.dateValue);
+  const dateDifference = (firstDate?.getTime() ?? 0) - (secondDate?.getTime() ?? 0);
+  return dateDifference || first.amountValue - second.amountValue;
+}
+
+function safeReferenceDate(value: string | null | undefined) {
+  return parseDateInput(value) ?? new Date();
+}
+
+function nextScheduleDueDateAfter(payments: EmiSchedulePayment[], afterDate: Date) {
+  const afterTimestamp = startOfDateTimestamp(afterDate);
+  const payment = payments.find((entry) => entry.timestamp > afterTimestamp);
+  return payment ? parseDateInput(payment.dueDateValue) : null;
+}
+
+function fallbackMonthlyPeriodEnd(startDate: Date) {
+  return addMonthsPreservingDay(formatDateInput(startDate), 1) ?? new Date(startDate.getTime() + (30 * dayMs));
+}
+
+function calculateMonthlyAccruedInterest(
+  balance: number,
+  interestRate: number,
+  fromDate: Date,
+  toDate: Date,
+  payments: EmiSchedulePayment[],
+) {
+  const monthlyRate = interestRate / 100;
+  if (!Number.isFinite(monthlyRate) || monthlyRate <= 0) return 0;
+
+  let cursor = new Date(fromDate);
+  let accruedInterest = 0;
+
+  while (cursor < toDate) {
+    const scheduledPeriodEnd = nextScheduleDueDateAfter(payments, cursor) ?? fallbackMonthlyPeriodEnd(cursor);
+    const periodEnd = scheduledPeriodEnd > cursor ? scheduledPeriodEnd : fallbackMonthlyPeriodEnd(cursor);
+    const effectiveEnd = periodEnd < toDate ? periodEnd : toDate;
+    const periodDays = Math.max(daysBetween(cursor, periodEnd), 1);
+    const accruedDays = Math.max(daysBetween(cursor, effectiveEnd), 0);
+    accruedInterest += balance * monthlyRate * (accruedDays / periodDays);
+    cursor = periodEnd;
+  }
+
+  return accruedInterest;
+}
+
+function payoffInterestAmount(
+  balance: number,
+  interestRate: number,
+  interestRatePeriod: DebtInterestRatePeriod,
+  fromDate: Date,
+  toDate: Date,
+  payments: EmiSchedulePayment[],
+) {
+  if (!Number.isFinite(interestRate) || interestRate <= 0 || balance <= 0 || toDate <= fromDate) return 0;
+
+  const raw = interestRatePeriod === "Monthly"
+    ? calculateMonthlyAccruedInterest(balance, interestRate, fromDate, toDate, payments)
+    : balance * (interestRate / 100) * (daysBetween(fromDate, toDate) / 365);
+  return roundCurrencyValue(raw);
 }
 
 export function calculateEmiPayment(
@@ -267,5 +364,151 @@ export function buildEmiSchedule(input: BuildEmiScheduleInput): DebtRepaymentSch
     totalPrincipal: roundCurrencyValue(totalPrincipal),
     totalRepayment,
     payments,
+  };
+}
+
+function payoffQuoteForRepaidAmount(
+  schedule: DebtRepaymentSchedule,
+  input: Pick<BuildEmiScheduleInput, "interestRate" | "interestRatePeriod" | "principal" | "startDate">,
+  repaidAmount: number,
+  asOfDateValue: string,
+): DebtPayoffQuote {
+  const asOfDate = safeReferenceDate(asOfDateValue);
+  const asOfDateInput = formatDateInput(asOfDate);
+  const principal = finitePositiveValue(input.principal);
+  const startedAt = parseDateInput(input.startDate);
+  if (!startedAt || principal <= 0) {
+    return {
+      accruedInterestAmount: 0,
+      asOfDate: asOfDateInput,
+      payoffAmount: 0,
+      principalOutstandingAmount: 0,
+    };
+  }
+
+  const allocations = allocateEmiPayments(schedule.payments, repaidAmount);
+  const principalPaid = roundCurrencyValue(allocations.reduce((sum, payment) => sum + payment.paidPrincipalValue, 0));
+  const principalOutstanding = roundCurrencyValue(Math.max(principal - principalPaid, 0));
+  if (principalOutstanding <= payoffTolerance) {
+    return {
+      accruedInterestAmount: 0,
+      asOfDate: asOfDateInput,
+      payoffAmount: 0,
+      principalOutstandingAmount: 0,
+    };
+  }
+
+  let lastInterestCoveredIndex = -1;
+  for (let index = 0; index < allocations.length; index += 1) {
+    const payment = allocations[index];
+    if (payment.interestAmount <= payoffTolerance || payment.paidInterestValue + payoffTolerance >= payment.interestAmount) {
+      lastInterestCoveredIndex = index;
+      continue;
+    }
+    break;
+  }
+
+  const lastCoveredDate = lastInterestCoveredIndex >= 0
+    ? parseDateInput(allocations[lastInterestCoveredIndex].dueDateValue) ?? startedAt
+    : startedAt;
+  const accrualStartDate = lastCoveredDate > asOfDate ? asOfDate : lastCoveredDate;
+  const openPeriodInterestCredit = lastCoveredDate > asOfDate ? 0 : allocations[lastInterestCoveredIndex + 1]?.paidInterestValue ?? 0;
+  const accruedInterest = payoffInterestAmount(
+    principalOutstanding,
+    input.interestRate,
+    input.interestRatePeriod,
+    accrualStartDate,
+    asOfDate,
+    schedule.payments,
+  );
+  const accruedInterestDue = roundCurrencyValue(Math.max(accruedInterest - openPeriodInterestCredit, 0));
+
+  return {
+    accruedInterestAmount: accruedInterestDue,
+    asOfDate: asOfDateInput,
+    payoffAmount: roundCurrencyValue(principalOutstanding + accruedInterestDue),
+    principalOutstandingAmount: principalOutstanding,
+  };
+}
+
+export function calculateDebtPayoffSummary(input: CalculateDebtPayoffSummaryInput): DebtPayoffSummary {
+  const principal = finitePositiveValue(input.principal);
+  const schedule = buildEmiSchedule({
+    interestRate: input.interestRate,
+    interestRatePeriod: input.interestRatePeriod,
+    numberOfMonths: input.numberOfMonths,
+    principal,
+    repaidAmount: 0,
+    startDate: input.startDate,
+  });
+  const sortedRepayments = [...(input.repayments ?? [])]
+    .filter((repayment) => finitePositiveValue(repayment.amountValue) > 0 && parseDateInput(repayment.dateValue))
+    .sort(compareDebtRepayments);
+  let appliedAmount = roundCurrencyValue(Math.max(input.openingRepaidAmount ?? input.repaidAmount ?? 0, 0));
+  const totalDatedRepaymentAmount = roundCurrencyValue(sortedRepayments.reduce((sum, repayment) => sum + finitePositiveValue(repayment.amountValue), 0));
+  if (input.settledEarly && appliedAmount + totalDatedRepaymentAmount + payoffTolerance >= principal) {
+    const paidAt = input.settledAt || sortedRepayments.at(-1)?.dateValue || "";
+    return {
+      currentQuote: {
+        accruedInterestAmount: 0,
+        asOfDate: paidAt || input.referenceDate || formatDateInput(new Date()),
+        payoffAmount: 0,
+        principalOutstandingAmount: 0,
+      },
+      isPaidOff: true,
+      isEarlyPayoff: true,
+      paidAt,
+      principalPaid: principal,
+      remainingPrincipal: 0,
+      settlementAmount: 0,
+      settlementInterestAmount: roundCurrencyValue(Math.max(appliedAmount + totalDatedRepaymentAmount - principal, 0)),
+      settlementPrincipalAmount: principal,
+      totalPaid: roundCurrencyValue(appliedAmount + totalDatedRepaymentAmount),
+    };
+  }
+
+  for (const repayment of sortedRepayments) {
+    const repaymentAmount = roundCurrencyValue(finitePositiveValue(repayment.amountValue));
+    const quote = payoffQuoteForRepaidAmount(schedule, input, appliedAmount, repayment.dateValue);
+    if (quote.principalOutstandingAmount > payoffTolerance && repaymentAmount + payoffTolerance >= quote.payoffAmount) {
+      return {
+        currentQuote: {
+          accruedInterestAmount: 0,
+          asOfDate: quote.asOfDate,
+          payoffAmount: 0,
+          principalOutstandingAmount: 0,
+        },
+        isPaidOff: true,
+        isEarlyPayoff: true,
+        paidAt: quote.asOfDate,
+        principalPaid: principal,
+        remainingPrincipal: 0,
+        settlementAmount: repaymentAmount,
+        settlementInterestAmount: quote.accruedInterestAmount,
+        settlementPrincipalAmount: quote.principalOutstandingAmount,
+        totalPaid: roundCurrencyValue(appliedAmount + repaymentAmount),
+      };
+    }
+
+    appliedAmount = roundCurrencyValue(appliedAmount + repaymentAmount);
+  }
+
+  const allocations = allocateEmiPayments(schedule.payments, appliedAmount);
+  const principalPaid = roundCurrencyValue(allocations.reduce((sum, payment) => sum + payment.paidPrincipalValue, 0));
+  const remainingPrincipal = roundCurrencyValue(Math.max(principal - principalPaid, 0));
+  const referenceDate = input.referenceDate ?? formatDateInput(new Date());
+  const currentQuote = payoffQuoteForRepaidAmount(schedule, input, appliedAmount, referenceDate);
+
+  return {
+    currentQuote,
+    isPaidOff: remainingPrincipal <= payoffTolerance,
+    isEarlyPayoff: false,
+    paidAt: remainingPrincipal <= payoffTolerance ? sortedRepayments.at(-1)?.dateValue ?? "" : "",
+    principalPaid,
+    remainingPrincipal: remainingPrincipal <= payoffTolerance ? 0 : remainingPrincipal,
+    settlementAmount: 0,
+    settlementInterestAmount: 0,
+    settlementPrincipalAmount: 0,
+    totalPaid: appliedAmount,
   };
 }

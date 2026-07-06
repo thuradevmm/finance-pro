@@ -66,6 +66,11 @@ function RecordPaymentLink({ className, subscription }: { className?: string; su
   );
 }
 
+function billingTimelineMeta(billing: UpcomingSubscriptionBilling) {
+  const reminderLabel = billing.reminderLabel === "Off" ? "" : billing.reminderLabel;
+  return [`${billing.billingCycle} billing`, reminderLabel].filter(Boolean).join(" · ");
+}
+
 function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
   const reminderItems = subscriptions.filter((subscription) => subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in")).slice(0, 4);
 
@@ -122,6 +127,7 @@ function PaidCyclePanel({ subscriptions }: { subscriptions: SubscriptionRecord[]
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
                 <p className="mt-1 text-xs font-semibold text-[#166534]">{subscription.lastPaidAmount} paid on {subscription.lastPaidDate}</p>
+                <p className="mt-1 text-xs font-semibold text-[#45464d]">{subscription.lastPaidBilledAmount} · {subscription.lastPaymentExchangeRateLabel}</p>
               </div>
               <PaymentStatusBadge subscription={subscription} />
             </div>
@@ -180,7 +186,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{billing.name}</p>
-                <p className="mt-1 text-xs font-medium text-[#45464d]">{billing.billingCycle} · {billing.reminderLabel}</p>
+                <p className="mt-1 text-xs font-medium text-[#45464d]">{billingTimelineMeta(billing)}</p>
                 <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{billing.billedAmount}</p>
               </div>
               <p className="amount-value col-span-2 ml-[3.25rem] max-w-full overflow-hidden rounded-md bg-[#f8f9ff] px-3 py-2 text-right text-base font-semibold text-[#0b1c30] sm:text-lg" title={billing.amount}>{billing.amount}</p>
@@ -266,6 +272,8 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                   <td className="whitespace-nowrap px-4 py-4 text-[#45464d]">
                     <div className="font-semibold text-[#0b1c30]">{subscription.lastPaidDate}</div>
                     <div className="mt-1 text-xs font-semibold text-[#76777d]">{subscription.lastPaidAmount}</div>
+                    <div className="mt-1 text-xs font-semibold text-[#76777d]">{subscription.lastPaidBilledAmount}</div>
+                    <div className="mt-1 text-xs font-semibold text-[#76777d]">{subscription.lastPaymentExchangeRateLabel}</div>
                   </td>
                   <td className="px-4 py-4"><ReminderStatusBadge status={subscription.reminderStatus} /></td>
                   <td className="px-4 py-4">
@@ -316,7 +324,7 @@ export function SubscriptionsPageContent({
   const filteredSubscriptions = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleSubscriptions.filter((subscription) => {
-      const searchable = `${subscription.name} ${subscription.amount} ${subscription.billedAmount} ${subscription.exchangeRateLabel} ${subscription.billingCycle} ${subscription.category} ${subscription.paymentAccount} ${subscription.nextBillingDate} ${subscription.paymentStatus} ${subscription.paymentStatusDetail} ${subscription.lastPaidDate} ${subscription.reminderStatus} ${subscription.status}`.toLowerCase();
+      const searchable = `${subscription.name} ${subscription.amount} ${subscription.billedAmount} ${subscription.exchangeRateLabel} ${subscription.billingCycle} ${subscription.category} ${subscription.paymentAccount} ${subscription.nextBillingDate} ${subscription.paymentStatus} ${subscription.paymentStatusDetail} ${subscription.lastPaidDate} ${subscription.lastPaidAmount} ${subscription.lastPaidBilledAmount} ${subscription.lastPaymentExchangeRateLabel} ${subscription.reminderStatus} ${subscription.status}`.toLowerCase();
       return normalizedSearch === "" || searchable.includes(normalizedSearch);
     });
   }, [search, visibleSubscriptions]);
