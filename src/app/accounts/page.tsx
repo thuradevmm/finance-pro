@@ -15,8 +15,9 @@ import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
-import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber } from "@/lib/accounts/card-display";
+import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
+import { formatMmk, parseCurrency } from "@/lib/currency";
 import { summarizeFinancialPosition } from "@/lib/ledger";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -332,113 +333,123 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
     cashBalances: ledgerAccounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)),
     creditCardBalances: creditAccounts.map((account) => account.creditUsedValue - account.creditBalanceValue),
   });
+  const cardTotals = summarizeCreditCardLookup(creditAccounts.map((account) => ({
+    available: account.creditAvailableValue,
+    cardCredit: account.creditBalanceValue,
+    charges: parseCurrency(account.monthlyOutflow),
+    limit: account.creditLimitValue,
+    minimumPayment: account.creditMinimumPaymentValue,
+    outstanding: account.creditUsedValue,
+    payments: parseCurrency(account.monthlyInflow),
+    transactions: account.transactionCount,
+  })));
 
   return (
     <div className="space-y-6">
-      <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
-          <h2 className="text-sm font-bold uppercase text-[#45464d]">Amount Type Lookup</h2>
-          <p className="mt-1 text-xs font-medium text-[#45464d]">Net total = cash balances + card credits − outstanding card liabilities. With no filters, it matches the all-time transaction net.</p>
-        </div>
-        <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[1040px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-[#c6c6cd]/50">
-                <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Source</th>
-                <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Type</th>
-                {amountTypes.map((amountType) => (
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
-                ))}
-                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Liability</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-              {ledgerAccounts.map((account) => {
-                const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
-                const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
+      {ledgerAccounts.length > 0 ? (
+        <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+          <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+            <h2 className="text-sm font-bold uppercase text-[#45464d]">Cash & Account Amount Type Lookup</h2>
+            <p className="mt-1 text-xs font-medium text-[#45464d]">Only bank, wallet, cash, and savings balances appear here. Credit cards are shown separately below.</p>
+          </div>
+          <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-[#c6c6cd]/50">
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Source</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Account</th>
+                  {amountTypes.map((amountType) => (
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
+                  ))}
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Account Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+                {ledgerAccounts.map((account) => {
+                  const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
+                  const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
 
-                return (
-                  <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
-                          <Icon className="size-5" name={account.icon} />
-                        </span>
-                        <div>
-                          <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
-                          <p className="mt-1 text-xs font-medium text-[#45464d]">{account.category || "Uncategorized"}</p>
+                  return (
+                    <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                            <Icon className="size-5" name={account.icon} />
+                          </span>
+                          <div>
+                            <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
+                            <p className="mt-1 text-xs font-medium text-[#45464d]">{account.category || "Uncategorized"}</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
-                    {amountTypes.map((amountType) => (
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
-                        {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
                       </td>
-                    ))}
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">0.00</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">0.00</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
-                  </tr>
-                );
-              })}
-              {creditAccounts.map((account) => {
-                const cardNet = account.creditBalanceValue - account.creditUsedValue;
-                return (
-                  <tr className="transition hover:bg-[#f8f9ff]" key={`card-position-${account.id}`}>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
-                          <Icon className="size-5" name={account.icon} />
-                        </span>
-                        <div>
-                          <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
-                          <p className="mt-1 text-xs font-medium text-[#45464d]">Credit card position</p>
-                        </div>
-                      </div>
+                      <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
+                      {amountTypes.map((amountType) => (
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                          {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
+                        </td>
+                      ))}
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-[#f8f9ff]">
+                  <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">CASH TOTAL</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">All non-card accounts</td>
+                  {totalColumns.map(({ amountType, total }) => (
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
+                      {formatScaledAuditAmount(total.value, total.scale)}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
-                    {amountTypes.map((amountType) => (
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>0.00</td>
-                    ))}
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAuditAmount(account.creditBalanceValue)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatAuditAmount(-account.creditUsedValue)}</td>
-                    <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${cardNet < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatAuditAmount(cardNet)}</td>
-                  </tr>
-                );
-              })}
-              <tr className="transition hover:bg-[#f8f9ff]">
-                <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">NET TOTAL</td>
-                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Financial position</td>
-                {totalColumns.map(({ amountType, total }) => (
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
-                    {formatScaledAuditAmount(total.value, total.scale)}
-                  </td>
-                ))}
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAuditAmount(position.cardCredit)}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatAuditAmount(-position.cardLiability)}</td>
-                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${position.net < 0 ? "text-[#b42318]" : "text-[#0b1c30]"}`}>{formatAuditAmount(position.net)}</td>
-              </tr>
-            </tbody>
-          </table>
+                  ))}
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatAuditAmount(position.cashBalance)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
+        <div>
+          <h2 className="text-sm font-bold uppercase text-[#45464d]">Financial Position Reconciliation</h2>
+          <p className="mt-1 text-xs font-medium text-[#45464d]">Net position = cash balances + card credits − outstanding card liabilities. Credit limits and available credit are excluded.</p>
         </div>
+        <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] p-4">
+            <dt className="text-xs font-bold uppercase text-[#76777d]">Cash Balances</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1}>{formatMmk(position.cashBalance)}</ResponsiveAmount></dd>
+          </div>
+          <div className="rounded-md border border-[#bbf7d0] bg-[#ecfdf5] p-4">
+            <dt className="text-xs font-bold uppercase text-[#166534]">Card Credits</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={1}>{formatMmk(position.cardCredit)}</ResponsiveAmount></dd>
+          </div>
+          <div className="rounded-md border border-[#fecaca] bg-[#fff8f7] p-4">
+            <dt className="text-xs font-bold uppercase text-[#991b1b]">Card Liabilities</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={1}>{formatMmk(-position.cardLiability)}</ResponsiveAmount></dd>
+          </div>
+          <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4">
+            <dt className="text-xs font-bold uppercase text-[#0058be]">Net Position</dt>
+            <dd><ResponsiveAmount className={`mt-1 font-bold ${position.net < 0 ? "text-[#b42318]" : "text-[#0058be]"}`} maxSizeRem={1}>{formatMmk(position.net)}</ResponsiveAmount></dd>
+          </div>
+        </dl>
+        <p className="mt-3 text-xs font-medium text-[#45464d]">With no account filters, Net Position matches the all-time transaction Net Amount.</p>
       </section>
       {creditAccounts.length > 0 ? (
         <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Details (MPU / Visa)</h2>
-            <p className="mt-1 text-xs font-medium text-[#45464d]">Credit limits are operational ceilings and stay separate from the financial-position total.</p>
+            <p className="mt-1 text-xs font-medium text-[#45464d]">Each card has its own identity, credit position, billing terms, and activity. Limits remain separate from the financial-position total.</p>
           </div>
           <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            <table className="w-full min-w-[1700px] border-collapse text-left">
+            <table className="w-full min-w-[2520px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#c6c6cd]/50">
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Network</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card Number</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Expiry</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Category</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Currency</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Limit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Outstanding</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
@@ -447,32 +458,60 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Net Position</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Charges</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Payments</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transactions</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Last Updated</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
-                {creditAccounts.map((account) => (
-                  <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-[#0b1c30]">{account.name}</p>
-                      <p className="mt-1 text-xs font-medium text-[#45464d]">{account.institution || "Institution not set"}</p>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{creditCardNetwork(account)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 font-mono font-semibold text-[#45464d]">{maskCardNumber(account.cardNumber)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{account.cardExpiryCode || "Not set"}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.creditBalance}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatCreditUtilization(account.creditUsedValue, account.creditLimitValue)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
-                  </tr>
-                ))}
+                {creditAccounts.map((account) => {
+                  const netPosition = account.creditBalanceValue - account.creditUsedValue;
+                  return (
+                    <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
+                      <td className="px-4 py-4">
+                        <p className="font-semibold text-[#0b1c30]">{account.name}</p>
+                        <p className="mt-1 text-xs font-medium text-[#45464d]">{account.institution || "Institution not set"}</p>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{creditCardNetwork(account)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 font-mono font-semibold text-[#45464d]">{maskCardNumber(account.cardNumber)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{account.cardExpiryCode || "Not set"}</td>
+                      <td className="whitespace-nowrap px-4 py-4"><StatusBadge status={account.status} /></td>
+                      <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.category || "Uncategorized"}</td>
+                      <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.currency}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.creditBalance}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatCreditUtilization(account.creditUsedValue, account.creditLimitValue)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
+                      <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatMmk(netPosition)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.transactionCount}</td>
+                      <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.lastUpdated}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-[#f8f9ff]">
+                  <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]" colSpan={7}>CREDIT CARD TOTALS</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatMmk(cardTotals.limit)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatMmk(cardTotals.outstanding)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatMmk(cardTotals.cardCredit)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0058be]">{formatMmk(cardTotals.available)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatCreditUtilization(cardTotals.outstanding, cardTotals.limit)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatMmk(cardTotals.minimumPayment)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-[#76777d]">—</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-[#76777d]">—</td>
+                  <td className={`whitespace-nowrap px-4 py-4 text-right font-bold ${cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatMmk(cardTotals.netPosition)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatMmk(cardTotals.charges)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatMmk(cardTotals.payments)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{cardTotals.transactions}</td>
+                  <td className="whitespace-nowrap px-4 py-4 font-medium text-[#76777d]">—</td>
+                </tr>
               </tbody>
             </table>
           </div>
