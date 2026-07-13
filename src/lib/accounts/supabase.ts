@@ -21,6 +21,8 @@ export type AccountRecord = FinancialAccount & {
   balanceValue: number;
   creditAvailable: string;
   creditAvailableValue: number;
+  creditBalance: string;
+  creditBalanceValue: number;
   creditLimit: string;
   creditLimitValue: number;
   creditMinimumPayment: string;
@@ -284,7 +286,11 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   const creditLimitValue = isCreditCard ? roundCurrencyValue(monthlyBudgetLimit ?? 0) : 0;
   // The configured credit limit is a fixed ceiling. Repayments can reduce
   // utilization to zero, but they must never manufacture additional limit.
-  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(activity.creditUsed, 0)) : 0;
+  const signedCreditCardBalance = isCreditCard ? roundCurrencyValue(activity.creditUsed) : 0;
+  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(signedCreditCardBalance, 0)) : 0;
+  // Payments beyond the amount owed are an asset (the card issuer owes the
+  // user), even though available credit remains capped at the fixed limit.
+  const creditBalanceValue = isCreditCard ? roundCurrencyValue(Math.max(-signedCreditCardBalance, 0)) : 0;
   const creditAvailableValue = isCreditCard
     ? roundCurrencyValue(Math.min(Math.max(creditLimitValue - creditUsedValue, 0), creditLimitValue))
     : 0;
@@ -298,6 +304,7 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     ? [
       amountTypeBreakdown("Credit Limit", creditLimitValue),
       amountTypeBreakdown("Credit Used", creditUsedValue),
+      amountTypeBreakdown("Card Credit", creditBalanceValue),
       amountTypeBreakdown("Available Credit", creditAvailableValue),
     ]
     : balanceBreakdowns;
@@ -327,6 +334,8 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     category: typeof metadata.category === "string" ? metadata.category : "",
     creditAvailable: formatMmk(creditAvailableValue),
     creditAvailableValue,
+    creditBalance: formatMmk(creditBalanceValue),
+    creditBalanceValue,
     creditLimit: formatMmk(creditLimitValue),
     creditLimitValue,
     creditMinimumPayment: formatMmk(creditMinimumPaymentValue),
@@ -426,12 +435,16 @@ export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] 
   if (activeCreditCards.length > 0) {
     const creditLimit = activeCreditCards.reduce((sum, account) => sum + account.creditLimitValue, 0);
     const creditUsed = activeCreditCards.reduce((sum, account) => sum + account.creditUsedValue, 0);
+    const creditBalance = activeCreditCards.reduce((sum, account) => sum + account.creditBalanceValue, 0);
     const creditAvailable = activeCreditCards.reduce((sum, account) => sum + account.creditAvailableValue, 0);
     summaries.push(
       { label: "Credit Used", value: formatMmk(creditUsed), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
       { label: "Available Credit", value: formatMmk(creditAvailable), icon: "credit", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
       { label: "Credit Limit", value: formatMmk(creditLimit), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
     );
+    if (creditBalance > 0) {
+      summaries.push({ label: "Card Credit", value: formatMmk(creditBalance), icon: "savings", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" });
+    }
   }
 
   return summaries.length > 0

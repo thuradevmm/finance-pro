@@ -39,19 +39,10 @@ function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function addYears(date: Date, yearCount: number) {
-  const nextDate = new Date(date);
-  const month = nextDate.getMonth();
-  nextDate.setFullYear(nextDate.getFullYear() + yearCount);
-  if (nextDate.getMonth() !== month) nextDate.setDate(0);
-  return nextDate;
-}
-
 function defaultDateRange() {
-  const today = new Date();
   return {
-    dateFrom: formatDateInput(addYears(today, -1)),
-    dateTo: formatDateInput(today),
+    dateFrom: "",
+    dateTo: "",
   };
 }
 

@@ -36,6 +36,13 @@ export type LedgerSummary = {
   net: number;
 };
 
+export type FinancialPositionSummary = {
+  cardCredit: number;
+  cardLiability: number;
+  cashBalance: number;
+  net: number;
+};
+
 export type CreditCardDebtImpact = "charge" | "repayment" | "";
 
 type LedgerEffect = {
@@ -55,6 +62,36 @@ export function metadataRecord(metadata: unknown) {
     : {};
 }
 
+const ledgerRelevantMetadataKeys = [
+  "account_amount_type",
+  "credit_card_account_id",
+  "credit_card_debt_id",
+  "credit_card_debt_impact",
+  "credit_card_payment",
+  "financial_event",
+  "reversed_credit_card_payment",
+  "reversed_transaction_id",
+  "reversed_transaction_type",
+  "same_account_transfer_role",
+  "transfer_account_amount_type",
+  "transfer_direction",
+] as const;
+
+/**
+ * Keeps every field that can change ledger or economic-summary behavior when
+ * database rows are mapped into client-side transaction records. Centralizing
+ * this projection prevents display models from silently dropping accounting
+ * classifications such as credit-card payments or reversals.
+ */
+export function ledgerRelevantMetadata(metadata: unknown) {
+  const source = metadataRecord(metadata);
+  return Object.fromEntries(
+    ledgerRelevantMetadataKeys
+      .filter((key) => source[key] !== undefined)
+      .map((key) => [key, source[key]]),
+  );
+}
+
 export function numericValue(value: unknown, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -62,6 +99,31 @@ export function numericValue(value: unknown, fallback = 0) {
 
 export function roundCurrencyValue(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Net financial position is signed cash plus any card overpayment credit,
+ * minus outstanding card liability. A credit-card limit is not an asset and
+ * therefore never contributes to this total.
+ */
+export function summarizeFinancialPosition(input: {
+  cashBalances: number[];
+  creditCardBalances: number[];
+}): FinancialPositionSummary {
+  const cashBalance = roundCurrencyValue(input.cashBalances.reduce((sum, value) => sum + numericValue(value), 0));
+  const cardLiability = roundCurrencyValue(
+    input.creditCardBalances.reduce((sum, value) => sum + Math.max(numericValue(value), 0), 0),
+  );
+  const cardCredit = roundCurrencyValue(
+    input.creditCardBalances.reduce((sum, value) => sum + Math.max(-numericValue(value), 0), 0),
+  );
+
+  return {
+    cardCredit,
+    cardLiability,
+    cashBalance,
+    net: roundCurrencyValue(cashBalance + cardCredit - cardLiability),
+  };
 }
 
 export function normalizeAmountType(value: unknown) {

@@ -119,6 +119,8 @@ Accounts support:
 
 Live account balances are transaction-driven. Legacy or imported `initial_balance` values remain stored for audit history, but current balance displays are calculated from posted transaction activity. Scheduled, cancelled, void, and failed transactions do not affect balances.
 
+The account lookup net total is cash balances plus credit-card overpayment credits minus outstanding card liabilities. Credit limits and available credit are excluded because a borrowing limit is not an asset. Used accounts must be archived instead of deleted so historical ledger totals remain reconcilable.
+
 ### Transaction Flow
 
 Transactions support:
@@ -140,6 +142,8 @@ Transactions can be linked to:
 - Asset
 
 Credit card expenses and credit-card-related transfers are treated as debt activity. Credit card charges increase used credit, and credit card payments reduce used credit.
+
+Transaction summaries default to all-time activity. Net excludes transfers and credit-card settlements because those move value between an asset and liability without creating new income or expense. With no filters, transaction net matches the account lookup net total.
 
 ### Budget Flow
 

@@ -428,6 +428,31 @@ export async function deleteAccount(accountId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
 
+  const usageResults = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id")
+      .eq("user_id", user.id)
+      .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`)
+      .limit(1),
+    supabase.from("assets").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
+    supabase
+      .from("debts")
+      .select("id")
+      .eq("user_id", user.id)
+      .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`)
+      .limit(1),
+    supabase.from("savings_goals").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
+    supabase.from("subscriptions").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
+    supabase.from("scenario_items").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
+    supabase.from("user_settings").select("user_id").eq("user_id", user.id).eq("default_account_id", accountId).limit(1),
+  ]);
+  const usageError = usageResults.find((result) => result.error)?.error;
+  if (usageError) return { error: usageError.message };
+  if (usageResults.some((result) => (result.data?.length ?? 0) > 0)) {
+    return { error: "This account has financial history or linked records and cannot be deleted. Change its status to Archived instead." };
+  }
+
   const { data, error } = await supabase
     .from("accounts")
     .update({ deleted_at: new Date().toISOString(), is_active: false })
@@ -435,9 +460,18 @@ export async function deleteAccount(accountId: string): Promise<ActionResult> {
     .eq("user_id", user.id)
     .select("id")
     .maybeSingle();
-  if (error) return { error: error.message };
+  if (error) {
+    return {
+      error: error.code === "23503"
+        ? "This account has financial history or linked records and cannot be deleted. Change its status to Archived instead."
+        : error.message,
+    };
+  }
   if (!data) return { error: "Account not found." };
 
   revalidatePath("/accounts");
+  revalidatePath("/transactions");
+  revalidatePath("/dashboard");
+  revalidatePath("/reports");
   return {};
 }

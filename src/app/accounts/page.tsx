@@ -16,9 +16,10 @@ import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
+import { summarizeFinancialPosition } from "@/lib/ledger";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
-import type { AccountStatus, FinancialAccount } from "@/types/finance";
+import type { AccountStatus } from "@/types/finance";
 
 const statusStyles: Record<AccountStatus, string> = {
   Active: "border-[#86efac] bg-[#ecfdf5] text-[#166534]",
@@ -178,9 +179,9 @@ function AccountCard({
   );
 }
 
-function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] }) {
+function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
   const ledgerAccounts = accounts.filter((account) => account.type !== "Credit Card");
-  const creditAccounts = accounts.filter((account): account is AccountRecord => account.type === "Credit Card");
+  const creditAccounts = accounts.filter((account) => account.type === "Credit Card");
   const amountTypes = Array.from(
     ledgerAccounts.reduce((types, account) => {
       for (const breakdown of account.balanceBreakdowns) types.add(breakdown.type);
@@ -191,13 +192,17 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
     amountType,
     total: sumScaledAmounts(ledgerAccounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
   }));
-  const grandTotal = sumScaledAmounts(ledgerAccounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)));
+  const position = summarizeFinancialPosition({
+    cashBalances: ledgerAccounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)),
+    creditCardBalances: creditAccounts.map((account) => account.creditUsedValue - account.creditBalanceValue),
+  });
 
   return (
     <div className="space-y-6">
       <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
           <h2 className="text-sm font-bold uppercase text-[#45464d]">Amount Type Lookup</h2>
+          <p className="mt-1 text-xs font-medium text-[#45464d]">Net total = cash balances + card credits − outstanding card liabilities. With no filters, it matches the all-time transaction net.</p>
         </div>
         <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[1040px] border-collapse text-left">
@@ -208,6 +213,8 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
                 {amountTypes.map((amountType) => (
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]" key={amountType}>{amountType}</th>
                 ))}
+                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Liability</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total</th>
               </tr>
             </thead>
@@ -235,19 +242,48 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
                         {formatAuditAmount(breakdownByType.get(amountType) ?? 0)}
                       </td>
                     ))}
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">0.00</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">0.00</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</td>
                   </tr>
                 );
               })}
+              {creditAccounts.map((account) => {
+                const cardNet = account.creditBalanceValue - account.creditUsedValue;
+                return (
+                  <tr className="transition hover:bg-[#f8f9ff]" key={`card-position-${account.id}`}>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-3">
+                        <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                          <Icon className="size-5" name={account.icon} />
+                        </span>
+                        <div>
+                          <p className="font-semibold text-[#0b1c30]">{account.institution || account.type}</p>
+                          <p className="mt-1 text-xs font-medium text-[#45464d]">Credit card position</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.name}</td>
+                    {amountTypes.map((amountType) => (
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>0.00</td>
+                    ))}
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAuditAmount(account.creditBalanceValue)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatAuditAmount(-account.creditUsedValue)}</td>
+                    <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${cardNet < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatAuditAmount(cardNet)}</td>
+                  </tr>
+                );
+              })}
               <tr className="transition hover:bg-[#f8f9ff]">
-                <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">TOTAL</td>
-                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Total</td>
+                <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]">NET TOTAL</td>
+                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">Financial position</td>
                 {totalColumns.map(({ amountType, total }) => (
                   <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]" key={amountType}>
                     {formatScaledAuditAmount(total.value, total.scale)}
                   </td>
                 ))}
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatScaledAuditAmount(grandTotal.value, grandTotal.scale)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAuditAmount(position.cardCredit)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatAuditAmount(-position.cardLiability)}</td>
+                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${position.net < 0 ? "text-[#b42318]" : "text-[#0b1c30]"}`}>{formatAuditAmount(position.net)}</td>
               </tr>
             </tbody>
           </table>
@@ -259,12 +295,13 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Limits</h2>
           </div>
           <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            <table className="w-full min-w-[980px] border-collapse text-left">
+            <table className="w-full min-w-[1080px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#c6c6cd]/50">
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Limit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Used</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available Credit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
@@ -276,6 +313,7 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: FinancialAccount[] })
                     <td className="px-4 py-4 font-semibold text-[#0b1c30]">{account.name}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.creditBalance}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditPaymentDueDay ?? "-"}</td>

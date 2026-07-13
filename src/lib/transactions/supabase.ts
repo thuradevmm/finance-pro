@@ -11,6 +11,7 @@ import {
   creditCardDebtImpact,
   deriveCreditCardDebtMetadata,
   isCreditCardPayment,
+  ledgerRelevantMetadata,
   summarizeLedgerTransactions,
 } from "@/lib/ledger";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
@@ -32,6 +33,7 @@ export type TransactionRecord = Transaction & {
   creditCardDebtImpact: "charge" | "repayment" | "";
   creditCardPayment: boolean;
   dateValue: string;
+  ledgerMetadata: Record<string, unknown>;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
   status: string;
@@ -255,6 +257,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     dateValue: row.transaction_date,
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
     id: row.id,
+    ledgerMetadata: ledgerRelevantMetadata(metadata),
     note,
     relatedEntityId: row.related_entity_id ?? "",
     relatedEntityType: normalizeRelatedType(row.related_entity_type),
@@ -338,11 +341,7 @@ export function getTransactionSummaries(transactions: TransactionRecord[]): Summ
     transactions.map((transaction) => ({
       account_id: transaction.accountId || null,
       amount: transaction.amountValue ?? 0,
-      metadata: {
-        account_amount_type: transaction.accountAmountType,
-        transfer_account_amount_type: transaction.transferAccountAmountType,
-        transfer_direction: transaction.transferDirection?.toLowerCase(),
-      },
+      metadata: transaction.ledgerMetadata,
       status: transaction.status,
       transfer_account_id: transaction.transferAccountId || null,
       type: transaction.type.toLowerCase(),

@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   buildAccountLedgerActivities,
   deriveCreditCardDebtMetadata,
+  ledgerRelevantMetadata,
+  summarizeFinancialPosition,
   summarizeLedgerTransactions,
 } from "../src/lib/ledger.ts";
 
@@ -123,4 +125,76 @@ test("reversing a purchase subtracts spending and reversing a payment is not inc
       type: "income",
     },
   ]), { expenses: 0, income: 0, net: 0 });
+});
+
+test("client summary metadata preserves payments and reversals", () => {
+  assert.deepEqual(ledgerRelevantMetadata({
+    credit_card_account_id: "card",
+    credit_card_debt_impact: "repayment",
+    credit_card_payment: true,
+    internal_display_only: "discarded",
+    reversed_credit_card_payment: true,
+    reversed_transaction_id: "payment",
+    reversed_transaction_type: "expense",
+    transfer_direction: "credit",
+  }), {
+    credit_card_account_id: "card",
+    credit_card_debt_impact: "repayment",
+    credit_card_payment: true,
+    reversed_credit_card_payment: true,
+    reversed_transaction_id: "payment",
+    reversed_transaction_type: "expense",
+    transfer_direction: "credit",
+  });
+});
+
+test("account financial position equals economic net across card settlement", () => {
+  const charge = { account_id: "card", amount: 1_000, status: "cleared", type: "expense" };
+  const payment = {
+    account_id: "bank",
+    amount: 1_000,
+    metadata: {
+      credit_card_account_id: "card",
+      credit_card_debt_impact: "repayment",
+      credit_card_payment: true,
+    },
+    status: "cleared",
+    type: "expense",
+  };
+  const income = { account_id: "bank", amount: 10_000, status: "cleared", type: "income" };
+  const transactions = [income, charge, payment];
+  const activity = buildAccountLedgerActivities(transactions, accounts);
+  const position = summarizeFinancialPosition({
+    cashBalances: [...(activity.get("bank")?.deltas.values() ?? [])],
+    creditCardBalances: [activity.get("card")?.creditUsed ?? 0],
+  });
+
+  assert.deepEqual(position, {
+    cardCredit: 0,
+    cardLiability: 0,
+    cashBalance: 9_000,
+    net: 9_000,
+  });
+  const clientSummary = summarizeLedgerTransactions(
+    transactions.map((transaction) => ({
+      ...transaction,
+      metadata: ledgerRelevantMetadata(transaction.metadata),
+    })),
+  );
+  assert.equal(position.net, clientSummary.net);
+  assert.equal(clientSummary.net, summarizeLedgerTransactions(transactions).net);
+});
+
+test("card overpayment remains a card credit asset without increasing the limit", () => {
+  const position = summarizeFinancialPosition({
+    cashBalances: [8_500],
+    creditCardBalances: [-500],
+  });
+
+  assert.deepEqual(position, {
+    cardCredit: 500,
+    cardLiability: 0,
+    cashBalance: 8_500,
+    net: 9_000,
+  });
 });
