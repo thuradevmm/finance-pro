@@ -15,6 +15,7 @@ import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
+import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { summarizeFinancialPosition } from "@/lib/ledger";
 import { createClient } from "@/lib/supabase/client";
@@ -83,6 +84,10 @@ function StatusBadge({ status }: { status: AccountStatus }) {
 
 function isCreditCardAccount(account: Pick<AccountRecord, "type">) {
   return account.type === "Credit Card";
+}
+
+function creditCardNetwork(account: Pick<AccountRecord, "cardType">) {
+  return account.cardType.trim() || "Unspecified";
 }
 
 function AccountCard({
@@ -174,6 +179,137 @@ function AccountCard({
         >
           <Icon className="size-4" name="receipt" />
         </Link>
+      </div>
+    </article>
+  );
+}
+
+function CreditCardCard({
+  account,
+  accounts,
+  onDelete,
+  onView,
+  returnTo,
+}: {
+  account: AccountRecord;
+  accounts: AccountRecord[];
+  onDelete: (id: string) => void;
+  onView: (account: AccountRecord) => void;
+  returnTo: string;
+}) {
+  const utilization = formatCreditUtilization(account.creditUsedValue, account.creditLimitValue);
+  const utilizationWidth = Math.min(creditUtilizationPercent(account.creditUsedValue, account.creditLimitValue), 100);
+  const utilizationTone = utilizationWidth >= 80 ? "bg-[#b42318]" : utilizationWidth >= 50 ? "bg-[#b45309]" : "bg-[#2170e4]";
+
+  return (
+    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-[#c6c6cd]/60 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <div className="bg-gradient-to-br from-[#0b1c30] to-[#174c87] p-5 text-white">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/70">{creditCardNetwork(account)} credit card</p>
+            <h2 className="mt-2 truncate text-lg font-semibold">{account.name}</h2>
+            <p className="mt-1 truncate text-sm font-medium text-white/75">{account.institution || "Institution not set"}</p>
+          </div>
+          <StatusBadge status={account.status} />
+        </div>
+        <p className="mt-7 font-mono text-base font-semibold tracking-[0.12em]">{maskCardNumber(account.cardNumber)}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-white/75">
+          <span>Expires {account.cardExpiryCode || "Not set"}</span>
+          <span>{account.currency}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col p-4 sm:p-5">
+        <section>
+          <h3 className="text-xs font-bold uppercase text-[#76777d]">Credit position</h3>
+          <dl className="mt-3 grid grid-cols-2 gap-3">
+            <div className="rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] p-3">
+              <dt className="text-xs font-bold uppercase text-[#76777d]">Credit Limit</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{account.creditLimit}</ResponsiveAmount></dd>
+            </div>
+            <div className="rounded-md border border-[#fecaca] bg-[#fff8f7] p-3">
+              <dt className="text-xs font-bold uppercase text-[#991b1b]">Outstanding</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.creditUsed}</ResponsiveAmount></dd>
+            </div>
+            <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-3">
+              <dt className="text-xs font-bold uppercase text-[#0058be]">Available Credit</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0058be]" maxSizeRem={0.875}>{account.creditAvailable}</ResponsiveAmount></dd>
+            </div>
+            <div className="rounded-md border border-[#bbf7d0] bg-[#ecfdf5] p-3">
+              <dt className="text-xs font-bold uppercase text-[#166534]">Card Credit</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.creditBalance}</ResponsiveAmount></dd>
+            </div>
+          </dl>
+          <div className="mt-3 rounded-md border border-[#c6c6cd]/50 bg-white p-3">
+            <div className="flex items-center justify-between gap-3 text-xs font-bold uppercase text-[#45464d]">
+              <span>Utilization</span>
+              <span>{utilization}</span>
+            </div>
+            <div aria-label={`${utilization} credit utilization`} className="mt-2 h-2 overflow-hidden rounded-full bg-[#e7eaf0]" role="img">
+              <div className={`h-full rounded-full ${utilizationTone}`} style={{ width: `${utilizationWidth}%` }} />
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-5">
+          <h3 className="text-xs font-bold uppercase text-[#76777d]">Billing terms</h3>
+          <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Minimum payment</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.8125}>{account.creditMinimumPayment}</ResponsiveAmount></dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Statement day</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Payment due</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="mt-5 border-t border-[#c6c6cd]/40 pt-4">
+          <h3 className="text-xs font-bold uppercase text-[#76777d]">Activity</h3>
+          <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Charges</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.8125}>{account.monthlyOutflow}</ResponsiveAmount></dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Payments</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.8125}>{account.monthlyInflow}</ResponsiveAmount></dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Transactions</dt>
+              <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{account.transactionCount}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-4">
+          <p className="text-xs font-medium text-[#76777d]">Updated {account.lastUpdated}</p>
+          <div className="flex items-center justify-end gap-1">
+            <button
+              aria-label={`View ${account.name}`}
+              className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+              onClick={() => onView(account)}
+              title="View card details"
+              type="button"
+            >
+              <Icon className="size-4" name="eye" />
+            </button>
+            <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+            <Link
+              aria-label={`View transactions for ${account.name}`}
+              className="grid size-11 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+              href={`/transactions?account=${encodeURIComponent(getAccountOptionLabel(account, accounts))}`}
+              title="View card transactions"
+            >
+              <Icon className="size-4" name="receipt" />
+            </Link>
+          </div>
+        </div>
       </div>
     </article>
   );
@@ -292,31 +428,49 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
       {creditAccounts.length > 0 ? (
         <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
-            <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Limits</h2>
+            <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Details (MPU / Visa)</h2>
+            <p className="mt-1 text-xs font-medium text-[#45464d]">Credit limits are operational ceilings and stay separate from the financial-position total.</p>
           </div>
           <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            <table className="w-full min-w-[1080px] border-collapse text-left">
+            <table className="w-full min-w-[1700px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#c6c6cd]/50">
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Network</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card Number</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Expiry</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Limit</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Used</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Outstanding</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available Credit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Utilization</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Charges</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Payments</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
                 {creditAccounts.map((account) => (
                   <tr className="transition hover:bg-[#f8f9ff]" key={account.id}>
-                    <td className="px-4 py-4 font-semibold text-[#0b1c30]">{account.name}</td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-[#0b1c30]">{account.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#45464d]">{account.institution || "Institution not set"}</p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{creditCardNetwork(account)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 font-mono font-semibold text-[#45464d]">{maskCardNumber(account.cardNumber)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{account.cardExpiryCode || "Not set"}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.creditBalance}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatCreditUtilization(account.creditUsedValue, account.creditLimitValue)}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditPaymentDueDay ?? "-"}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
                   </tr>
                 ))}
               </tbody>
@@ -325,6 +479,108 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
         </section>
       ) : null}
     </div>
+  );
+}
+
+function CreditCardsTable({
+  accounts,
+  items,
+  onDelete,
+  onView,
+  returnTo,
+}: {
+  accounts: AccountRecord[];
+  items: AccountRecord[];
+  onDelete: (id: string) => void;
+  onView: (account: AccountRecord) => void;
+  returnTo: string;
+}) {
+  return (
+    <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+      <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+        <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Cards (MPU / Visa)</h2>
+        <p className="mt-1 text-xs font-medium text-[#45464d]">Card identity, current credit position, billing terms, and activity are kept separate from cash-account balances.</p>
+      </div>
+      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <table className="w-full min-w-[1900px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-[#c6c6cd]/50">
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Network</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Card Number</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Expiry</th>
+              <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credit Limit</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Outstanding</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Card Credit</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Available Credit</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Utilization</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Charges</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Payments</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transactions</th>
+              <th className="w-56 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#c6c6cd]/40 text-sm">
+            {items.map((account) => (
+              <tr className="transition hover:bg-[#f8f9ff]" key={`credit-card-${account.id}`}>
+                <td className="px-4 py-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                      <Icon className="size-5" name="credit" />
+                    </span>
+                    <div>
+                      <p className="font-semibold text-[#0b1c30]">{account.name}</p>
+                      <p className="mt-1 text-xs font-medium text-[#45464d]">{account.institution || "Institution not set"}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="whitespace-nowrap px-4 py-4 font-semibold text-[#0b1c30]">{creditCardNetwork(account)}</td>
+                <td className="whitespace-nowrap px-4 py-4 font-mono font-semibold text-[#45464d]">{maskCardNumber(account.cardNumber)}</td>
+                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.cardExpiryCode || "Not set"}</td>
+                <td className="whitespace-nowrap px-4 py-4"><StatusBadge status={account.status} /></td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditLimit}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.creditUsed}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.creditBalance}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0058be]">{account.creditAvailable}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatCreditUtilization(account.creditUsedValue, account.creditLimitValue)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.transactionCount}</td>
+                <td className="px-4 py-4">
+                  <div className="flex justify-end gap-1">
+                    <button
+                      aria-label={`View ${account.name}`}
+                      className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+                      onClick={() => onView(account)}
+                      title="View card details"
+                      type="button"
+                    >
+                      <Icon className="size-4" name="eye" />
+                    </button>
+                    <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+                    <Link
+                      aria-label={`View transactions for ${account.name}`}
+                      className="grid size-11 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+                      href={`/transactions?account=${encodeURIComponent(getAccountOptionLabel(account, accounts))}`}
+                      title="View card transactions"
+                    >
+                      <Icon className="size-4" name="receipt" />
+                    </Link>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -489,7 +745,8 @@ export default function AccountsPage() {
       return matchesSearch && matchesCategory && matchesType && matchesStatus;
     });
   }, [categoryFilter, search, statusFilter, typeFilter, visibleAccounts]);
-  const activeAccounts = filteredAccounts.filter((account) => account.status === "Active");
+  const filteredCreditCards = filteredAccounts.filter(isCreditCardAccount);
+  const filteredNonCardAccounts = filteredAccounts.filter((account) => !isCreditCardAccount(account));
   const accountSummaries = getAccountSummaries(visibleAccounts);
 
   function updateAccountParam(key: string, value: string, defaultValue: string) {
@@ -627,22 +884,55 @@ export default function AccountsPage() {
         </section>
       ) : null}
 
-      {!isLoading && visibleAccounts.length > 0 && viewMode === "Card" ? <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-bold uppercase text-[#45464d]">Active Accounts</h2>
-            <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{activeAccounts.length} accounts</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-            {activeAccounts.map((account) => (
-              <AccountCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
-            ))}
-        </div>
-      </section> : null}
+      {!isLoading && visibleAccounts.length > 0 && filteredAccounts.length === 0 ? (
+        <section className="mb-6 rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center">
+          <Icon className="mx-auto size-7 text-[#76777d]" name="search" />
+          <h2 className="mt-3 text-base font-semibold text-[#0b1c30]">No matching accounts</h2>
+          <p className="mt-1 text-sm text-[#45464d]">Change or clear the account filters to see results.</p>
+        </section>
+      ) : null}
 
-      {!isLoading && visibleAccounts.length > 0 && viewMode === "List" ? <AccountsTable accounts={visibleAccounts} items={filteredAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
-      {!isLoading && visibleAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}
+      {!isLoading && filteredAccounts.length > 0 && viewMode === "Card" ? (
+        <div className="space-y-6">
+          {filteredNonCardAccounts.length > 0 ? (
+            <section className="min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-sm font-bold uppercase text-[#45464d]">Accounts & Wallets</h2>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{filteredNonCardAccounts.length} accounts</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                {filteredNonCardAccounts.map((account) => (
+                  <AccountCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {filteredCreditCards.length > 0 ? (
+            <section className="min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+              <div className="mb-4">
+                <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Cards (MPU / Visa)</h2>
+                <p className="mt-1 text-sm font-medium text-[#45464d]">{filteredCreditCards.length} cards · limits, debt, billing terms, and activity shown independently</p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+                {filteredCreditCards.map((account) => (
+                  <CreditCardCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!isLoading && filteredAccounts.length > 0 && viewMode === "List" ? (
+        <div className="space-y-6">
+          {filteredNonCardAccounts.length > 0 ? <AccountsTable accounts={visibleAccounts} items={filteredNonCardAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+          {filteredCreditCards.length > 0 ? <CreditCardsTable accounts={visibleAccounts} items={filteredCreditCards} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+        </div>
+      ) : null}
+      {!isLoading && filteredAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}
       <DetailModal
         actions={
           viewedAccount ? (
@@ -682,37 +972,66 @@ export default function AccountsPage() {
               </div>
               <StatusBadge status={viewedAccount.status} />
             </div>
-            <DetailModalSection title="Account information">
-              <DetailModalField label="Type" value={viewedAccount.type} />
-              <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
-              <DetailModalField label="Institution" value={viewedAccount.institution} />
-              <DetailModalField label="Bank book / mobile number" value={viewedAccount.bankBookAccountNumber || viewedAccount.mobileBankingAccountNumber || "-"} />
-              <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "-"} />
-              <DetailModalField label="Card type" value={viewedAccount.cardType || "No Card"} />
-              <DetailModalField label="Card number" value={viewedAccount.cardNumber || "-"} />
-              <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode || "-"} />
-              <DetailModalField label="Expired code" value={viewedAccount.cardExpiryCode || "-"} />
-              <DetailModalField label="Currency" value={viewedAccount.currency} />
-              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Available credit" : "Net amount"} value={viewedAccount.availableBalance} />
-              {isCreditCardAccount(viewedAccount) ? (
-                <>
-                  <DetailModalField label="Payment due day" value={viewedAccount.creditPaymentDueDay ?? "-"} />
-                  <DetailModalField label="Statement closing day" value={viewedAccount.creditStatementDay ?? "-"} />
+            {isCreditCardAccount(viewedAccount) ? (
+              <>
+                <DetailModalSection title="Card identification">
+                  <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
+                  <DetailModalField label="Card number" value={<span className="font-mono">{maskCardNumber(viewedAccount.cardNumber)}</span>} />
+                  <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
+                  <DetailModalField label="Security code" value="Hidden for security" />
+                </DetailModalSection>
+                <DetailModalSection title="Credit position">
+                  <DetailModalField label="Credit limit" value={viewedAccount.creditLimit} />
+                  <DetailModalField label="Outstanding" value={<span className="text-[#b42318]">{viewedAccount.creditUsed}</span>} />
+                  <DetailModalField label="Card credit" value={<span className="text-[#047857]">{viewedAccount.creditBalance}</span>} />
+                  <DetailModalField label="Available credit" value={<span className="text-[#0058be]">{viewedAccount.creditAvailable}</span>} />
+                  <DetailModalField label="Utilization" value={formatCreditUtilization(viewedAccount.creditUsedValue, viewedAccount.creditLimitValue)} />
+                </DetailModalSection>
+                <DetailModalSection title="Billing terms">
                   <DetailModalField label="Minimum payment" value={viewedAccount.creditMinimumPayment} />
-                </>
-              ) : null}
-              <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
-            </DetailModalSection>
-            <DetailModalSection title={isCreditCardAccount(viewedAccount) ? "Credit card limits" : "Amount type totals"}>
-              {(isCreditCardAccount(viewedAccount) ? viewedAccount.availableBreakdowns : viewedAccount.balanceBreakdowns).map((breakdown) => (
-                <DetailModalField key={breakdown.type} label={breakdown.type} value={<span className={breakdown.type === "Credit Used" ? "text-[#b42318]" : undefined}>{breakdown.amount}</span>} />
-              ))}
-            </DetailModalSection>
-            <DetailModalSection title="Monthly activity">
-              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Payments" : "Inflow"} value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
-              <DetailModalField label={isCreditCardAccount(viewedAccount) ? "Charges" : "Outflow"} value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
-              <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
-            </DetailModalSection>
+                  <DetailModalField label="Statement closing day" value={formatBillingDay(viewedAccount.creditStatementDay)} />
+                  <DetailModalField label="Payment due day" value={formatBillingDay(viewedAccount.creditPaymentDueDay)} />
+                </DetailModalSection>
+                <DetailModalSection title="Account information">
+                  <DetailModalField label="Institution" value={viewedAccount.institution || "Not set"} />
+                  <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
+                  <DetailModalField label="Currency" value={viewedAccount.currency} />
+                  <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "Not set"} />
+                  <DetailModalField label="Status" value={viewedAccount.status} />
+                  <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
+                  <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
+                </DetailModalSection>
+                <DetailModalSection title="Activity">
+                  <DetailModalField label="Payments" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
+                  <DetailModalField label="Charges" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+                  <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
+                </DetailModalSection>
+              </>
+            ) : (
+              <>
+                <DetailModalSection title="Account information">
+                  <DetailModalField label="Type" value={viewedAccount.type} />
+                  <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
+                  <DetailModalField label="Institution" value={viewedAccount.institution || "Not set"} />
+                  <DetailModalField label="Bank book / mobile number" value={viewedAccount.bankBookAccountNumber || viewedAccount.mobileBankingAccountNumber || "Not set"} />
+                  <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "Not set"} />
+                  <DetailModalField label="Currency" value={viewedAccount.currency} />
+                  <DetailModalField label="Net amount" value={viewedAccount.availableBalance} />
+                  <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
+                  <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
+                </DetailModalSection>
+                <DetailModalSection title="Amount type totals">
+                  {viewedAccount.balanceBreakdowns.map((breakdown) => (
+                    <DetailModalField key={breakdown.type} label={breakdown.type} value={breakdown.amount} />
+                  ))}
+                </DetailModalSection>
+                <DetailModalSection title="Activity">
+                  <DetailModalField label="Inflow" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
+                  <DetailModalField label="Outflow" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+                  <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
+                </DetailModalSection>
+              </>
+            )}
           </div>
         ) : null}
       </DetailModal>

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
+import { maskCardNumber } from "@/lib/accounts/card-display";
 import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import {
@@ -317,7 +318,7 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
 
   return {
     ...appearance,
-    accountNumber: [accountIdentifier, phoneNumber, cardNumber].filter(Boolean).join(" / "),
+    accountNumber: [accountIdentifier, phoneNumber, cardNumber ? maskCardNumber(cardNumber) : ""].filter(Boolean).join(" / "),
     amountTypeValues,
     availableBalance: formatMmk(availableBalanceValue),
     availableBreakdowns,
