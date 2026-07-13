@@ -6,17 +6,18 @@ The app replaces spreadsheet-based tracking with structured records for accounts
 
 > MVP status: core financial CRUD flows are connected to cloud Supabase. Dashboard, reports, documents, future planning, scenario budgeting, people payments, profile, settings, and admin-panel functionality are still placeholder-level or not implemented.
 
-## Cloud Supabase Only
+## Database Environments
 
-This project is configured to use a hosted Supabase project for authentication, database access, and application data. Local development means running the Next.js app on the developer machine while it connects to the cloud Supabase project.
+Production financial data must live only in the production Supabase project. Developers must not use production as a migration sandbox.
 
-Do not configure the app to use a local Supabase database URL such as `http://localhost:54321` or `http://127.0.0.1:54321`. `NEXT_PUBLIC_SUPABASE_URL` must point to the hosted Supabase project:
+Use one of these isolated targets for development:
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
-```
+- The local Supabase stack, which is the recommended target for migration work.
+- A developer-specific or shared staging project that contains no irreplaceable production data.
 
-Supabase CLI commands in this project are used for cloud project linking, migration checks, cloud migration deployment, and type generation. Local Supabase database reset/start workflows are not part of the normal project workflow.
+The application target is selected by `.env.local`. A local URL such as `http://127.0.0.1:54321` is appropriate for isolated development; a hosted URL must identify a non-production development project unless the developer is intentionally testing production read/write behavior.
+
+Git stores migration definitions, not user-entered database rows. Local resets erase unseeded local data. A linked reset can erase remote data and is prohibited in the normal workflow.
 
 ## Tech Stack
 
@@ -302,7 +303,7 @@ Open the app:
 http://localhost:3000
 ```
 
-The app will still use the cloud Supabase project while running on `localhost:3000`.
+The app uses whichever isolated Supabase target is configured in `.env.local`.
 
 ## Supabase Cloud Setup
 
@@ -317,72 +318,40 @@ In Supabase Dashboard:
    - Production site URL and redirect URL for the deployed app
 5. Confirm Row Level Security policies are enabled before entering real financial data.
 
-## Cloud Migration Workflow
+## Migration Workflow
 
-Use the Supabase CLI against the linked cloud project. The CLI is installed as a project dependency, so a global Supabase install is not required.
+The migration history in `supabase/migrations` is append-only and sealed by `supabase/migrations.lock.json`. Once a migration is shared, never edit, rename, reorder, or delete it. Corrections always use a newer migration.
 
-Initial link and migration deployment:
+For a schema or data change:
+
+1. Pull the latest `main` and create a feature branch.
+2. Create a migration with `npm run db:new -- descriptive_name`.
+3. Edit only the newly generated file.
+4. Run an isolated local Supabase stack and rebuild it from zero.
+5. Seal the new migration and run all checks.
+6. Merge through a reviewed pull request.
+7. Deploy the canonical `main` commit through the manual GitHub database workflow, or use `npm run db:deploy` from a clean, fully pushed local `main` checkout.
 
 ```bash
-npm run db:login
-npm run db:link -- --project-ref YOUR_PROJECT_REF
+npm run db:start
+npm run db:local:reset:safe
+npm run db:migration:seal
 npm run db:migration:check
-npm run db:remote:migrations
-npx supabase db push --include-all
-npm run db:types
+npm test
+npm run lint
+npm run build
 ```
 
-For a new schema change:
-
-1. Create a new migration:
+Before deployment, create a verified backup and check linked history:
 
 ```bash
-npm run db:new -- migration_name
+npm run db:remote:check
+npm run db:deploy
 ```
 
-2. Edit the generated SQL file in `supabase/migrations`.
-3. Scan migrations for risky SQL:
+`db:deploy` uses normal `supabase db push`, performs a dry run, and refuses uncommitted, unpushed, non-`main`, or divergent migration history. Do not use `db push --include-all`, `migration repair`, direct Dashboard schema edits, or `db reset --linked` as routine commands.
 
-```bash
-npm run db:migration:check
-```
-
-4. Back up the cloud database if the migration changes existing data.
-5. Compare migration state with the linked cloud project:
-
-```bash
-npm run db:remote:migrations
-```
-
-6. Apply the migration to the linked cloud project:
-
-```bash
-npx supabase db push --include-all
-```
-
-7. Regenerate TypeScript database types from the linked cloud schema:
-
-```bash
-npm run db:types
-```
-
-Do not run linked database resets as a normal workflow. Never run `supabase db reset --linked` without an explicit backup and a clear recovery plan.
-
-Current migrations:
-
-- `202606180001_baseline_schema.sql`
-- `202606190001_auth_and_rls.sql`
-- `202606220001_remove_shared_default_categories.sql`
-- `202606220002_category_cleanup.sql`
-- `202606230001_category_types_no_defaults.sql`
-- `202606250001_transaction_metadata.sql`
-- `202606250002_auto_category_style.sql`
-- `202606250003_app_flow_schema_alignment.sql`
-- `202606260001_subscription_reminders.sql`
-- `202606260002_allow_same_account_amount_type_transfers.sql`
-- `202606270001_transfer_ledger_pairs.sql`
-- `202606290001_credit_card_debt_existing_data_alignment.sql`
-- `202606290002_transaction_driven_account_balances.sql`
+See [docs/supabase-workflow.md](docs/supabase-workflow.md) for onboarding, incident recovery, and environment rules.
 
 ## Common Scripts
 
@@ -394,6 +363,9 @@ npm run lint
 npm run db:login
 npm run db:link
 npm run db:migration:check
+npm run db:migration:seal
+npm run db:remote:check
+npm run db:deploy
 npm run db:remote:migrations
 npm run db:new -- migration_name
 npm run db:types

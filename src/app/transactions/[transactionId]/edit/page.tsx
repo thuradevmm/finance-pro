@@ -15,6 +15,7 @@ import { getSubscriptions } from "@/lib/subscriptions/supabase";
 import { getTransaction, type TransactionRecord, type TransactionRelatedOption } from "@/lib/transactions/supabase";
 
 function relatedOptions(
+  accounts: Awaited<ReturnType<typeof getAccounts>>,
   budgets: Awaited<ReturnType<typeof getBudgets>>,
   savingsGoals: Awaited<ReturnType<typeof getSavingsGoals>>,
   debts: Awaited<ReturnType<typeof getDebts>>,
@@ -27,6 +28,10 @@ function relatedOptions(
     ...budgets.map((budget) => ({ label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
     ...savingsGoals.map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
     ...debts.map((debt) => ({
+      creditCardDebt: debt.isCreditCardDebt ? {
+        accountId: debt.creditCardAccountId,
+        accountName: accounts.find((account) => account.id === debt.creditCardAccountId)?.name ?? debt.lender,
+      } : undefined,
       debtPayoff: debt.isCreditCardDebt ? undefined : {
         durationMonths: debt.durationMonths,
         interestRate: debt.interestRateValue,
@@ -96,7 +101,7 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description="Update transaction details and linked financial impacts." title="Edit Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} relatedOptions={relatedOptions(budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
+      <AddTransactionForm accounts={accounts} categories={categories} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
     </AppShell>
   );
 }

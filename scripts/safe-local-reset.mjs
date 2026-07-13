@@ -20,7 +20,7 @@ if (answer !== confirmation) {
   process.exit(1);
 }
 
-const result = spawnSync("npx", ["supabase", "db", "reset"], {
+const result = spawnSync("npx", ["supabase", "db", "reset", "--local", "--no-seed"], {
   shell: process.platform === "win32",
   stdio: "inherit",
 });

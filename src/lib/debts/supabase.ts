@@ -34,6 +34,7 @@ export type DebtRecordWithValues = DebtRecord & {
   chargeActivity: DebtLedgerActivity[];
   categoryId: string;
   createdAtValue: string;
+  creditCardAccountId: string;
   creditCardUsedAmountValue: number;
   durationMonths: number;
   interestRatePeriod: DebtInterestRatePeriod;
@@ -149,9 +150,16 @@ function transactionStatusAllowsDebtImpact(value: unknown) {
 
 function transactionDebtImpact(transaction: LinkedTransactionRow, creditCardAccountIds: Set<string>) {
   const type = String(transaction.type ?? "").toLowerCase();
-  const direction = transferDirection(metadataRecord(transaction.metadata));
+  const metadata = metadataRecord(transaction.metadata);
+  const direction = transferDirection(metadata);
   const usesCreditCardAccount = transaction.account_id ? creditCardAccountIds.has(transaction.account_id) : false;
   const paysCreditCardAccount = transaction.transfer_account_id ? creditCardAccountIds.has(transaction.transfer_account_id) : false;
+  const explicitImpact = metadataString(metadata, "credit_card_debt_impact");
+
+  if (explicitImpact === "charge" || explicitImpact === "repayment") {
+    if (type === "transfer" && direction && !usesCreditCardAccount) return "";
+    return explicitImpact;
+  }
 
   if (usesCreditCardAccount || paysCreditCardAccount) {
     if (type === "transfer" && direction) {
@@ -165,7 +173,8 @@ function transactionDebtImpact(transaction: LinkedTransactionRow, creditCardAcco
   }
 
   if (type === "transfer" && direction === "credit") return "";
-  if (type === "expense" || type === "income" || type === "transfer") return "repayment";
+  if (type === "expense" || type === "transfer") return "repayment";
+  if (type === "income" && typeof metadata.reversed_transaction_id === "string") return "charge";
   return "";
 }
 
@@ -292,6 +301,9 @@ function mapDebt(
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
   const isCreditCard = isCreditCardDebt(row, metadata);
+  const creditCardAccountId = isCreditCard
+    ? metadataString(metadata, "credit_card_account_id") || metadataString(metadata, "auto_credit_card_account_id") || row.payment_account_id || ""
+    : "";
   const usesManualCreditCardTerms = isCreditCard && hasManualCreditCardTerms(metadata);
   const type = category?.name ?? (isCreditCard ? "Credit Card" : String(row.type ?? metadata.type ?? "Debt"));
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
@@ -366,6 +378,7 @@ function mapDebt(
     chargeActivity,
     categoryId,
     createdAtValue: row.created_at ?? "",
+    creditCardAccountId,
     creditCardUsedAmountValue,
     durationMonths,
     id: row.id,

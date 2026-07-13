@@ -6,7 +6,13 @@ import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } fro
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { DebtDatedRepayment, DebtInterestRatePeriod } from "@/lib/debts/emi";
-import { summarizeLedgerTransactions } from "@/lib/ledger";
+import {
+  creditCardAccountId,
+  creditCardDebtImpact,
+  deriveCreditCardDebtMetadata,
+  isCreditCardPayment,
+  summarizeLedgerTransactions,
+} from "@/lib/ledger";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 export type TransactionSubscriptionPaymentSnapshot = {
@@ -21,6 +27,10 @@ export type TransactionRecord = Transaction & {
   accountAmountType: AccountAmountType;
   amountValue: number;
   categoryId: string;
+  creditCardAccount: string;
+  creditCardAccountId: string;
+  creditCardDebtImpact: "charge" | "repayment" | "";
+  creditCardPayment: boolean;
   dateValue: string;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
@@ -36,6 +46,10 @@ export type TransactionRecord = Transaction & {
 export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type TransactionRelatedOption = {
+  creditCardDebt?: {
+    accountId: string;
+    accountName: string;
+  };
   debtPayoff?: {
     durationMonths: number;
     interestRate: number;
@@ -98,6 +112,13 @@ type TransactionRow = {
   transfer_account_id: string | null;
   type: string;
   metadata: unknown;
+};
+
+type TransactionDebtRow = {
+  id: string;
+  metadata: unknown;
+  payment_account_id: string | null;
+  type: string | null;
 };
 
 function metadataRecord(metadata: unknown) {
@@ -215,6 +236,8 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
   const subscriptionPayment = subscriptionPaymentSnapshot(row, metadata);
+  const linkedCreditCardAccountId = creditCardAccountId(metadata);
+  const linkedCreditCardAccount = linkedCreditCardAccountId ? accounts.get(linkedCreditCardAccountId) : undefined;
 
   return {
     account: accountLabel,
@@ -224,6 +247,10 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     amountValue,
     category: type === "Transfer" ? "Transfer" : category?.name ?? "Uncategorized",
     categoryId: row.category_id ?? "",
+    creditCardAccount: linkedCreditCardAccount ? getAccountOptionLabel(linkedCreditCardAccount, accountList) : "",
+    creditCardAccountId: linkedCreditCardAccountId,
+    creditCardDebtImpact: creditCardDebtImpact(metadata),
+    creditCardPayment: isCreditCardPayment(metadata),
     date: formatDisplayDate(row.transaction_date),
     dateValue: row.transaction_date,
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
@@ -270,10 +297,23 @@ export async function getTransactions(
 
   if (options.limit) query = query.limit(options.limit);
 
-  const { data, error } = await query;
+  const [{ data, error }, debtsResult] = await Promise.all([
+    query,
+    supabase
+      .from("debts")
+      .select("id,payment_account_id,type,metadata")
+      .eq("user_id", userId)
+      .is("deleted_at", null),
+  ]);
 
   if (error) throw new Error(error.message);
-  return (data as TransactionRow[]).flatMap((row) => {
+  if (debtsResult.error) throw new Error(debtsResult.error.message);
+  const debtRows = debtsResult.data as TransactionDebtRow[];
+  const enrichedRows = (data as TransactionRow[]).map((row) => ({
+    ...row,
+    metadata: deriveCreditCardDebtMetadata(row, debtRows, accounts),
+  }));
+  return enrichedRows.flatMap((row) => {
     const transaction = mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), accounts, new Map(categories.map((c) => [c.id, c])));
     return transaction ? [transaction] : [];
   });
@@ -293,7 +333,7 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
   };
 }
 
-export function getTransactionSummaries(transactions: TransactionRecord[], accounts: AccountRecord[] = []): SummaryMetric[] {
+export function getTransactionSummaries(transactions: TransactionRecord[]): SummaryMetric[] {
   const { expenses, income, net } = summarizeLedgerTransactions(
     transactions.map((transaction) => ({
       account_id: transaction.accountId || null,
@@ -307,7 +347,6 @@ export function getTransactionSummaries(transactions: TransactionRecord[], accou
       transfer_account_id: transaction.transferAccountId || null,
       type: transaction.type.toLowerCase(),
     })),
-    accounts,
   );
 
   const transferGroups = new Set<string>();

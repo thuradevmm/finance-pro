@@ -102,6 +102,9 @@ function compareTransactions(first: Transaction, second: Transaction, key: SortK
 }
 
 function accountMovementLabel(transaction: Transaction) {
+  if (transaction.creditCardPayment && transaction.creditCardAccount) {
+    return `${transaction.account} → ${transaction.creditCardAccount}`;
+  }
   if (transaction.type !== "Transfer") return transaction.account;
   if (transaction.transferFromAccount && transaction.transferToAccount) {
     return `${transaction.transferFromAccount} → ${transaction.transferToAccount}`;

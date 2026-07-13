@@ -20,7 +20,7 @@ with linked_credit_cards as (
   select
     txn.related_entity_id::uuid as debt_id,
     txn.user_id,
-    min(account.id)::uuid as credit_card_account_id
+    (array_agg(account.id order by account.id))[1] as credit_card_account_id
   from public.transactions as txn
   join public.accounts as account
     on account.user_id = txn.user_id

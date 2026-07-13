@@ -5,6 +5,7 @@ import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import {
   buildAccountLedgerActivities,
+  deriveCreditCardDebtMetadata,
   metadataRecord,
   normalizeAccountType,
   normalizeAmountType,
@@ -118,9 +119,18 @@ type AccountTransactionRow = {
   account_id: string | null;
   amount: number | string;
   metadata: unknown;
+  related_entity_id: string | null;
+  related_entity_type: string | null;
   status: string | null;
   transfer_account_id: string | null;
   type: string;
+};
+
+type AccountDebtRow = {
+  id: string;
+  metadata: unknown;
+  payment_account_id: string | null;
+  type: string | null;
 };
 
 const typeMap: Record<string, AccountType> = {
@@ -272,8 +282,12 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   const monthlyBudgetLimit = isCreditCard ? (storedCreditLimit ?? storedMonthlyBudgetLimit) : storedMonthlyBudgetLimit;
   const cashBalanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
   const creditLimitValue = isCreditCard ? roundCurrencyValue(monthlyBudgetLimit ?? 0) : 0;
-  const creditUsedValue = isCreditCard ? roundCurrencyValue(activity.creditUsed) : 0;
-  const creditAvailableValue = isCreditCard ? roundCurrencyValue(creditLimitValue - creditUsedValue) : 0;
+  // The configured credit limit is a fixed ceiling. Repayments can reduce
+  // utilization to zero, but they must never manufacture additional limit.
+  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(activity.creditUsed, 0)) : 0;
+  const creditAvailableValue = isCreditCard
+    ? roundCurrencyValue(Math.min(Math.max(creditLimitValue - creditUsedValue, 0), creditLimitValue))
+    : 0;
   const creditMinimumPaymentValue = isCreditCard ? roundCurrencyValue(Math.max(numericValue(metadata.credit_minimum_payment), 0)) : 0;
   const creditStatementDay = isCreditCard ? dayOfMonthValue(metadata.credit_statement_day) : null;
   const creditPaymentDueDay = isCreditCard ? dayOfMonthValue(metadata.credit_payment_due_day) : null;
@@ -352,20 +366,31 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
 
   if (options.limit) accountsQuery = accountsQuery.limit(options.limit);
 
-  const [accountsResult, transactionsResult] = await Promise.all([
+  const [accountsResult, transactionsResult, debtsResult] = await Promise.all([
     accountsQuery,
     supabase
       .from("transactions")
-      .select("account_id,transfer_account_id,amount,type,metadata,status")
+      .select("account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
+      .eq("user_id", userId)
+      .is("deleted_at", null),
+    supabase
+      .from("debts")
+      .select("id,payment_account_id,type,metadata")
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
 
   if (accountsResult.error) throw new Error(accountsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+  if (debtsResult.error) throw new Error(debtsResult.error.message);
 
   const accountRows = accountsResult.data as AccountRow[];
-  const activities = buildAccountLedgerActivities(transactionsResult.data as AccountTransactionRow[], accountRows);
+  const debtRows = debtsResult.data as AccountDebtRow[];
+  const transactions = (transactionsResult.data as AccountTransactionRow[]).map((transaction) => ({
+    ...transaction,
+    metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
+  }));
+  const activities = buildAccountLedgerActivities(transactions, accountRows);
   return accountRows.map((account) => mapAccount(account, activities.get(account.id)));
 }
 

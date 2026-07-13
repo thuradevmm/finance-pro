@@ -255,6 +255,9 @@ export function AddTransactionForm({
     ? roundMoney(subscriptionPaymentBilledAmountValue * subscriptionPaymentExchangeRateValue)
     : 0;
   const isForeignSubscriptionPayment = Boolean(subscriptionPayment && subscriptionPayment.billingCurrency !== SYSTEM_CURRENCY);
+  const isCreditCardDebtPayment = selectedType === "Expense"
+    && Boolean(effectiveRelatedOption?.creditCardDebt)
+    && selectedAccount?.id !== effectiveRelatedOption?.creditCardDebt?.accountId;
   const hasSecondaryCreditCardDebtImpact = isCreditCardCharge && Boolean(effectiveRelatedOption && effectiveRelatedOption.type !== "none" && effectiveRelatedOption.type !== "debt");
   const amountNumber = Number(amount);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
@@ -469,11 +472,23 @@ export function AddTransactionForm({
 
           <FormCard title="Transaction Impact">
             <SelectInput
-              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt ? "Credit Card Debt" : "Reflect To Page"}
+              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt || isCreditCardDebtPayment ? "Credit Card Debt" : "Reflect To Page"}
               onChange={handleRelatedOptionChange}
               options={impactOptions.map((option) => option.label)}
               value={effectiveRelatedOption?.label ?? "No linked record"}
             />
+            {isCreditCardDebtPayment ? (
+              <div className="mt-4 grid gap-3 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+                <span className="grid size-10 place-items-center rounded-md bg-white text-[#0058be]">
+                  <Icon className="size-5" name="credit" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase text-[#0058be]">Credit Card Payment</p>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Restores available credit on {effectiveRelatedOption?.creditCardDebt?.accountName || "the linked card"}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This reduces the payment account and card debt. It does not change the configured credit limit or count as new spending.</p>
+                </div>
+              </div>
+            ) : null}
             {hasSecondaryCreditCardDebtImpact ? (
               <div className="mt-4 grid gap-3 rounded-lg border border-[#fecaca] bg-[#fffafa] p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
                 <span className="grid size-10 place-items-center rounded-md bg-[#fff1f0] text-[#b42318]">

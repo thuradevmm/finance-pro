@@ -174,6 +174,8 @@ export type Transaction = {
   category: TransactionCategoryName;
   account: string;
   accountAmountType: AccountAmountType;
+  creditCardAccount?: string;
+  creditCardPayment?: boolean;
   transferAccount?: string;
   transferAccountAmountType?: AccountAmountType;
   transferDirection?: "Credit" | "Debit";

@@ -2,6 +2,7 @@ import { formatMmk } from "@/lib/currency";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
+import { deriveCreditCardDebtMetadata, isCreditCardPayment } from "@/lib/ledger";
 import type { CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
 
 export type CategoryRecord = FinancialCategory & {
@@ -33,11 +34,28 @@ type CategoryRow = {
 };
 
 type CategoryTransactionRow = {
+  account_id: string | null;
   amount: number | string;
   category_id: string | null;
+  metadata: unknown;
+  related_entity_id: string | null;
+  related_entity_type: string | null;
   status: string | null;
   transaction_date: string;
+  transfer_account_id: string | null;
   type: string;
+};
+
+type CategoryAccountRow = { id: string; type: string | null };
+type CategoryDebtRow = {
+  category_id: string | null;
+  created_at: string | null;
+  id: string;
+  metadata: unknown;
+  payment_account_id: string | null;
+  start_date: string | null;
+  total_amount: number | string | null;
+  type: string | null;
 };
 
 type CategoryAmountRow = {
@@ -116,7 +134,8 @@ function buildCategoryActivity(rows: CategoryAmountRow[]) {
 
 function transactionActivityRows(transactions: CategoryTransactionRow[]): CategoryAmountRow[] {
   return transactions.flatMap((transaction) => {
-    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") return [];
+    if (["scheduled", "cancelled", "canceled", "void", "failed"].includes(String(transaction.status ?? "cleared").toLowerCase())) return [];
+    if (isCreditCardPayment(metadataRecord(transaction.metadata))) return [];
     const type = transaction.type.toLowerCase();
     if (type !== "income" && type !== "expense") return [];
     return [{
@@ -168,11 +187,11 @@ export async function getCategories(options: { limit?: number } = {}) {
 
   if (options.limit) categoriesQuery = categoriesQuery.limit(options.limit);
 
-  const [categoriesResult, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult] = await Promise.all([
+  const [categoriesResult, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult, accountsResult] = await Promise.all([
     categoriesQuery,
     supabase
       .from("transactions")
-      .select("category_id,amount,transaction_date,type,status")
+      .select("account_id,transfer_account_id,category_id,amount,transaction_date,type,status,metadata,related_entity_id,related_entity_type")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
@@ -182,7 +201,7 @@ export async function getCategories(options: { limit?: number } = {}) {
       .is("deleted_at", null),
     supabase
       .from("debts")
-      .select("category_id,total_amount,start_date,created_at")
+      .select("id,category_id,total_amount,start_date,created_at,payment_account_id,type,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
@@ -195,6 +214,11 @@ export async function getCategories(options: { limit?: number } = {}) {
       .select("category_id,amount,next_billing_date,created_at")
       .eq("user_id", user.id)
       .is("deleted_at", null),
+    supabase
+      .from("accounts")
+      .select("id,type")
+      .eq("user_id", user.id)
+      .is("deleted_at", null),
   ]);
 
   if (categoriesResult.error) throw new Error(categoriesResult.error.message);
@@ -203,12 +227,19 @@ export async function getCategories(options: { limit?: number } = {}) {
   if (debtsResult.error) throw new Error(debtsResult.error.message);
   if (savingsGoalsResult.error) throw new Error(savingsGoalsResult.error.message);
   if (subscriptionsResult.error) throw new Error(subscriptionsResult.error.message);
+  if (accountsResult.error) throw new Error(accountsResult.error.message);
 
   const categoryRows = categoriesResult.data as CategoryRow[];
+  const debtRows = debtsResult.data as CategoryDebtRow[];
+  const accountRows = accountsResult.data as CategoryAccountRow[];
+  const transactionRows = (transactionsResult.data as CategoryTransactionRow[]).map((transaction) => ({
+    ...transaction,
+    metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
+  }));
   const activityRows = [
-    ...transactionActivityRows(transactionsResult.data as CategoryTransactionRow[]),
+    ...transactionActivityRows(transactionRows),
     ...(assetsResult.data as Array<{ category_id: string | null; created_at: string | null; purchase_amount: number | string | null; purchase_date: string | null }>).map((asset) => ({ amount: asset.purchase_amount, category_id: asset.category_id, date: asset.purchase_date ?? asset.created_at })),
-    ...(debtsResult.data as Array<{ category_id: string | null; created_at: string | null; start_date: string | null; total_amount: number | string | null }>).map((debt) => ({ amount: debt.total_amount, category_id: debt.category_id, date: debt.start_date ?? debt.created_at })),
+    ...debtRows.map((debt) => ({ amount: debt.total_amount, category_id: debt.category_id, date: debt.start_date ?? debt.created_at })),
     ...(savingsGoalsResult.data as Array<{ category_id: string | null; created_at: string | null; target_amount: number | string | null; target_date: string | null }>).map((goal) => ({ amount: goal.target_amount, category_id: goal.category_id, date: goal.target_date ?? goal.created_at })),
     ...(subscriptionsResult.data as Array<{ amount: number | string | null; category_id: string | null; created_at: string | null; next_billing_date: string | null }>).map((subscription) => ({ amount: subscription.amount, category_id: subscription.category_id, date: subscription.next_billing_date ?? subscription.created_at })),
   ];

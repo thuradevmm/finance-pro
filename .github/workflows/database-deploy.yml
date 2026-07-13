@@ -1,0 +1,73 @@
+name: Deploy Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing the target Supabase secrets
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      backup_reference:
+        description: Required backup, PITR checkpoint, or recovery-ticket reference
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.environment }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - name: Checkout canonical main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require a backup reference
+        env:
+          BACKUP_REFERENCE: ${{ inputs.backup_reference }}
+        run: test -n "$BACKUP_REFERENCE"
+
+      - name: Check immutable migration history
+        env:
+          MIGRATION_BASE_REF: origin/main
+        run: npm run db:migration:check
+
+      - name: Link target project
+        run: npx supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
+
+      - name: Verify remote history is compatible
+        run: npm run db:remote:check
+
+      - name: Preview pending migrations
+        run: npx supabase db push --dry-run
+
+      - name: Apply pending migrations
+        run: npx supabase db push
+
+      - name: Verify deployment history
+        run: npm run db:remote:verify

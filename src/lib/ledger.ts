@@ -3,11 +3,20 @@ export type LedgerAccountInput = {
   type?: string | null;
 };
 
+export type CreditCardDebtInput = {
+  id: string;
+  metadata?: unknown;
+  payment_account_id?: string | null;
+  type?: string | null;
+};
+
 export type LedgerTransactionInput = {
   account_id?: string | null;
   amount?: number | string | null;
   id?: string | null;
   metadata?: unknown;
+  related_entity_id?: string | null;
+  related_entity_type?: string | null;
   status?: string | null;
   transfer_account_id?: string | null;
   type?: string | null;
@@ -26,6 +35,8 @@ export type LedgerSummary = {
   income: number;
   net: number;
 };
+
+export type CreditCardDebtImpact = "charge" | "repayment" | "";
 
 type LedgerEffect = {
   accountId: string;
@@ -83,6 +94,74 @@ export function transferDirection(metadata: Record<string, unknown>) {
   if (legacyRole === "out") return "debit";
   if (legacyRole === "in") return "credit";
   return "";
+}
+
+export function creditCardDebtImpact(metadata: Record<string, unknown>): CreditCardDebtImpact {
+  const impact = typeof metadata.credit_card_debt_impact === "string"
+    ? metadata.credit_card_debt_impact.trim().toLowerCase()
+    : "";
+  return impact === "charge" || impact === "repayment" ? impact : "";
+}
+
+export function creditCardAccountId(metadata: Record<string, unknown>) {
+  return typeof metadata.credit_card_account_id === "string" ? metadata.credit_card_account_id : "";
+}
+
+export function isCreditCardPayment(metadata: Record<string, unknown>) {
+  return metadata.credit_card_payment === true || metadata.financial_event === "credit_card_payment";
+}
+
+function debtCreditCardAccountId(debt: CreditCardDebtInput, creditCardAccountIds: Set<string>) {
+  const metadata = metadataRecord(debt.metadata);
+  if (typeof metadata.credit_card_account_id === "string") return metadata.credit_card_account_id;
+  if (typeof metadata.auto_credit_card_account_id === "string") return metadata.auto_credit_card_account_id;
+  if (debt.payment_account_id && creditCardAccountIds.has(debt.payment_account_id)) return debt.payment_account_id;
+  return "";
+}
+
+/**
+ * Derives metadata for legacy linked debt payments without rewriting the row.
+ * A migration persists the same classification, while this read-time fallback
+ * makes pre-migration production data correct as soon as the application code
+ * is deployed.
+ */
+export function deriveCreditCardDebtMetadata(
+  transaction: LedgerTransactionInput,
+  debts: CreditCardDebtInput[],
+  accounts: LedgerAccountInput[],
+) {
+  const metadata = metadataRecord(transaction.metadata);
+  if (creditCardDebtImpact(metadata) && creditCardAccountId(metadata)) return metadata;
+
+  const debtId = transaction.related_entity_type === "debt" && transaction.related_entity_id
+    ? transaction.related_entity_id
+    : typeof metadata.credit_card_debt_id === "string" ? metadata.credit_card_debt_id : "";
+  if (!debtId) return metadata;
+
+  const creditCardAccountIds = new Set(accounts.filter((account) => isCreditCardType(account.type)).map((account) => account.id));
+  const debt = debts.find((item) => item.id === debtId);
+  if (!debt) return metadata;
+  const linkedAccountId = debtCreditCardAccountId(debt, creditCardAccountIds);
+  if (!linkedAccountId) return metadata;
+
+  const physicallyTouchesCard = transaction.account_id === linkedAccountId || transaction.transfer_account_id === linkedAccountId;
+  if (physicallyTouchesCard) return metadata;
+
+  const transactionType = String(transaction.type ?? "").toLowerCase();
+  const direction = transferDirection(metadata);
+  const isRepayment = transactionType === "expense" || (transactionType === "transfer" && direction !== "credit");
+  const isPaymentReversal = transactionType === "income" && typeof metadata.reversed_transaction_id === "string";
+  if (!isRepayment && !isPaymentReversal) return metadata;
+
+  return {
+    ...metadata,
+    credit_card_account_id: linkedAccountId,
+    credit_card_debt_id: debtId,
+    credit_card_debt_impact: isPaymentReversal ? "charge" : "repayment",
+    credit_card_payment: isRepayment,
+    financial_event: isPaymentReversal ? "credit_card_payment_reversal" : "credit_card_payment",
+    ...(isPaymentReversal ? { reversed_credit_card_payment: true } : {}),
+  };
 }
 
 function emptyActivity(): LedgerAccountActivity {
@@ -147,6 +226,23 @@ function ledgerEffects(transaction: LedgerTransactionInput, accountTypes: Map<st
     }
   }
 
+  // A payment recorded from a bank/wallet as an Expense has two accounting
+  // effects: cash leaves the payment account and the card liability falls.
+  // The second effect is virtual because the transaction row is not stored on
+  // the credit-card account itself. Explicit metadata keeps that effect
+  // deterministic for edits, reversals, imports, and historical backfills.
+  const linkedCreditCardAccountId = creditCardAccountId(metadata);
+  const linkedCreditCardImpact = creditCardDebtImpact(metadata);
+  const physicallyTouchesLinkedCard = linkedCreditCardAccountId
+    && (transaction.account_id === linkedCreditCardAccountId || transaction.transfer_account_id === linkedCreditCardAccountId);
+  if (linkedCreditCardAccountId && linkedCreditCardImpact && !physicallyTouchesLinkedCard) {
+    pushEffect(
+      linkedCreditCardAccountId,
+      "Credit Card",
+      linkedCreditCardImpact === "repayment" ? "credit" : "debit",
+    );
+  }
+
   return effects;
 }
 
@@ -187,21 +283,38 @@ export function buildAccountLedgerActivities(
 
 export function summarizeLedgerTransactions(
   transactions: LedgerTransactionInput[],
-  accounts: LedgerAccountInput[],
 ): LedgerSummary {
-  const accountTypes = accountTypeById(accounts);
   const summary: LedgerSummary = { expenses: 0, income: 0, net: 0 };
 
   for (const transaction of transactions) {
-    for (const effect of ledgerEffects(transaction, accountTypes)) {
-      if (effect.isCreditCard) continue;
+    if (!transactionStatusAffectsBalance(transaction.status)) continue;
+    const amount = Math.abs(numericValue(transaction.amount));
+    if (amount <= 0) continue;
 
-      summary.net = roundCurrencyValue(summary.net + effect.cashDelta);
-      if (effect.transactionType === "income") {
-        summary.income = roundCurrencyValue(summary.income + effect.amount);
-      } else if (effect.transactionType === "expense") {
-        summary.expenses = roundCurrencyValue(summary.expenses + effect.amount);
-      }
+    const metadata = metadataRecord(transaction.metadata);
+    const transactionType = String(transaction.type ?? "").toLowerCase();
+    const isReversal = typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id !== "";
+    const reversedType = typeof metadata.reversed_transaction_type === "string"
+      ? metadata.reversed_transaction_type.toLowerCase()
+      : "";
+
+    // Paying a credit-card balance settles a liability; it is not a second
+    // expense after the original card purchase. A reversal of that payment is
+    // likewise not income. Card purchases themselves remain normal expenses.
+    if (isCreditCardPayment(metadata) || (isReversal && metadata.reversed_credit_card_payment === true)) continue;
+
+    if (isReversal && (reversedType === "expense" || (!reversedType && transactionType === "income"))) {
+      summary.expenses = roundCurrencyValue(summary.expenses - amount);
+      summary.net = roundCurrencyValue(summary.net + amount);
+    } else if (isReversal && (reversedType === "income" || (!reversedType && transactionType === "expense"))) {
+      summary.income = roundCurrencyValue(summary.income - amount);
+      summary.net = roundCurrencyValue(summary.net - amount);
+    } else if (transactionType === "income") {
+      summary.income = roundCurrencyValue(summary.income + amount);
+      summary.net = roundCurrencyValue(summary.net + amount);
+    } else if (transactionType === "expense") {
+      summary.expenses = roundCurrencyValue(summary.expenses + amount);
+      summary.net = roundCurrencyValue(summary.net - amount);
     }
   }
 

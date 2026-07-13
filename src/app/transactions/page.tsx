@@ -61,7 +61,6 @@ export default async function TransactionsPage({
       />
 
       <TransactionsPageContent
-        accounts={accounts}
         filterOptions={transactionFilterOptions}
         initialAccountFilter={requestedAccount}
         initialCategoryFilter={requestedCategory}

@@ -1,82 +1,121 @@
-# Supabase Workflow And Data Safety
+# Supabase Workflow And Financial Data Safety
 
-This project uses Git for source code and migration files. Git does not store the rows inside a local Supabase database.
+This repository is the canonical source for database structure. Supabase records applied migration versions separately in `supabase_migrations.schema_migrations`. Both histories must agree before deployment.
 
-## Local Versus Remote Data
+Migrations are not backups and Git does not store user-entered rows.
 
-- Local Supabase data lives on one laptop unless you export it.
-- Remote Supabase data lives in the linked Supabase project.
-- Migrations describe schema and intentional data transforms. They are not a backup of user-entered rows.
-- `supabase db reset` rebuilds the local database from migrations and seed files. Any local rows that are not in seed or a dump are deleted.
-- Do not run `supabase db reset --linked`. Treat linked resets as emergency-only and require a remote backup plus explicit approval.
+Use `npm ci` when onboarding or in CI. The Supabase CLI is pinned to an exact project version so every developer and runner executes the same migration tooling. Upgrade it only in a reviewed pull request with a successful clean replay.
 
-## Environment Targets
+## Non-Negotiable Rules
 
-Check `NEXT_PUBLIC_SUPABASE_URL` before debugging missing data.
+1. Never run `supabase db reset --linked` or `db reset --db-url` against a shared environment.
+2. Never edit, rename, reorder, or delete a sealed migration. Add a newer migration instead.
+3. Never use `db push --include-all` or `migration repair` to bypass a mismatch. Stop and investigate.
+4. Never make production schema changes in the Dashboard SQL/Table editors.
+5. Never deploy a developer's unmerged local migration files.
+6. Back up the target before every production data migration and record the recovery reference.
+7. Prefer soft deletion for financial records. Normal migrations must not hard-delete transactions or related financial history.
 
-- Local examples: `http://127.0.0.1:54321`, `http://localhost:54321`
-- Remote examples: `https://<project-ref>.supabase.co`
+These rules follow Supabase's team guidance: develop migrations locally, commit them to Git, keep remote migration history synchronized, and coordinate a single deployment path. See the official [Database Migrations](https://supabase.com/docs/guides/deployment/database-migrations) and [Managing Environments](https://supabase.com/docs/guides/deployment/managing-environments) guides.
 
-`NEXT_PUBLIC_*` variables are browser-visible. Never put service role keys, database passwords, or full connection strings in `NEXT_PUBLIC_*`.
+## Environment Model
 
-## Two-Laptop Development Flow
+| Environment | Purpose | Data rule | Migration authority |
+| --- | --- | --- | --- |
+| Local Supabase | Development and clean replay | Disposable or deterministic seed data only | Any developer on a feature branch |
+| Staging | Integration and release validation | Sanitized/non-production data | Canonical reviewed branch only |
+| Production | Real financial records | Backed up and never reset | Manual GitHub deployment from `main` |
 
-### Laptop 1
+Each developer should use local Supabase or a separate development project. Sharing production as a development target makes accidental data loss and schema drift much more likely.
 
-1. Pull the latest code.
-2. Create migrations with `npm run db:new -- migration_name`.
-3. Review migration SQL with `npm run db:migration:check`.
-4. Run local reset only when it is acceptable to lose local unseeded rows:
-   `npm run db:local:reset:safe`
-5. Test the app.
-6. Commit and push code and migrations.
-7. Export local data if you need those rows on another laptop.
-
-### Laptop 2
-
-1. Pull Git changes.
-2. Run `npm run db:migration:check`.
-3. Start local Supabase with `npm run db:start`.
-4. Run `npm run db:local:migrations` to see local migration state.
-5. Run `npm run db:local:reset:safe` only if rebuilding local data is acceptable.
-6. Import a laptop1 data dump if the missing rows were local-only data.
-
-## Sample Data
-
-If both laptops need the same non-sensitive starter data, add it intentionally to `supabase/seed.sql`. Keep seed data small and deterministic. Do not put private production data, service role keys, or personal financial records in seed files.
-
-## Export Local Data Intentionally
-
-Use a data-only dump when moving local rows between laptops. Include auth tables only if user IDs must match.
-
-Example for laptop1 local database:
+## Create A Migration
 
 ```bash
-npx supabase db dump --local --data-only --file laptop1-local-data.sql
+git switch main
+git pull --ff-only
+git switch -c feature/descriptive-name
+npm run db:new -- descriptive_name
 ```
 
-Copy the dump securely to laptop2. Restore only into a local database you are willing to modify:
+Edit only the new SQL file. Migration names use the CLI-generated timestamp and snake_case description. Data migrations should be narrowly scoped, preserve primary keys and ownership, and use predicates that cannot affect unrelated users or rows.
+
+Test and seal it:
 
 ```bash
-psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" --single-transaction --file laptop1-local-data.sql
+npm run db:start
+npm run db:local:reset:safe
+npm run db:migration:seal
+npm run db:migration:check
+npm test
+npm run lint
+npm run build
 ```
 
-Foreign keys, duplicate primary keys, storage rows, and `auth.users` ownership IDs can make restores fail. If auth users are involved, restore into an empty local database or create a filtered import plan.
+Commit the new migration and the updated `supabase/migrations.lock.json` together. The seal command only appends new checksums; it refuses to rewrite an existing checksum.
 
-## Remote Migration Flow
+## Pull Request And CI
 
-1. Back up the remote database first.
-2. Run `npm run db:migration:check`.
-3. Run `npm run db:remote:migrations` after linking to compare local and remote migration state.
-4. Apply migrations intentionally with the Supabase CLI only after review.
-5. Never use linked reset for normal deployment.
+All database changes go through a pull request. CI:
 
-## Emergency Recovery
+- Validates names, ordering, checksums, and destructive SQL.
+- Rejects edits or deletions of committed migrations.
+- Replays all migrations into an empty local PostgreSQL database.
+- Runs tests, lint, and a production application build.
 
-If data disappears:
+Configure GitHub branch protection for `main` to require pull requests and the `Migration Safety` check, dismiss stale approvals, block force pushes, and restrict direct pushes.
 
-1. Stop running reset/push commands.
-2. Identify whether the app points at local or remote Supabase.
-3. Check whether rows exist but are hidden by RLS/ownership.
-4. If local-only rows existed on another laptop, export from that laptop before resetting it.
-5. For remote incidents, take a current backup first, then use Supabase dashboard backups/PITR and restore to a temporary project before merging missing rows.
+## Deploy To Staging Or Production
+
+Preferred: run the `Deploy Database Migrations` workflow from GitHub Actions. It checks out canonical `main`, serializes deployments per environment, requires a backup/recovery reference, verifies remote history, previews changes, applies normal `db push`, and verifies the final history.
+
+Required GitHub Environment secrets for both `staging` and `production`:
+
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_DB_PASSWORD`
+- `SUPABASE_PROJECT_ID`
+
+Local fallback for an authorized maintainer:
+
+```bash
+git switch main
+git pull --ff-only
+npm run db:link -- --project-ref TARGET_PROJECT_REF
+npm run db:remote:check
+npm run db:deploy
+```
+
+The guarded deploy refuses to run unless migration files are committed, local `HEAD` exactly matches its pushed upstream, the branch is allowed, and remote history is an ordered prefix of Git history. It never uses `--include-all` and never resets the database.
+
+## Why Transactions Can Appear To Disappear
+
+Check these causes in order:
+
+1. The app points to a different local/hosted project in `.env.local`.
+2. A local reset removed unseeded local-only rows.
+3. A linked reset dropped remote user tables and rebuilt schema without row data.
+4. RLS or ownership changes hide rows even though they still exist.
+5. A migration soft-deleted rows or changed filters/status semantics.
+6. A remote schema edit caused migration history drift.
+
+Stop all migration commands while investigating. Record row counts and take a current backup before any recovery attempt.
+
+## Recovery And History Mismatches
+
+Run read-only checks first:
+
+```bash
+npm run db:remote:migrations
+npm run db:remote:check
+git status --short
+git log --oneline -- supabase/migrations
+```
+
+If the remote contains a migration missing from Git, recover the exact migration from the developer/commit that deployed it. If schema was changed directly, capture and review the difference in a new migration on a recovery branch. Do not guess a repair status.
+
+`supabase migration repair` changes only the history table; it does not apply or undo SQL. Use it only during a documented incident after schema and data have been independently verified and backed up.
+
+For lost production rows, use Supabase backups/PITR to restore into a temporary project first. Compare and merge verified missing rows; do not overwrite the current production project blindly.
+
+## Local Data
+
+`npm run db:local:reset:safe` explicitly targets only the local stack and requires typed confirmation. It deletes unseeded local rows. Put only deterministic, non-sensitive development data in `supabase/seed.sql`; never commit real financial records, service keys, or production dumps.

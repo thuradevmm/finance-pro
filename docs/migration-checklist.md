@@ -1,69 +1,36 @@
-# Supabase Migration Safety Checklist
+# Migration Review Checklist
 
-Use this checklist before changing database schema or data.
+## Author
 
-## Before Creating A Migration
+- [ ] Started from current `main` on a feature branch.
+- [ ] Created a new timestamped migration; no sealed migration changed.
+- [ ] Used additive/backward-compatible schema changes where possible.
+- [ ] Preserved financial rows, IDs, ownership, and historical references.
+- [ ] Avoided hard deletes; soft-deleted only when explicitly required.
+- [ ] Made data backfills narrowly scoped and deterministic.
+- [ ] Rebuilt an empty local database from the complete migration history.
+- [ ] Tested RLS as authenticated users, not only with a service role.
+- [ ] Ran `npm run db:migration:seal` after final SQL edits.
+- [ ] Ran `npm run db:migration:check`, tests, lint, and build.
 
-- Confirm whether you are changing local or remote Supabase.
-- Pull the latest Git changes.
-- Check current migration state with `npm run db:local:migrations`.
-- Decide whether the change is schema-only or data-changing.
-- Back up local data if it matters.
+## Reviewer
 
-## Before Running A Local Reset
+- [ ] Migration and lock file are committed together.
+- [ ] The timestamp is newer than all sealed migrations.
+- [ ] No migration was edited, renamed, reordered, or deleted.
+- [ ] Constraints and backfills cannot orphan or hide existing transactions.
+- [ ] Views preserve their public column contracts.
+- [ ] Roll-forward recovery is documented for risky changes.
+- [ ] CI successfully replayed the database from zero.
 
-- Remember that local reset deletes unseeded local rows.
-- Export local data first if it should survive.
-- Use `npm run db:local:reset:safe`, not a raw reset command.
-- Confirm `.env.local` points where you think it points.
-- Do not use `--linked`.
+## Deployer
 
-## Before Pushing To Remote
-
-- Back up the remote project.
-- Run `npm run db:migration:check`.
-- Run `npm run db:remote:migrations` after linking.
-- Review every migration that updates rows, changes RLS, changes ownership IDs, or adds constraints.
-- Prefer applying first to a staging or temporary project when data is important.
-
-## Before Merging A Migration PR
-
-- Ensure migration files are ordered by timestamp.
-- Do not edit migrations already applied to shared or production databases unless the edit is comment-only and documented.
-- Confirm `supabase/seed.sql`, if present, does not delete or overwrite real data.
-- Confirm app queries still match RLS ownership fields like `auth.uid()` and `user_id`.
-- Run app checks after migration testing.
-
-## Destructive SQL Review
-
-Treat these as high risk:
-
-- `drop table`
-- `drop schema`
-- `truncate`
-- `delete from`
-- `drop column`
-- `alter table ... drop`
-- `cascade`
-
-Run:
-
-```bash
-npm run db:migration:check
-```
-
-Intentional exceptions require a nearby comment:
-
-```sql
--- @allow-destructive-migration: explain why this is safe
-```
-
-The scanner still prints a warning for approved exceptions.
-
-## RLS Testing
-
-- Test as the normal authenticated user, not only through service role access.
-- Verify records are visible for the expected `auth.uid()`.
-- Verify another user cannot read or modify those records.
-- Do not disable RLS permanently.
-- If temporary admin testing is needed, document it and remove any temporary policy changes.
+- [ ] Deploying canonical, fully pushed `main`, not local-only files.
+- [ ] Target project/environment was verified.
+- [ ] Current backup/PITR recovery reference was recorded.
+- [ ] `npm run db:remote:check` reports a consistent ordered prefix.
+- [ ] Dry run shows only the reviewed pending migrations.
+- [ ] Used GitHub `Deploy Database Migrations` or `npm run db:deploy`.
+- [ ] Did not use `--include-all`, linked reset, or unreviewed history repair.
+- [ ] `npm run db:remote:verify` passes after deployment.
+- [ ] Application smoke tests and financial row counts pass after deployment.

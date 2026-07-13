@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
+import { deriveCreditCardDebtMetadata, isCreditCardPayment } from "@/lib/ledger";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus, CategoryScope, CategoryType, SummaryMetric } from "@/types/finance";
 
 export type BudgetRecord = BudgetCategory & {
@@ -59,12 +60,20 @@ type CategoryRow = {
 };
 
 type TransactionRow = {
+  account_id: string | null;
   amount: number | string;
   category_id: string | null;
+  metadata: unknown;
+  related_entity_id: string | null;
+  related_entity_type: string | null;
   status: string | null;
   transaction_date: string;
+  transfer_account_id: string | null;
   type: string;
 };
+
+type BudgetAccountRow = { id: string; type: string | null };
+type BudgetDebtRow = { id: string; metadata: unknown; payment_account_id: string | null; type: string | null };
 
 function numericValue(value: unknown) {
   const number = Number(value);
@@ -100,23 +109,34 @@ function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStat
   return "Under Budget";
 }
 
+function postedStatusAffectsBudget(value: unknown) {
+  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(String(value ?? "cleared").toLowerCase());
+}
+
 export async function getBudgets(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}): Promise<BudgetRecord[]> {
   let itemsQuery = supabase.from("budget_items").select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,metadata").eq("user_id", userId);
   if (options.limit) itemsQuery = itemsQuery.limit(options.limit);
 
-  const [plansResult, itemsResult, categoriesResult, transactionsResult] = await Promise.all([
+  const [plansResult, itemsResult, categoriesResult, transactionsResult, accountsResult, debtsResult] = await Promise.all([
     supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata,created_at").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
     itemsQuery,
     supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("transactions").select("category_id,transaction_date,type,amount,status").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("transactions").select("account_id,transfer_account_id,category_id,transaction_date,type,amount,status,metadata,related_entity_id,related_entity_type").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
+    supabase.from("debts").select("id,payment_account_id,type,metadata").eq("user_id", userId).is("deleted_at", null),
   ]);
 
-  const error = plansResult.error ?? itemsResult.error ?? categoriesResult.error ?? transactionsResult.error;
+  const error = plansResult.error ?? itemsResult.error ?? categoriesResult.error ?? transactionsResult.error ?? accountsResult.error ?? debtsResult.error;
   if (error) throw new Error(error.message);
 
   const plans = new Map((plansResult.data as PlanRow[]).map((plan) => [plan.id, plan]));
   const categories = new Map((categoriesResult.data as CategoryRow[]).map((category) => [category.id, category]));
-  const transactions = transactionsResult.data as TransactionRow[];
+  const accountRows = accountsResult.data as BudgetAccountRow[];
+  const debtRows = debtsResult.data as BudgetDebtRow[];
+  const transactions = (transactionsResult.data as TransactionRow[]).map((transaction) => ({
+    ...transaction,
+    metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
+  }));
 
   return (itemsResult.data as ItemRow[]).flatMap((item) => {
     const plan = plans.get(item.budget_plan_id);
@@ -129,7 +149,8 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
     const actualValue = transactions
       .filter((transaction) => transaction.category_id === item.category_id
         && transaction.type.toLowerCase() === "expense"
-        && String(transaction.status ?? "cleared").toLowerCase() !== "scheduled"
+        && !isCreditCardPayment(metadataRecord(transaction.metadata))
+        && postedStatusAffectsBudget(transaction.status)
         && transaction.transaction_date >= plan.start_date
         && (!plan.end_date || transaction.transaction_date <= plan.end_date))
       .reduce((total, transaction) => total + Math.abs(numericValue(transaction.amount)), 0);

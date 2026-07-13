@@ -9,9 +9,14 @@ on:
 jobs:
   migration-safety:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      MIGRATION_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -25,5 +30,21 @@ jobs:
       - name: Check Supabase migrations
         run: npm run db:migration:check
 
+      - name: Test financial logic
+        run: npm test
+
       - name: Lint
         run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Start isolated Supabase
+        run: npm run db:start
+
+      - name: Replay all migrations from zero
+        run: npm run db:local:reset:ci
+
+      - name: Stop isolated Supabase
+        if: always()
+        run: npm run db:stop -- --no-backup

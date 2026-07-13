@@ -6,7 +6,6 @@ import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
-import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getTransactionSummaries, type TransactionRecord } from "@/lib/transactions/supabase";
 import type { TransactionFilterOptions, TransactionType } from "@/types/finance";
 
@@ -25,7 +24,6 @@ type TransactionFiltersState = {
 };
 
 type TransactionsPageContentProps = {
-  accounts: AccountRecord[];
   filterOptions: TransactionFilterOptions;
   initialAccountFilter?: string;
   initialCategoryFilter?: string;
@@ -126,7 +124,9 @@ function filterTransactions(transactions: TransactionRecord[], filters: Transact
   function matchesAffectedAccount(transaction: TransactionRecord, accountFilter: string) {
     if (accountFilter === "Account") return true;
     if (transaction.type === "Transfer" && transaction.transferDirection) return transaction.account === accountFilter;
-    return transaction.account === accountFilter || transaction.transferAccount === accountFilter;
+    return transaction.account === accountFilter
+      || transaction.transferAccount === accountFilter
+      || transaction.creditCardAccount === accountFilter;
   }
 
   return transactions.filter((transaction) => {
@@ -150,7 +150,7 @@ function filterTransactions(transactions: TransactionRecord[], filters: Transact
   });
 }
 
-export function TransactionsPageContent({ accounts, filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
+export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
   const effectiveFilterOptions = useMemo(() => ({
     ...filterOptions,
     category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
@@ -165,7 +165,7 @@ export function TransactionsPageContent({ accounts, filterOptions, initialAccoun
   const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
-  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions, accounts), [accounts, filteredTransactions]);
+  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
   const tableKey = useMemo(() => JSON.stringify(filters), [filters]);
 
   function updateFilter(key: keyof TransactionFiltersState, value: string) {

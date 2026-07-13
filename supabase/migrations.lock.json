@@ -1,0 +1,99 @@
+{
+  "formatVersion": 1,
+  "sealedThrough": "202607130002",
+  "migrations": [
+    {
+      "version": "202606180001",
+      "file": "202606180001_baseline_schema.sql",
+      "sha256": "1f521b255890d906a24943616d2a937ebd163314ea67e880321ed0544e86f91e"
+    },
+    {
+      "version": "202606190001",
+      "file": "202606190001_auth_and_rls.sql",
+      "sha256": "6924cfe2afc4b9236b532f2dc4fc8e81314bd1909e35a682dd228f32a39b613c"
+    },
+    {
+      "version": "202606220001",
+      "file": "202606220001_remove_shared_default_categories.sql",
+      "sha256": "5622c771ec41ffc3fa74c3f1cf29752857676d4214e4d7960ca91c6466c52503"
+    },
+    {
+      "version": "202606220002",
+      "file": "202606220002_category_cleanup.sql",
+      "sha256": "295e48504cbcf80331190602a32f0239e49cf875e16e0f58c2205fc745de2e91"
+    },
+    {
+      "version": "202606230001",
+      "file": "202606230001_category_types_no_defaults.sql",
+      "sha256": "8e4dee1487bb91a04bf690b4bbe7b3938d6ec7efad2952905dbb912002d1f0f4"
+    },
+    {
+      "version": "202606250001",
+      "file": "202606250001_transaction_metadata.sql",
+      "sha256": "7ecd7c4a100e12f8146829a1fbed641ed3b8adee044123715c4b48a7efd1fefb"
+    },
+    {
+      "version": "202606250002",
+      "file": "202606250002_auto_category_style.sql",
+      "sha256": "f2f324c371857ed7884a47763e8b2c37994d5a96bb6ccf63f096e075f7057c39"
+    },
+    {
+      "version": "202606250003",
+      "file": "202606250003_app_flow_schema_alignment.sql",
+      "sha256": "34e3e55495d333d588a5837bd5c2c72e6890b87d6a4bf2d60b4ea9b633d31a35"
+    },
+    {
+      "version": "202606260001",
+      "file": "202606260001_subscription_reminders.sql",
+      "sha256": "279755cf9bf5e37f4d75df7452acc618b467acc41d96358251d79298a39d8961"
+    },
+    {
+      "version": "202606260002",
+      "file": "202606260002_allow_same_account_amount_type_transfers.sql",
+      "sha256": "0976f9ba7f176f8b70d2a343d76d8ef5b95bc8c3361e7cbe16047d72a13914e5"
+    },
+    {
+      "version": "202606270001",
+      "file": "202606270001_transfer_ledger_pairs.sql",
+      "sha256": "50b95726ace9a6485b063d95028cd079599b2d5e7ee5cbe089aa04a59adca43f"
+    },
+    {
+      "version": "202606290001",
+      "file": "202606290001_credit_card_debt_existing_data_alignment.sql",
+      "sha256": "54a9b77c274ddf76a529c576021d70335587e8564ca071f61a322ab03ddc5bc2"
+    },
+    {
+      "version": "202606290002",
+      "file": "202606290002_transaction_driven_account_balances.sql",
+      "sha256": "96d67882a7e55698f5dfa03222c29ebddafb1e5837090fcd5063a308ea931aad"
+    },
+    {
+      "version": "202607060001",
+      "file": "202607060001_standard_debt_early_payoff_alignment.sql",
+      "sha256": "257f913094c431dc8e55ca028804b0a4a8da899ebbdc636faedd7db9d7b6ede3"
+    },
+    {
+      "version": "202607060002",
+      "file": "202607060002_subscription_payment_exchange_rate_alignment.sql",
+      "sha256": "83539539ad2ec16ef6cc17352e9452533c4eeb19c1d8fd36eb97fac7a1e568d6"
+    },
+    {
+      "version": "202607130001",
+      "file": "202607130001_credit_card_payment_limit_reconciliation.sql",
+      "sha256": "e70f6d6e072311cdf4677df186d96442300ad276201260885d99f419f0fa25c1"
+    },
+    {
+      "version": "202607130002",
+      "file": "202607130002_dashboard_credit_card_summary_alignment.sql",
+      "sha256": "8c0125f47f9e00d15a40b55a13c7b681dfa1e4283091205a4d4e330515055222"
+    }
+  ],
+  "historyRepairs": [
+    {
+      "file": "202606290001_credit_card_debt_existing_data_alignment.sql",
+      "previousSha256": "15fe077cf6013b18924526a61e8b0a4c4a924e948d6c7122851c980b2d741c24",
+      "canonicalSha256": "54a9b77c274ddf76a529c576021d70335587e8564ca071f61a322ab03ddc5bc2",
+      "reason": "Replace unsupported min(uuid) with deterministic array aggregation; the original migration could not run on PostgreSQL 17."
+    }
+  ]
+}

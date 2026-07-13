@@ -364,8 +364,8 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
     const creditLimit = creditLimitFromMetadata(metadataRecord((account as AccountRow).metadata));
     if (creditLimit <= 0) return null;
 
-    const usedAmount = accountActivity?.creditUsed ?? 0;
-    const availableLimit = Math.max(creditLimit - usedAmount, 0);
+    const usedAmount = Math.max(accountActivity?.creditUsed ?? 0, 0);
+    const availableLimit = Math.min(Math.max(creditLimit - usedAmount, 0), creditLimit);
     return input.amount > availableLimit
       ? `Insufficient credit card limit. Available limit is ${formatMmk(availableLimit)}.`
       : null;
@@ -510,7 +510,14 @@ async function findOrCreateCreditCardDebtCategoryId(
 function creditCardImpactForTransaction(transaction: TransactionRow, creditCardAccountId: string): CreditCardDebtImpact {
   const transactionType = String(transaction.type ?? "").toLowerCase();
   const metadata = metadataRecord(transaction.metadata);
+  const explicitImpact = metadataString(metadata, "credit_card_debt_impact");
   const direction = transferDirection(metadata);
+  if (explicitImpact === "charge" || explicitImpact === "repayment") {
+    // Paired transfers store the metadata on both rows; only the row whose
+    // primary account is the card represents the liability movement.
+    if (transactionType === "transfer" && direction && transaction.account_id !== creditCardAccountId) return "";
+    return explicitImpact;
+  }
   const usesCreditCardAccount = transaction.account_id === creditCardAccountId;
   const paysCreditCardAccount = transaction.transfer_account_id === creditCardAccountId;
 
@@ -522,10 +529,12 @@ function creditCardImpactForTransaction(transaction: TransactionRow, creditCardA
     }
     if (usesCreditCardAccount) return "charge";
     if (paysCreditCardAccount) return "repayment";
-    return "";
+    return "repayment";
   }
   if (usesCreditCardAccount && transactionType === "expense") return "charge";
   if (usesCreditCardAccount && transactionType === "income") return "repayment";
+  if (!usesCreditCardAccount && !paysCreditCardAccount && transactionType === "expense") return "repayment";
+  if (!usesCreditCardAccount && !paysCreditCardAccount && transactionType === "income" && metadataString(metadata, "reversed_transaction_id")) return "charge";
   return "";
 }
 
@@ -539,7 +548,6 @@ async function creditCardDebtBalance(
     .from("transactions")
     .select("id,account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
     .eq("user_id", userId)
-    .or(`account_id.eq.${creditCardAccountId},transfer_account_id.eq.${creditCardAccountId}`)
     .is("deleted_at", null);
 
   if (error) return { error: error.message };
@@ -810,6 +818,60 @@ async function reconcileDebtIds(
   await reconcileStandardDebtIds(supabase, userId, uniqueDebtIds);
 }
 
+async function creditCardContextForTransaction(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  transaction: TransactionRow,
+) {
+  const transactionMetadata = metadataRecord(transaction.metadata);
+  const debtId = transaction.related_entity_type === "debt" && transaction.related_entity_id
+    ? transaction.related_entity_id
+    : metadataString(transactionMetadata, "credit_card_debt_id");
+  if (!debtId) return null;
+
+  const { data, error } = await supabase
+    .from("debts")
+    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata,type")
+    .eq("id", debtId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const debt = data as DebtRow;
+  if (!isCreditCardDebt(debt)) return null;
+  const accountId = creditCardDebtAccountId(debt);
+  if (!accountId) return null;
+  const physicallyTouchesCard = transaction.account_id === accountId || transaction.transfer_account_id === accountId;
+  const transactionType = String(transaction.type ?? "").toLowerCase();
+  const impact = creditCardImpactForTransaction(transaction, accountId)
+    || (!physicallyTouchesCard && transactionType === "expense" ? "repayment" : "")
+    || (!physicallyTouchesCard && transactionType === "income" && metadataString(transactionMetadata, "reversed_transaction_id") ? "charge" : "");
+  if (!impact) return null;
+  return { accountId, debtId, impact, isPayment: impact === "repayment" && !physicallyTouchesCard };
+}
+
+function creditCardReversalMetadata(
+  context: Awaited<ReturnType<typeof creditCardContextForTransaction>>,
+  sourceMetadata: Record<string, unknown>,
+  sourceType: string,
+) {
+  if (!context) return {};
+  const reversedImpact: CreditCardDebtImpact = context.impact === "charge" ? "repayment" : "charge";
+  const reversedPayment = context.isPayment
+    || sourceMetadata.credit_card_payment === true
+    || sourceMetadata.financial_event === "credit_card_payment";
+  return {
+    credit_card_account_id: context.accountId,
+    credit_card_debt_id: context.debtId,
+    credit_card_debt_impact: reversedImpact,
+    credit_card_payment: false,
+    financial_event: reversedPayment ? "credit_card_payment_reversal" : "credit_card_activity_reversal",
+    reversed_credit_card_payment: reversedPayment,
+    reversed_transaction_type: sourceType,
+  };
+}
+
 async function getDebtIdsForTransactionIds(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -946,6 +1008,62 @@ async function findCreditCardDebtId(
 }
 
 async function resolveCreditCardDebtLink(input: TransactionFormData, userId: string): Promise<CreditCardDebtResolution | { error: string }> {
+  const { supabase } = await authenticatedClient();
+  if (input.relatedEntityType === "debt" && input.relatedEntityId) {
+    const { data: selectedDebtData, error: selectedDebtError } = await supabase
+      .from("debts")
+      .select("id,status,payment_account_id,total_amount,repaid_amount,metadata,type")
+      .eq("id", input.relatedEntityId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+
+    if (selectedDebtError) return { error: selectedDebtError.message };
+    if (selectedDebtData) {
+      const selectedDebt = selectedDebtData as DebtRow;
+      const selectedCardAccountId = creditCardDebtAccountId(selectedDebt);
+      if (isCreditCardDebt(selectedDebt) && selectedCardAccountId) {
+        const { data: selectedCardAccount, error: selectedCardError } = await supabase
+          .from("accounts")
+          .select("id,name,type,metadata")
+          .eq("id", selectedCardAccountId)
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .maybeSingle();
+
+        if (selectedCardError) return { error: selectedCardError.message };
+        if (!selectedCardAccount || !isCreditCardAccount(selectedCardAccount as AccountRow)) {
+          return { error: "The selected credit card debt is not linked to an active credit card account." };
+        }
+
+        const physicallyTouchesCard = input.accountId === selectedCardAccountId
+          || (input.type === "Transfer" && input.transferAccountId === selectedCardAccountId);
+        const impact = physicallyTouchesCard
+          ? creditCardImpactForInput(input, selectedCardAccountId)
+          : input.type === "Expense" ? "repayment" : "";
+
+        if (!impact) {
+          return { error: "Settle a credit card debt with an Expense from the payment account or a Transfer to the credit card." };
+        }
+
+        const isExternalPayment = impact === "repayment" && !physicallyTouchesCard;
+        return {
+          debtId: selectedDebt.id,
+          input,
+          metadata: {
+            credit_card_account_id: selectedCardAccountId,
+            credit_card_debt_id: selectedDebt.id,
+            credit_card_debt_impact: impact,
+            credit_card_payment: isExternalPayment,
+            financial_event: impact === "charge"
+              ? "credit_card_charge"
+              : isExternalPayment ? "credit_card_payment" : "credit_card_credit",
+          },
+        };
+      }
+    }
+  }
+
   const accountResult = await getCreditCardAccountForTransaction(input, userId);
   if ("error" in accountResult) return { error: accountResult.error ?? "Unable to load credit card account." };
   if (!accountResult.account) return { debtId: "", input, metadata: {} };
@@ -953,7 +1071,6 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
   const impact = creditCardImpactForInput(input, accountResult.account.id);
   if (!impact) return { debtId: "", input, metadata: {} };
 
-  const { supabase } = await authenticatedClient();
   const debtResult = await findCreditCardDebtId(supabase, userId, accountResult.account, input.date, {
     createIfMissing: impact === "charge",
     initialChargeAmount: impact === "charge" ? input.amount : 0,
@@ -969,6 +1086,15 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
     };
   }
 
+  const isPayment = impact === "repayment" && (input.type === "Income" || input.transferAccountId === accountResult.account.id);
+  const cardMetadata = {
+    credit_card_account_id: accountResult.account.id,
+    credit_card_debt_id: debtResult.debtId,
+    credit_card_debt_impact: impact,
+    credit_card_payment: isPayment,
+    financial_event: impact === "charge" ? "credit_card_charge" : isPayment ? "credit_card_payment" : "credit_card_credit",
+  };
+
   if (input.relatedEntityType === "debt" || input.relatedEntityType === "none") {
     return {
       debtId: debtResult.debtId,
@@ -977,7 +1103,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
         relatedEntityId: debtResult.debtId,
         relatedEntityType: "debt" as const,
       },
-      metadata: {},
+      metadata: cardMetadata,
     };
   }
 
@@ -985,9 +1111,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
     debtId: debtResult.debtId,
     input,
     metadata: {
-      credit_card_account_id: accountResult.account.id,
-      credit_card_debt_id: debtResult.debtId,
-      credit_card_debt_impact: impact,
+      ...cardMetadata,
       secondary_related_entity_id: debtResult.debtId,
       secondary_related_entity_type: "debt",
     },
@@ -1563,7 +1687,14 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
       type: "Transfer",
     };
 
-    const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id));
+    const creditCardContext = await creditCardContextForTransaction(supabase, user.id, debitRow)
+      ?? (creditRow ? await creditCardContextForTransaction(supabase, user.id, creditRow) : null);
+    const reversalMetadata = creditCardReversalMetadata(creditCardContext, debitMetadata, sourceType);
+
+    const { error } = await supabase.from("transactions").insert(transferPairPayload(reverseInput, user.id, randomUUID(), {
+      ...reversalMetadata,
+      reversed_transaction_id: debitRow.id,
+    }));
     if (error) return { error: transactionMutationError(error.message) };
     await reconcileDebtIds(supabase, user.id, [linkedDebtIdFromInput(reverseInput)]);
     await reconcileSubscriptionIds(supabase, user.id, [linkedSubscriptionIdFromInput(reverseInput)]);
@@ -1571,6 +1702,8 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
     return {};
   }
 
+  const creditCardContext = await creditCardContextForTransaction(supabase, user.id, source);
+  const reversalMetadata = creditCardReversalMetadata(creditCardContext, metadata, sourceType);
   const { error } = await supabase.from("transactions").insert({
     account_id: sourceType === "transfer" ? source.transfer_account_id : source.account_id,
     amount: numericValue(source.amount),
@@ -1578,10 +1711,12 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
     description: reversalNote,
     metadata: {
       ...metadata,
+      ...reversalMetadata,
       account_amount_type: sourceType === "transfer"
         ? normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type)
         : normalizeAmountType(metadata.account_amount_type),
       reversed_transaction_id: source.id,
+      reversed_transaction_type: sourceType,
       transfer_account_amount_type: sourceType === "transfer" ? normalizeAmountType(metadata.account_amount_type) : null,
     },
     note: reversalNote,
