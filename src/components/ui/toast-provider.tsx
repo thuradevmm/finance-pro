@@ -69,14 +69,14 @@ function ToastItem({ message, onDismiss }: { message: ToastMessage; onDismiss: (
   const isError = message.tone === "error";
 
   return (
-    <div className={`flex min-w-0 items-start gap-3 rounded-lg border bg-white px-4 py-3 text-sm font-semibold shadow-[0_14px_36px_rgba(15,23,42,0.16)] ${isError ? "border-[#fecaca] text-[#991b1b]" : "border-[#bbf7d0] text-[#166534]"}`}>
-      <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${isError ? "bg-[#fff1f0]" : "bg-[#ecfdf5]"}`}>
+    <div className={`grid min-w-0 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center rounded-lg border bg-white px-4 py-3 text-sm font-semibold shadow-[0_14px_36px_rgba(15,23,42,0.16)] ${isError ? "border-[#fecaca] text-[#991b1b]" : "border-[#bbf7d0] text-[#166534]"}`}>
+      <span className={`grid size-6 place-items-center justify-self-center rounded-full ${isError ? "bg-[#fff1f0]" : "bg-[#ecfdf5]"}`}>
         <Icon className="size-4" name={isError ? "close" : "check"} />
       </span>
-      <p className="min-w-0 flex-1 break-words leading-5">{message.message}</p>
+      <p className="min-w-0 break-words text-center leading-5 [overflow-wrap:anywhere]">{message.message}</p>
       <button
         aria-label="Dismiss message"
-        className="-m-2 grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#f8f9ff] hover:text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2"
+        className="grid size-11 place-items-center justify-self-center rounded-md text-[#45464d] transition hover:bg-[#f8f9ff] hover:text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2"
         onClick={() => onDismiss(message.id)}
         type="button"
       >

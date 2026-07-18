@@ -9,6 +9,7 @@ import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, parseDat
 import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { calculateDebtProgressPercent } from "@/lib/debts/progress";
 import { calculateDebtStatus } from "@/lib/debts/status";
+import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import {
   buildDebtTransactionLedgers,
   isCreditCardDebtInput,
@@ -128,11 +129,6 @@ function isCreditCardDebt(row: DebtRow, metadata: Record<string, unknown>) {
 function metadataString(metadata: Record<string, unknown>, key: string) {
   const value = metadata[key];
   return typeof value === "string" ? value : "";
-}
-
-function storedNumber(columnValue: unknown, metadataValue: unknown) {
-  if (columnValue !== null && columnValue !== undefined && columnValue !== "") return numericValue(columnValue);
-  return numericValue(metadataValue);
 }
 
 function normalizeInterestRatePeriod(value: unknown): DebtInterestRatePeriod {
@@ -257,9 +253,9 @@ function mapDebt(
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
   const chargeActivity = transactionLedger?.chargeActivity ?? [];
   const repaymentActivity = transactionLedger?.repaymentActivity ?? [];
-  const storedRepaidAmountValue = storedNumber(row.repaid_amount, metadata.repaid_amount);
+  const storedRepaidAmountValue = resolveDebtStoredNumber(row.repaid_amount, metadata.repaid_amount);
   const linkedRepaymentAmountValue = transactionLedger?.repayments ?? 0;
-  const totalChargedAmountValue = storedNumber(row.total_amount, metadata.total_amount) + (transactionLedger?.charges ?? 0);
+  const totalChargedAmountValue = resolveDebtStoredNumber(row.total_amount, metadata.total_amount) + (transactionLedger?.charges ?? 0);
   const grossRepaidAmountValue = storedRepaidAmountValue + linkedRepaymentAmountValue;
   const repaidAmountValue = isCreditCard
     ? Math.min(grossRepaidAmountValue, Math.max(totalChargedAmountValue, 0))
@@ -267,8 +263,8 @@ function mapDebt(
   const creditCardUsedAmountValue = isCreditCard ? Math.max(totalChargedAmountValue - grossRepaidAmountValue, 0) : 0;
   const totalAmountValue = totalChargedAmountValue;
   const interestRatePeriod = normalizeInterestRatePeriod(metadata.interest_rate_period);
-  const interestRateValue = storedNumber(row.interest_rate, metadata.interest_rate);
-  const storedMonthlyPaymentValue = storedNumber(row.monthly_payment, metadata.monthly_payment);
+  const interestRateValue = resolveDebtStoredNumber(row.interest_rate, metadata.interest_rate);
+  const storedMonthlyPaymentValue = resolveDebtStoredNumber(row.monthly_payment, metadata.monthly_payment);
   const storedPayoffDate = typeof metadata.payoff_date === "string" ? metadata.payoff_date : "";
   const startDate = row.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date : "");
   const storedNextPaymentDateValue = row.next_payment_date ?? (typeof metadata.next_payment_date === "string" ? metadata.next_payment_date : "");
@@ -276,7 +272,7 @@ function mapDebt(
     ? buildCreditCardDueBuckets({
       chargeActivity,
       fallbackDueDate: storedNextPaymentDateValue,
-      openingChargeAmount: storedNumber(row.total_amount, metadata.total_amount),
+      openingChargeAmount: resolveDebtStoredNumber(row.total_amount, metadata.total_amount),
       paymentDueDay: numericValue(metadata.credit_payment_due_day) || null,
       repaymentAmount: grossRepaidAmountValue,
       statementDay: numericValue(metadata.credit_statement_day) || null,

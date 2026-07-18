@@ -1,5 +1,6 @@
 import { calculateCreditCardPosition } from "../accounts/card-display.ts";
 import { resolveAssetPurchaseValue } from "../assets/calculations.ts";
+import { resolveDebtStoredNumber } from "../debts/stored-values.ts";
 import {
   buildDebtTransactionLedgers,
   creditCardOpeningBalancesByAccount,
@@ -99,10 +100,6 @@ function presentNumber(value: unknown) {
 
 function metadataCategoryId(rowCategoryId: string | null | undefined, metadata: Record<string, unknown>) {
   return rowCategoryId ?? (typeof metadata.category_id === "string" ? metadata.category_id : null);
-}
-
-function storedNumber(columnValue: unknown, metadataValue: unknown) {
-  return presentNumber(columnValue) ?? numericValue(metadataValue);
 }
 
 function accountCategoryId(
@@ -223,7 +220,7 @@ export function pageCategoryActivityRows(input: {
       if (!categoryId) return [];
       return [{
         amount: roundCurrencyValue(
-          storedNumber(debt.total_amount, metadata.total_amount)
+          resolveDebtStoredNumber(debt.total_amount, metadata.total_amount)
           + (debtLedgers.get(debt.id)?.charges ?? 0),
         ),
         category_id: categoryId,

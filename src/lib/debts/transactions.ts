@@ -104,11 +104,6 @@ export function creditCardAccountIdForDebt(debt: DebtLedgerDebtInput) {
     || "";
 }
 
-function storedNumber(columnValue: unknown, metadataValue: unknown) {
-  if (columnValue !== null && columnValue !== undefined && columnValue !== "") return numericValue(columnValue);
-  return numericValue(metadataValue);
-}
-
 /**
  * Manual card debts can carry a balance that predates the transaction ledger.
  * Automatic card debts always have a zero stored opening and are therefore
@@ -123,8 +118,8 @@ export function creditCardOpeningBalancesByAccount(debts: DebtLedgerDebtInput[])
     if (!accountId) continue;
     const metadata = metadataRecord(debt.metadata);
     const openingBalance = roundCurrencyValue(
-      storedNumber(debt.total_amount, metadata.total_amount)
-      - storedNumber(debt.repaid_amount, metadata.repaid_amount),
+      resolveDebtStoredNumber(debt.total_amount, metadata.total_amount)
+      - resolveDebtStoredNumber(debt.repaid_amount, metadata.repaid_amount),
     );
     balances.set(accountId, roundCurrencyValue((balances.get(accountId) ?? 0) + openingBalance));
   }
@@ -308,3 +303,4 @@ export function debtTransactionLedgerFor(
 ) {
   return buildDebtTransactionLedgers(transactions, [debt]).get(debt.id) ?? emptyLedger();
 }
+import { resolveDebtStoredNumber } from "./stored-values.ts";

@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607180004",
+  "sealedThrough": "202607180005",
   "migrations": [
     {
       "version": "202606180001",
@@ -116,6 +116,11 @@
       "version": "202607180004",
       "file": "202607180004_dashboard_debt_status_alignment.sql",
       "sha256": "498ec419c106451bc59e994280f7ff00e3d13726ac6f096d43458fd72ec84eb1"
+    },
+    {
+      "version": "202607180005",
+      "file": "202607180005_legacy_debt_numeric_backfill.sql",
+      "sha256": "308350c5655267bd3ace42c083985b499b872076dd2225cceb27677ba230d07b"
     }
   ],
   "historyRepairs": [

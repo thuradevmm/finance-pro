@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { buildEmiSchedule } from "@/lib/debts/emi";
 import { calculateDebtStatus } from "@/lib/debts/status";
+import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import type { DebtFormData } from "@/lib/debts/supabase";
 import {
   debtTransactionLedgerFor,
@@ -579,11 +580,11 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
       || metadata.credit_card_debt_id === debtId;
   });
   const existingMetadata = metadataRecord(existingDebt.metadata);
-  const hasStoredRepayment = numericValue(existingDebt.repaid_amount ?? existingMetadata.repaid_amount) > 0.005;
+  const hasStoredRepayment = resolveDebtStoredNumber(existingDebt.repaid_amount, existingMetadata.repaid_amount) > 0.005;
   const hasCardOpeningBalance = isCreditCardDebtRow(existingDebt)
     && Math.abs(
-      numericValue(existingDebt.total_amount ?? existingMetadata.total_amount)
-      - numericValue(existingDebt.repaid_amount ?? existingMetadata.repaid_amount),
+      resolveDebtStoredNumber(existingDebt.total_amount, existingMetadata.total_amount)
+      - resolveDebtStoredNumber(existingDebt.repaid_amount, existingMetadata.repaid_amount),
     ) > 0.005;
   if (hasLinkedHistory || (paymentsResult.data?.length ?? 0) > 0 || hasStoredRepayment || hasCardOpeningBalance) {
     return { error: "This debt has linked financial history and cannot be deleted without breaking account and repayment calculations. Keep the record for reconciliation." };

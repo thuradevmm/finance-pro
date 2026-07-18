@@ -58,6 +58,12 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
     : availableAccounts;
   const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? paymentAccounts[0]?.id ?? "");
   const selectedPaymentAccount = paymentAccounts.find((account) => account.id === paymentAccountId);
+  const paymentAccountOptions = semanticIsCreditCard
+    ? paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]
+    : ["No account", ...getAccountOptionLabels(paymentAccounts)];
+  const paymentAccountValue = selectedPaymentAccount
+    ? getAccountOptionLabel(selectedPaymentAccount, paymentAccounts)
+    : semanticIsCreditCard ? "No accounts" : "No account";
   const [notes, setNotes] = useState(debt?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
@@ -223,7 +229,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           </div>
           <div className="mt-5">
             <div>
-              <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, paymentAccounts) : "No accounts"} />
+              <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccountOptions} value={paymentAccountValue} />
               {paymentAccountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Select a credit card account for this credit card debt.</p> : null}
             </div>
             {selectedPaymentAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedPaymentAccount)}</p> : null}

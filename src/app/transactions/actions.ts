@@ -10,6 +10,7 @@ import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { SYSTEM_CURRENCY, formatMmk } from "@/lib/currency";
 import { calculateDebtPayoffSummary, type DebtDatedRepayment, type DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { calculateDebtStatus } from "@/lib/debts/status";
+import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import {
   creditCardOpeningBalancesByAccount,
   debtTransactionLedgerFor,
@@ -824,9 +825,9 @@ async function creditCardDebtBalance(
     ...(transactionsResult.data as TransactionRow[]),
     ...standaloneDebtPaymentTransactions(paymentsResult.data ?? []),
   ], debt);
-  const openingChargeAmount = storedNumericValue(debt.total_amount, metadata.total_amount);
+  const openingChargeAmount = resolveDebtStoredNumber(debt.total_amount, metadata.total_amount);
   const chargedAmount = roundCurrencyValue(openingChargeAmount + ledger.charges);
-  const repaidAmount = roundCurrencyValue(storedNumericValue(debt.repaid_amount, metadata.repaid_amount) + ledger.repayments);
+  const repaidAmount = roundCurrencyValue(resolveDebtStoredNumber(debt.repaid_amount, metadata.repaid_amount) + ledger.repayments);
   const dueBuckets = buildCreditCardDueBuckets({
     chargeActivity: ledger.chargeActivity,
     fallbackDueDate: debt.next_payment_date ?? metadataString(metadata, "next_payment_date"),
@@ -862,7 +863,7 @@ async function updateCreditCardDebtSnapshot(
   }).toLowerCase();
   const monthlyPayment = nextStatus === "paid" ? 0 : balance.dueAmount;
   const currentStatus = String(debt.status ?? metadata.status ?? "").toLowerCase();
-  const currentMonthlyPayment = storedNumericValue(debt.monthly_payment, metadata.monthly_payment);
+  const currentMonthlyPayment = resolveDebtStoredNumber(debt.monthly_payment, metadata.monthly_payment);
 
   if (isManualTerms) {
     const isPaid = nextStatus === "paid";
@@ -1025,7 +1026,7 @@ async function reconcileStandardDebt(
   if (isCreditCardDebt(debt) || debtStatusKey(debt) === "archived") return null;
 
   const metadata = metadataRecord(debt.metadata);
-  const principal = storedNumericValue(debt.total_amount, metadata.total_amount);
+  const principal = resolveDebtStoredNumber(debt.total_amount, metadata.total_amount);
   const startDate = debt.start_date ?? metadataString(metadata, "start_date");
   if (principal <= 0 || !startDate) return null;
 
@@ -1039,10 +1040,10 @@ async function reconcileStandardDebt(
   const hasEarlyPayoffSettlement = metadata.early_payoff === true
     || (currentStatus === "paid" && numericValue(metadata.remaining_principal) <= 0.005 && Boolean(settledAt));
   const summary = calculateDebtPayoffSummary({
-    interestRate: storedNumericValue(debt.interest_rate, metadata.interest_rate),
+    interestRate: resolveDebtStoredNumber(debt.interest_rate, metadata.interest_rate),
     interestRatePeriod: normalizeDebtInterestRatePeriod(metadata.interest_rate_period),
     numberOfMonths: durationMonths,
-    openingRepaidAmount: storedNumericValue(debt.repaid_amount, metadata.repaid_amount),
+    openingRepaidAmount: resolveDebtStoredNumber(debt.repaid_amount, metadata.repaid_amount),
     principal,
     referenceDate: formatDateInput(new Date()),
     repayments: repaymentsResult.repayments,
@@ -1075,7 +1076,7 @@ async function reconcileStandardDebt(
     .from("debts")
     .update({
       metadata: nextMetadata,
-      monthly_payment: summary.isPaidOff ? 0 : numericValue(debt.monthly_payment) || numericValue(metadata.monthly_payment),
+      monthly_payment: summary.isPaidOff ? 0 : resolveDebtStoredNumber(debt.monthly_payment, metadata.monthly_payment),
       next_payment_date: summary.isPaidOff ? null : debt.next_payment_date ?? (metadataString(metadata, "next_payment_date") || null),
       status: nextStatus,
     })
