@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607180002",
+  "sealedThrough": "202607180004",
   "migrations": [
     {
       "version": "202606180001",
@@ -80,7 +80,7 @@
     {
       "version": "202607130001",
       "file": "202607130001_credit_card_payment_limit_reconciliation.sql",
-      "sha256": "e70f6d6e072311cdf4677df186d96442300ad276201260885d99f419f0fa25c1"
+      "sha256": "86ef18cf4a503bf671a402c2d6ee3e03ec9f1fb7ef53fe4f76ad50e977564e36"
     },
     {
       "version": "202607130002",
@@ -106,6 +106,16 @@
       "version": "202607180002",
       "file": "202607180002_derived_financial_views_alignment.sql",
       "sha256": "05a7ff4b9eacb7a785a4b11170d0333be6bc29e6fc0f3829579e2d1f16e920e5"
+    },
+    {
+      "version": "202607180003",
+      "file": "202607180003_debt_transaction_progress_alignment.sql",
+      "sha256": "3abe3a1f38c1ef14fa9fabbb8ad024ec9f46682a8b02f6a64c6e11b8be3d6b5a"
+    },
+    {
+      "version": "202607180004",
+      "file": "202607180004_dashboard_debt_status_alignment.sql",
+      "sha256": "498ec419c106451bc59e994280f7ff00e3d13726ac6f096d43458fd72ec84eb1"
     }
   ],
   "historyRepairs": [
@@ -114,6 +124,12 @@
       "previousSha256": "15fe077cf6013b18924526a61e8b0a4c4a924e948d6c7122851c980b2d741c24",
       "canonicalSha256": "54a9b77c274ddf76a529c576021d70335587e8564ca071f61a322ab03ddc5bc2",
       "reason": "Replace unsupported min(uuid) with deterministic array aggregation; the original migration could not run on PostgreSQL 17."
+    },
+    {
+      "file": "202607130001_credit_card_payment_limit_reconciliation.sql",
+      "previousSha256": "e70f6d6e072311cdf4677df186d96442300ad276201260885d99f419f0fa25c1",
+      "canonicalSha256": "86ef18cf4a503bf671a402c2d6ee3e03ec9f1fb7ef53fe4f76ad50e977564e36",
+      "reason": "Rebuild baseline reporting views before changing date column types and preserve the original budget view column order so a fresh PostgreSQL migration chain can run."
     }
   ]
 }

@@ -1717,8 +1717,15 @@ function buildSubscriptionPaymentSchedule(subscription: SubscriptionRow, payment
   const cycle = normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle);
   const anchorValue = subscriptionBillingAnchor(subscription, metadata);
   const cutoffDate = legacySubscriptionPaymentCutoff(subscription, metadata, cycle, anchorValue);
+  const configuredPaymentAmount = positiveNumber(subscription.amount);
   const sortedPayments = payments
     .filter((payment) => subscriptionPaymentIsAfterCutoff(payment, cutoffDate))
+    .filter((payment) => subscriptionPaymentCoversCycle(
+      payment.amount,
+      payment.billedAmount > 0 && payment.exchangeRate > 0
+        ? roundCurrencyValue(payment.billedAmount * payment.exchangeRate)
+        : configuredPaymentAmount,
+    ))
     .sort(compareSubscriptionPayments);
   const snapshots = sortedPayments.map((payment, index) => {
     const billingDueDate = payment.billingDueDate
