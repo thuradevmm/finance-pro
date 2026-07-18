@@ -27,17 +27,19 @@ export function AppSidebar({
 
   return (
     <aside
+      aria-label={isMobile ? "Mobile navigation" : "Desktop navigation"}
       className={
         isMobile
           ? "fixed inset-y-0 left-0 z-50 w-[min(19rem,calc(100vw-1rem))] border-r border-[#c6c6cd]/70 bg-white shadow-xl"
           : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 lg:block`
       }
+      id={isMobile ? "mobile-navigation-panel" : undefined}
     >
-      <div className={`${isMobile ? "px-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-dvh flex-col overflow-y-auto pb-6 pt-[max(1.5rem,env(safe-area-inset-top))]`}>
+      <div className={`${isMobile ? "pl-[max(1.25rem,env(safe-area-inset-left))] pr-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-dvh flex-col overscroll-contain overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]`}>
         <div className={isCompact ? "mb-6 flex flex-col items-center gap-3" : "mb-8 flex justify-between gap-3"}>
           <div className={isCompact ? "min-w-0 text-center" : "min-w-0"}>
-            <p className="truncate text-xl font-semibold text-[#0b1c30]">{isCompact ? "FP" : "FinancePro"}</p>
-            {!isCompact ? <p className="mt-1 truncate text-xs font-semibold uppercase text-[#45464d]">Wealth Management</p> : null}
+            <p className="break-words text-xl font-semibold text-[#0b1c30]">{isCompact ? "FP" : "FinancePro"}</p>
+            {!isCompact ? <p className="mt-1 break-words text-xs font-semibold uppercase text-[#45464d]">Wealth Management</p> : null}
           </div>
           {isMobile ? (
             <button
@@ -85,7 +87,7 @@ export function AppSidebar({
                     title={item.label}
                   >
                     <Icon className="size-5 shrink-0" name={item.icon} />
-                    {!isCompact ? <span className="truncate">{item.label}</span> : null}
+                    {!isCompact ? <span className="min-w-0 break-words leading-5">{item.label}</span> : null}
                   </Link>
                 );
               })}

@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import { Icon } from "@/components/ui/icon";
 
 type DateInputSize = "compact" | "default";
@@ -5,6 +7,7 @@ type DateInputTone = "default" | "muted";
 
 type DateInputProps = {
   error?: boolean;
+  id?: string;
   label: string;
   onChange?: (value: string) => void;
   placeholder?: string;
@@ -40,6 +43,7 @@ export function formatDateInputDisplay(value: string) {
 
 export function DateInput({
   error,
+  id,
   label,
   onChange,
   placeholder = "",
@@ -49,6 +53,8 @@ export function DateInput({
   tone = "default",
   value = "",
 }: DateInputProps) {
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
   const styles = sizeStyles[size];
   const displayValue = value ? formatDateInputDisplay(value) : placeholder;
   const isPlaceholder = !value && Boolean(placeholder);
@@ -72,6 +78,7 @@ export function DateInput({
         aria-invalid={error}
         aria-label={label}
         className={`absolute inset-0 z-10 h-full w-full opacity-0 ${readOnly ? "cursor-default" : "cursor-pointer"}`}
+        id={inputId}
         onChange={(event) => onChange?.(event.target.value)}
         readOnly={readOnly}
         type="date"

@@ -29,6 +29,21 @@ const paymentStatusStyles: Record<SubscriptionPaymentStatus, string> = {
 
 type SubscriptionSortKey = "amount" | "billedAmount" | "billingCycle" | "category" | "exchangeRate" | "lastPaidDate" | "name" | "nextBillingDate" | "paymentAccount" | "paymentStatus" | "reminder" | "status";
 
+const subscriptionSortOptions: { label: string; value: SubscriptionSortKey }[] = [
+  { label: "Name", value: "name" },
+  { label: "MMK Amount", value: "amount" },
+  { label: "Billed Amount", value: "billedAmount" },
+  { label: "Exchange Rate", value: "exchangeRate" },
+  { label: "Billing Cycle", value: "billingCycle" },
+  { label: "Category", value: "category" },
+  { label: "Payment Account", value: "paymentAccount" },
+  { label: "Next Billing", value: "nextBillingDate" },
+  { label: "Payment", value: "paymentStatus" },
+  { label: "Last Paid", value: "lastPaidDate" },
+  { label: "Reminder", value: "reminder" },
+  { label: "Status", value: "status" },
+];
+
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.-]/g, "")) || 0;
 }
@@ -89,8 +104,8 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {reminderItems.map((subscription) => (
             <article className="min-w-0 rounded-md border border-[#fecaca] bg-[#fffafa] p-4" key={subscription.id}>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="truncate text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
+              <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <p className="min-w-0 break-words text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
                 <ReminderStatusBadge status={subscription.reminderStatus} />
               </div>
               <p className="text-xs font-bold uppercase text-[#45464d]">Next billing</p>
@@ -123,7 +138,7 @@ function PaidCyclePanel({ subscriptions }: { subscriptions: SubscriptionRecord[]
         </div>
         <div className="space-y-3">
           {paidItems.length ? paidItems.map((subscription) => (
-            <div className="flex min-w-0 items-center justify-between gap-4 rounded-md border border-[#bbf7d0] bg-[#f0fdf4] p-3" key={subscription.id}>
+            <div className="flex min-w-0 flex-col items-start gap-3 rounded-md border border-[#bbf7d0] bg-[#f0fdf4] p-3 sm:flex-row sm:items-center sm:justify-between" key={subscription.id}>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{subscription.name}</p>
                 <p className="mt-1 text-xs font-semibold text-[#166534]">{subscription.lastPaidAmount} paid on {subscription.lastPaidDate}</p>
@@ -187,10 +202,10 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-[#0b1c30]">{billing.name}</p>
                 <p className="mt-1 text-xs font-medium text-[#45464d]">{billingTimelineMeta(billing)}</p>
-                <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{billing.billedAmount}</p>
+                <p className="amount-value mt-1 text-xs font-semibold text-[#0058be]" title={billing.billedAmount}>{billing.billedAmount}</p>
               </div>
-              <p className="amount-value col-span-2 ml-[3.25rem] max-w-full overflow-hidden rounded-md bg-[#f8f9ff] px-3 py-2 text-right text-base font-semibold text-[#0b1c30] sm:text-lg" title={billing.amount}>{billing.amount}</p>
-              <p className="col-span-2 ml-[3.25rem] text-xs font-semibold text-[#45464d]">{billing.paymentStatusDetail}</p>
+              <p className="amount-value col-span-2 max-w-full rounded-md bg-[#f8f9ff] px-3 py-2 text-left text-base font-semibold text-[#0b1c30] sm:text-lg" title={billing.amount}>{billing.amount}</p>
+              <p className="col-span-2 break-words text-xs font-semibold text-[#45464d]">{billing.paymentStatusDetail}</p>
             </div>
           </article>
         ))}
@@ -231,7 +246,7 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
     <section className="min-w-0">
       <h2 className="mb-3 text-lg font-semibold text-[#0b1c30] sm:text-xl">All Subscriptions</h2>
       <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-        <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
           <table className="w-full min-w-[1580px] border-collapse text-left">
             <thead>
               <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold text-[#45464d]">
@@ -303,6 +318,107 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="grid min-w-0 grid-cols-1 gap-2 border-b border-[#c6c6cd]/40 bg-white p-3 min-[420px]:grid-cols-[minmax(0,1fr)_auto] sm:p-4 xl:hidden">
+          <label className="min-w-0">
+            <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Sort by</span>
+            <span className="relative block min-w-0">
+              <select
+                aria-label="Sort subscription cards by"
+                className="h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-10 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                onChange={(event) => handleSort(event.target.value as SubscriptionSortKey)}
+                value={sortKey}
+              >
+                {subscriptionSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+            </span>
+          </label>
+          <button
+            aria-label={`Sort subscription cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 min-[420px]:w-auto"
+            onClick={() => handleSort(sortKey)}
+            type="button"
+          >
+            <Icon className="size-4" name={sortDirection === "asc" ? "trendingUp" : "trendingDown"} />
+            {sortDirection === "asc" ? "Ascending" : "Descending"}
+          </button>
+        </div>
+        <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+          {sortedSubscriptions.map((subscription) => (
+            <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm" key={`mobile-${subscription.id}`}>
+              <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={`grid size-10 shrink-0 place-items-center rounded-md ${subscription.bg} ${subscription.tone}`}>
+                    <Icon className="size-4" name={subscription.icon} />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="break-words font-semibold text-[#0b1c30]">{subscription.name}</h3>
+                    <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{subscription.category}</p>
+                  </div>
+                </div>
+                <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[subscription.status]}`}>
+                  {subscription.status}
+                </span>
+              </div>
+
+              <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 sm:col-span-2">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">MMK Amount</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={subscription.amount}>{subscription.amount}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#eff6ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#0058be]">Billed Amount</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#0058be]" title={subscription.billedAmount}>{subscription.billedAmount}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Exchange Rate</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={subscription.exchangeRateLabel}>{subscription.exchangeRateLabel}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Billing Cycle</dt>
+                  <dd className="mt-1 break-words font-semibold text-[#0b1c30]">{subscription.billingCycle}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>
+                  <dd className="mt-1 break-words font-semibold text-[#0b1c30]">{subscription.nextBillingDate}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 space-y-3 rounded-md border border-[#c6c6cd]/40 bg-white p-3">
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <span className="text-xs font-bold uppercase text-[#45464d]">Payment</span>
+                  <PaymentStatusBadge subscription={subscription} />
+                </div>
+                <p className="break-words text-xs font-medium text-[#45464d]">{subscription.paymentStatusDetail}</p>
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                  <span className="text-xs font-bold uppercase text-[#45464d]">Reminder</span>
+                  <ReminderStatusBadge status={subscription.reminderStatus} />
+                </div>
+              </div>
+
+              <dl className="mt-4 min-w-0 rounded-md bg-[#f8f9ff] p-3 text-xs">
+                <dt className="font-bold uppercase text-[#45464d]">Payment Account</dt>
+                <dd className="mt-1 break-words font-semibold text-[#0b1c30]">{subscription.paymentAccount}</dd>
+                <dt className="mt-3 font-bold uppercase text-[#45464d]">Last Paid</dt>
+                <dd className="mt-1 break-words font-semibold text-[#0b1c30]">{subscription.lastPaidDate}</dd>
+                <dd className="amount-value mt-1 font-semibold text-[#45464d]" title={subscription.lastPaidAmount}>{subscription.lastPaidAmount}</dd>
+                <dd className="amount-value mt-1 font-semibold text-[#45464d]" title={subscription.lastPaidBilledAmount}>{subscription.lastPaidBilledAmount}</dd>
+                <dd className="amount-value mt-1 font-semibold text-[#45464d]" title={subscription.lastPaymentExchangeRateLabel}>{subscription.lastPaymentExchangeRateLabel}</dd>
+              </dl>
+
+              <div className="mt-4 flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-[#c6c6cd]/40 pt-3">
+                <RecordPaymentLink className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-xs font-bold text-[#0b1c30] transition hover:bg-[#eff4ff]" subscription={subscription} />
+                <RecordActions
+                  deleteDescription={`Deleting ${subscription.name} will remove this subscription from your list.`}
+                  editHref={`/subscriptions/${subscription.id}/edit`}
+                  itemId={subscription.id}
+                  itemLabel={subscription.name}
+                  onDelete={onDelete}
+                />
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </section>

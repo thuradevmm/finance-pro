@@ -110,14 +110,14 @@ export function RegisterForm() {
   }
 
   if (confirmationSent) {
-    return <p className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm leading-6 text-[#0b1c30]">Check your email and follow the confirmation link to finish creating your account.</p>;
+    return <p className="break-words rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm leading-6 text-[#0b1c30]">Check your email and follow the confirmation link to finish creating your account.</p>;
   }
 
   if (recoveryCode) {
     return (
       <div>
         <h2 className="text-xl font-semibold text-[#0b1c30]">Save your recovery code</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f6168]">Email recovery is temporarily disabled. Store this one-time account recovery code somewhere private.</p>
+        <p className="mt-2 break-words text-sm leading-6 text-[#5f6168]">Email recovery is temporarily disabled. Store this one-time account recovery code somewhere private.</p>
         <code className="mt-5 block break-all rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm font-semibold text-[#0b1c30]">{recoveryCode}</code>
         <p className="mt-3 text-xs leading-5 text-[#991b1b]">This code will not be shown again. Anyone with this code and your email can reset your password.</p>
         <LoadingButton className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white" isLoading={isSubmitting} loadingLabel="Opening Dashboard…" onClick={() => { setIsSubmitting(true); beginLoading(); router.replace("/dashboard"); router.refresh(); }} type="button">I saved it — Continue</LoadingButton>
@@ -140,13 +140,13 @@ export function RegisterForm() {
         {errors.terms ? <p className="mt-1.5 text-xs font-medium text-[#ba1a1a]">{errors.terms}</p> : null}
       </div>
 
-      {errors.form ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{errors.form}</div> : null}
+      {errors.form ? <div className="break-words rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b] [overflow-wrap:anywhere]" role="alert">{errors.form}</div> : null}
 
-      {!emailServicesEnabled ? <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-sm font-medium text-[#1d4ed8]" role="status">Email confirmation is temporarily replaced by a private recovery code.</div> : null}
+      {!emailServicesEnabled ? <div className="break-words rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-sm font-medium text-[#1d4ed8]" role="status">Email confirmation is temporarily replaced by a private recovery code.</div> : null}
 
       <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Creating Account…" type="submit">Create Account</LoadingButton>
 
-      <p className="text-center text-sm text-[#5f6168]">
+      <p className="break-words text-center text-sm text-[#5f6168]">
         Already have an account?{" "}
         <Link className="font-semibold text-[#0058be] hover:underline" href="/login">Sign in</Link>
       </p>

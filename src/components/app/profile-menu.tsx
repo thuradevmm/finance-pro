@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/icon";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
@@ -27,6 +27,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
   const [email, setEmail] = useState("Account");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   const initials = fullName
     .split(/\s+/)
     .filter(Boolean)
@@ -86,10 +87,21 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
   }, []);
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div
+      className="relative"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setIsOpen(false);
+          menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+        }
+      }}
+      ref={menuRef}
+    >
       <button
+        aria-controls={isOpen ? menuId : undefined}
         aria-expanded={isOpen}
         aria-haspopup="menu"
+        aria-label={compact ? "Open profile menu" : undefined}
         className={
           compact
             ? "grid size-11 place-items-center rounded-md bg-[#eff6ff] text-sm font-bold text-[#0369a1] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
@@ -98,7 +110,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
         onClick={() => setIsOpen((current) => !current)}
         type="button"
       >
-        <span className="grid size-8 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">{initials}</span>
+        <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">{initials}</span>
         {compact ? null : (
           <>
             <span>Profile</span>
@@ -109,16 +121,17 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
 
       {isOpen ? (
         <div
-          className="absolute right-0 top-12 z-30 w-52 overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+          className="absolute right-0 top-12 z-30 max-h-[calc(100dvh-4.5rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)] sm:w-72"
+          id={menuId}
           role="menu"
         >
           <div className="border-b border-[#c6c6cd]/40 px-4 py-3">
-            <p className="truncate text-sm font-semibold text-[#0b1c30]">{fullName}</p>
-            <p className="mt-1 truncate text-xs font-medium text-[#45464d]">{email}</p>
+            <p className="break-words text-sm font-semibold text-[#0b1c30] [overflow-wrap:anywhere]">{fullName}</p>
+            <p className="mt-1 break-all text-xs font-medium leading-5 text-[#45464d]">{email}</p>
           </div>
           {menuItems.map((item) => (
             <Link
-              className="flex min-h-11 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
+              className="flex min-h-11 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
               href={item.href}
               key={item.label}
               onClick={() => setIsOpen(false)}
@@ -130,7 +143,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           ))}
           <div className="mt-1 border-t border-[#c6c6cd]/40 pt-1">
             <button
-              className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0]"
+              className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
               disabled={isLoggingOut}
               onClick={handleLogout}
               role="menuitem"

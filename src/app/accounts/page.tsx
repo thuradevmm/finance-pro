@@ -32,6 +32,13 @@ const statusStyles: Record<AccountStatus, string> = {
 type AccountViewMode = "Card" | "List" | "Lookup";
 type AccountSortKey = "account" | "balance" | "status" | "type";
 
+const accountSortOptions: { label: string; value: AccountSortKey }[] = [
+  { label: "Account", value: "account" },
+  { label: "Type", value: "type" },
+  { label: "Status", value: "status" },
+  { label: "Balance / Credit", value: "balance" },
+];
+
 function decimalScaleFromNumber(value: number) {
   if (!Number.isFinite(value)) return 0;
   const textValue = value.toFixed(2);
@@ -111,17 +118,17 @@ function AccountCard({
 
   return (
     <article className="flex h-full min-w-0 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 gap-3">
+      <div className="flex min-w-0 flex-col items-start gap-3 lg:flex-row lg:justify-between">
+        <div className="flex w-full min-w-0 max-w-full gap-3 lg:w-auto">
           <span className={`grid size-11 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
             <Icon name={account.icon} />
           </span>
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold text-[#0b1c30]">{account.name}</h2>
-            <p className="mt-1 truncate text-sm font-medium text-[#45464d]">
+          <div className="min-w-0 flex-1">
+            <h2 className="break-words text-base font-semibold text-[#0b1c30] [overflow-wrap:anywhere]">{account.name}</h2>
+            <p className="mt-1 break-words text-sm font-medium text-[#45464d] [overflow-wrap:anywhere]">
               {account.institution} {account.accountNumber}
             </p>
-            <p className="mt-1 truncate text-xs font-semibold text-[#0058be]">{account.category || "Uncategorized"}</p>
+            <p className="mt-1 break-words text-xs font-semibold text-[#0058be] [overflow-wrap:anywhere]">{account.type} · {account.category || "Uncategorized"}</p>
           </div>
         </div>
         <StatusBadge status={account.status} />
@@ -134,7 +141,7 @@ function AccountCard({
         </ResponsiveAmount>
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
+      <dl className="mt-5 grid min-w-0 grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 min-[420px]:grid-cols-2">
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Credits / Payments" : "Inflow"}</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.monthlyInflow}</ResponsiveAmount></dd>
@@ -152,7 +159,7 @@ function AccountCard({
           <dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{account.transactionCount}</dd>
         </div>
       </dl>
-      <dl className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
+      <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 min-[420px]:grid-cols-2">
         {breakdowns.map((breakdown) => (
           <div key={breakdown.type}>
             <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? breakdown.type : `${breakdown.type} Total`}</dt>
@@ -205,7 +212,7 @@ function CreditCardCard({
   return (
     <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-[#c6c6cd]/60 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="bg-gradient-to-br from-[#0b1c30] to-[#174c87] p-5 text-white">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col items-start gap-3 lg:flex-row lg:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/70">{creditCardNetwork(account)} credit card</p>
             <h2 className="mt-2 truncate text-lg font-semibold">{account.name}</h2>
@@ -223,7 +230,7 @@ function CreditCardCard({
       <div className="flex flex-1 flex-col p-4 sm:p-5">
         <section>
           <h3 className="text-xs font-bold uppercase text-[#76777d]">Credit position</h3>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
+          <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
             <div className="rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] p-3">
               <dt className="text-xs font-bold uppercase text-[#76777d]">Credit Limit</dt>
               <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{account.creditLimit}</ResponsiveAmount></dd>
@@ -352,7 +359,61 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Cash & Account Amount Type Lookup</h2>
             <p className="mt-1 text-xs font-medium text-[#45464d]">Only bank, wallet, cash, and savings balances appear here. Credit cards are shown separately below.</p>
           </div>
-          <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+          <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+            {ledgerAccounts.map((account) => {
+              const breakdownByType = new Map(account.balanceBreakdowns.map((breakdown) => [breakdown.type, breakdown.amountValue]));
+              const rowTotal = sumScaledAmounts(account.balanceBreakdowns.map((breakdown) => breakdown.amountValue));
+
+              return (
+                <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4" key={`lookup-mobile-${account.id}`}>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${account.bg} ${account.tone}`}>
+                      <Icon className="size-5" name={account.icon} />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="break-words font-semibold text-[#0b1c30]">{account.name}</h3>
+                      <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{account.institution || account.type} · {account.category || "Uncategorized"}</p>
+                    </div>
+                  </div>
+                  <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                    {amountTypes.map((amountType) => {
+                      const amount = formatAuditAmount(breakdownByType.get(amountType) ?? 0);
+                      return (
+                        <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3" key={amountType}>
+                          <dt className="break-words text-xs font-bold uppercase text-[#45464d]">{amountType}</dt>
+                          <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={amount}>{amount}</dd>
+                        </div>
+                      );
+                    })}
+                    <div className="min-w-0 rounded-md bg-[#eff6ff] p-3 min-[420px]:col-span-2">
+                      <dt className="text-xs font-bold uppercase text-[#0058be]">Account Total</dt>
+                      <dd className="amount-value mt-1 font-bold text-[#0058be]" title={formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}>{formatScaledAuditAmount(rowTotal.value, rowTotal.scale)}</dd>
+                    </div>
+                  </dl>
+                </article>
+              );
+            })}
+            <article className="min-w-0 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 sm:col-span-2">
+              <h3 className="text-sm font-bold uppercase text-[#0058be]">Cash Total</h3>
+              <p className="mt-1 text-xs font-medium text-[#45464d]">All non-card accounts</p>
+              <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                {totalColumns.map(({ amountType, total }) => {
+                  const amount = formatScaledAuditAmount(total.value, total.scale);
+                  return (
+                    <div className="min-w-0 rounded-md bg-white p-3" key={`cash-total-mobile-${amountType}`}>
+                      <dt className="break-words text-xs font-bold uppercase text-[#45464d]">{amountType}</dt>
+                      <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={amount}>{amount}</dd>
+                    </div>
+                  );
+                })}
+                <div className="min-w-0 rounded-md bg-white p-3 min-[420px]:col-span-2">
+                  <dt className="text-xs font-bold uppercase text-[#0058be]">Cash Balance</dt>
+                  <dd className="amount-value mt-1 font-bold text-[#0058be]" title={formatMmk(position.cashBalance)}>{formatMmk(position.cashBalance)}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+          <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
             <table className="w-full min-w-[760px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#c6c6cd]/50">
@@ -439,7 +500,72 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Details (MPU / Visa)</h2>
             <p className="mt-1 text-xs font-medium text-[#45464d]">Each card has its own identity, credit position, billing terms, and posted all-time activity. Limits remain separate from the financial-position total.</p>
           </div>
-          <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+          <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+            {creditAccounts.map((account) => {
+              const netPosition = account.creditBalanceValue - account.creditUsedValue;
+              const metrics = [
+                { label: "Credit Limit", tone: "text-[#0b1c30]", value: account.creditLimit },
+                { label: "Outstanding", tone: "text-[#b42318]", value: account.creditUsed },
+                { label: "Card Credit", tone: "text-[#047857]", value: account.creditBalance },
+                { label: "Available Credit", tone: "text-[#0058be]", value: account.creditAvailable },
+                { label: "Minimum Payment", tone: "text-[#0b1c30]", value: account.creditMinimumPayment },
+                { label: "Net Position", tone: netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatMmk(netPosition) },
+                { label: "Debits / Charges", tone: "text-[#b42318]", value: account.monthlyOutflow },
+                { label: "Credits / Payments", tone: "text-[#047857]", value: account.monthlyInflow },
+              ];
+
+              return (
+                <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4" key={`card-lookup-mobile-${account.id}`}>
+                  <div className="flex min-w-0 flex-col items-start gap-3 min-[420px]:flex-row min-[420px]:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="break-words font-semibold text-[#0b1c30]">{account.name}</h3>
+                      <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{account.institution || "Institution not set"} · {creditCardNetwork(account)}</p>
+                      <p className="mt-2 break-all font-mono text-xs font-semibold text-[#45464d]">{maskCardNumber(account.cardNumber)}</p>
+                    </div>
+                    <StatusBadge status={account.status} />
+                  </div>
+                  <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                    {metrics.map((metric) => (
+                      <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3" key={metric.label}>
+                        <dt className="break-words text-xs font-bold uppercase text-[#45464d]">{metric.label}</dt>
+                        <dd className={`amount-value mt-1 font-semibold ${metric.tone}`} title={metric.value}>{metric.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 text-sm min-[420px]:grid-cols-2">
+                    <div><dt className="text-xs font-bold uppercase text-[#45464d]">Utilization</dt><dd className="mt-1 font-semibold text-[#0b1c30]">{formatCreditUtilization(account.creditUsedValue, account.creditLimitValue)}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-[#45464d]">Transactions</dt><dd className="mt-1 font-semibold text-[#0b1c30]">{account.transactionCount}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-[#45464d]">Statement Day</dt><dd className="mt-1 font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</dd></div>
+                    <div><dt className="text-xs font-bold uppercase text-[#45464d]">Due Day</dt><dd className="mt-1 font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</dd></div>
+                  </dl>
+                </article>
+              );
+            })}
+            <article className="min-w-0 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 sm:col-span-2">
+              <h3 className="text-sm font-bold uppercase text-[#0058be]">Credit Card Totals</h3>
+              <p className="mt-1 text-xs font-medium text-[#45464d]">All credit cards</p>
+              <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                {[
+                  { label: "Credit Limit", tone: "text-[#0b1c30]", value: formatMmk(cardTotals.limit) },
+                  { label: "Outstanding", tone: "text-[#b42318]", value: formatMmk(cardTotals.outstanding) },
+                  { label: "Card Credit", tone: "text-[#047857]", value: formatMmk(cardTotals.cardCredit) },
+                  { label: "Available Credit", tone: "text-[#0058be]", value: formatMmk(cardTotals.available) },
+                  { label: "Utilization", tone: "text-[#0b1c30]", value: formatCreditUtilization(cardTotals.outstanding, cardTotals.limit) },
+                  { label: "Minimum Payment", tone: "text-[#0b1c30]", value: formatMmk(cardTotals.minimumPayment) },
+                  { label: "Net Position", tone: cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatMmk(cardTotals.netPosition) },
+                  { label: "Debits / Charges", tone: "text-[#b42318]", value: formatMmk(cardTotals.charges) },
+                  { label: "Credits / Payments", tone: "text-[#047857]", value: formatMmk(cardTotals.payments) },
+                  { label: "Transactions", tone: "text-[#0b1c30]", value: String(cardTotals.transactions) },
+                ].map((metric) => (
+                  <div className="min-w-0 rounded-md bg-white p-3" key={`card-total-mobile-${metric.label}`}>
+                    <dt className="break-words text-xs font-bold uppercase text-[#45464d]">{metric.label}</dt>
+                    <dd className={`amount-value mt-1 font-semibold ${metric.tone}`} title={metric.value}>{metric.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          </div>
+          <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
             <table className="w-full min-w-[2520px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#c6c6cd]/50">
@@ -540,7 +666,19 @@ function CreditCardsTable({
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Cards (MPU / Visa)</h2>
         <p className="mt-1 text-xs font-medium text-[#45464d]">Card identity, current credit position, billing terms, and posted all-time activity are kept separate from cash-account balances.</p>
       </div>
-      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+        {items.map((account) => (
+          <CreditCardCard
+            account={account}
+            accounts={accounts}
+            key={`credit-card-mobile-${account.id}`}
+            onDelete={onDelete}
+            onView={onView}
+            returnTo={returnTo}
+          />
+        ))}
+      </div>
+      <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
         <table className="w-full min-w-[1900px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
@@ -663,7 +801,44 @@ function AccountsTable({
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Account Register</h2>
       </div>
-      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      <div className="grid min-w-0 grid-cols-1 gap-2 border-b border-[#c6c6cd]/40 bg-white p-3 min-[420px]:grid-cols-[minmax(0,1fr)_auto] sm:p-4 xl:hidden">
+        <label className="min-w-0">
+          <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Sort by</span>
+          <span className="relative block min-w-0">
+            <select
+              aria-label="Sort account cards by"
+              className="h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-10 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+              onChange={(event) => handleSort(event.target.value as AccountSortKey)}
+              value={sortKey}
+            >
+              {accountSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+          </span>
+        </label>
+        <button
+          aria-label={`Sort account cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 min-[420px]:w-auto"
+          onClick={() => handleSort(sortKey)}
+          type="button"
+        >
+          <Icon className="size-4" name={sortDirection === "asc" ? "trendingUp" : "trendingDown"} />
+          {sortDirection === "asc" ? "Ascending" : "Descending"}
+        </button>
+      </div>
+      <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+        {sortedItems.map((account) => (
+          <AccountCard
+            account={account}
+            accounts={accounts}
+            key={`account-mobile-${account.id}`}
+            onDelete={onDelete}
+            onView={onView}
+            returnTo={returnTo}
+          />
+        ))}
+      </div>
+      <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
         <table className="w-full min-w-[980px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">

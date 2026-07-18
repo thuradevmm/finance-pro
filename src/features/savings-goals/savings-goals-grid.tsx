@@ -20,7 +20,7 @@ const statusStyles: Record<SavingsGoalStatus, string> = {
 function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void> }) {
   return (
     <article className="flex min-w-0 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
-      <div className="mb-5 flex items-center justify-between gap-4 border-b border-[#c6c6cd]/40 pb-4">
+      <div className="mb-5 flex min-w-0 flex-col gap-3 border-b border-[#c6c6cd]/40 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`grid size-10 shrink-0 place-items-center rounded-lg ${goal.bg} ${goal.tone}`}>
             <Icon className="size-5" name={goal.icon} />
@@ -30,17 +30,17 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
             <p className="mt-1 text-xs font-semibold text-[#45464d]">{goal.account}</p>
           </div>
         </div>
-        <span className={`shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[goal.status]}`}>{goal.status}</span>
+        <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[goal.status]}`}>{goal.status}</span>
       </div>
 
       <ProgressCircle percent={goal.progressPercent} tone={goal.tone} />
 
-      <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
-        <div>
+      <dl className="mt-5 grid min-w-0 grid-cols-1 gap-3 text-left min-[420px]:grid-cols-2 min-[420px]:text-center">
+        <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0">
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
           <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.savedAmount}>{goal.savedAmount}</dd>
         </div>
-        <div>
+        <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0">
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
           <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.targetAmount}>{goal.targetAmount}</dd>
         </div>

@@ -296,7 +296,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">MMK Equivalent</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{formatMmkPreview(convertedAmount)}</dd>
+                <dd className="min-w-0 flex-1 text-right"><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(convertedAmount)}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Next Billing</dt>

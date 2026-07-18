@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { createDebt, updateDebt } from "@/app/debts/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
@@ -32,6 +32,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
+  const nextPaymentDateInputId = useId();
   const [name, setName] = useState(debt?.name ?? "");
   const [lender, setLender] = useState(debt?.lender ?? "");
   const [totalAmount, setTotalAmount] = useState(debt ? String(debt.totalAmountValue) : "");
@@ -196,8 +197,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <FieldLabel>Next Payment Date</FieldLabel>
-              <DateInput label="Next Payment Date" readOnly showIcon={false} tone="muted" value={nextPaymentDate} />
+              <FieldLabel htmlFor={nextPaymentDateInputId}>Next Payment Date</FieldLabel>
+              <DateInput id={nextPaymentDateInputId} label="Next Payment Date" readOnly showIcon={false} tone="muted" value={nextPaymentDate} />
             </div>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
               <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Payment Due Date" : "Payoff Date"}</span>

@@ -234,7 +234,7 @@ function BudgetWatch({ comparisons }: { comparisons: BudgetComparison[] }) {
             const meterColor = warning ? "bg-[#ba1a1a]" : watch ? "bg-[#d97706]" : "bg-[#047857]";
             return (
               <article key={comparison.budget.id}>
-                <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-[#0b1c30]">{comparison.budget.category}</p>
                     <p className="mt-1 text-xs text-[#45464d]">
@@ -503,12 +503,12 @@ function PlannedTransactionsPanel({
           <div className="grid min-w-0 gap-3 xl:hidden">
             {filteredPlans.map((plan) => (
               <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm" key={plan.id}>
-                <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-[#0b1c30]">{plan.title}</p>
                     <p className="mt-1 text-xs font-medium text-[#45464d]">{formatDisplayDate(plan.dateValue)}</p>
                   </div>
-                  <p className={`amount-value shrink-0 text-right text-sm font-semibold ${plan.type === "Income" ? "text-[#047857]" : "text-[#b42318]"}`}>
+                  <p className={`amount-value w-full text-left text-sm font-semibold sm:w-auto sm:text-right ${plan.type === "Income" ? "text-[#047857]" : "text-[#b42318]"}`}>
                     {formatMmkPreview(plan.amountValue, plan.type === "Income" ? "positive" : "negative")}
                   </p>
                 </div>

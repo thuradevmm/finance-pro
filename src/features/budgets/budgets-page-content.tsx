@@ -19,6 +19,15 @@ import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
 type BudgetSortKey = "actual" | "budget" | "category" | "remaining" | "status" | "usage";
 
+const budgetSortOptions: { label: string; value: BudgetSortKey }[] = [
+  { label: "Category", value: "category" },
+  { label: "Budget", value: "budget" },
+  { label: "Actual", value: "actual" },
+  { label: "Remaining", value: "remaining" },
+  { label: "Usage", value: "usage" },
+  { label: "Status", value: "status" },
+];
+
 const statusStyles: Record<BudgetStatus, string> = {
   "Under Budget": "bg-[#ecfdf5] text-[#166534]",
   "Near Limit": "bg-[#fffbeb] text-[#92400e]",
@@ -121,10 +130,10 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetRecord[] }) {
         markerPercent={alertPercent}
         percent={usagePercent}
       />
-      <div className="mt-2 flex min-w-0 justify-between gap-2 text-xs font-semibold uppercase text-[#45464d]">
+      <div className="mt-2 grid min-w-0 grid-cols-1 gap-1 text-xs font-semibold uppercase text-[#45464d] sm:grid-cols-3 sm:gap-2">
         <span>{formatMmk(0)}</span>
-        <span className="shrink-0">Alert {alertPercent}%</span>
-        <span className="amount-value min-w-0 overflow-hidden text-right">{formatCurrency(totalBudget)}</span>
+        <span className="sm:text-center">Alert {alertPercent}%</span>
+        <span className="amount-value min-w-0 text-left sm:text-right">{formatCurrency(totalBudget)}</span>
       </div>
     </section>
   );
@@ -169,14 +178,14 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; 
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
+      <div className="flex flex-col items-stretch gap-2 border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Category Breakdown</h2>
-        <button className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" type="button">
+        <button className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff] sm:w-auto" type="button">
           <Icon className="size-4" name="category" />
           Filter
         </button>
       </div>
-      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
         <table className="w-full min-w-[1040px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/50 bg-white">
@@ -225,6 +234,83 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; 
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="grid min-w-0 grid-cols-1 gap-2 border-b border-[#c6c6cd]/40 bg-white p-3 min-[420px]:grid-cols-[minmax(0,1fr)_auto] sm:p-4 xl:hidden">
+        <label className="min-w-0">
+          <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Sort by</span>
+          <span className="relative block min-w-0">
+            <select
+              aria-label="Sort budget cards by"
+              className="h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-10 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+              onChange={(event) => handleSort(event.target.value as BudgetSortKey)}
+              value={sortKey}
+            >
+              {budgetSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+          </span>
+        </label>
+        <button
+          aria-label={`Sort budget cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 min-[420px]:w-auto"
+          onClick={() => handleSort(sortKey)}
+          type="button"
+        >
+          <Icon className="size-4" name={sortDirection === "asc" ? "trendingUp" : "trendingDown"} />
+          {sortDirection === "asc" ? "Ascending" : "Descending"}
+        </button>
+      </div>
+      <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">
+        {sortedBudgets.map((budget) => (
+          <article className={`min-w-0 rounded-lg border p-4 ${budget.status === "Over Budget" ? "border-[#fecaca] bg-[#fffafa]" : "border-[#c6c6cd]/60 bg-white"}`} key={`mobile-${budget.id}`}>
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`grid size-10 shrink-0 place-items-center rounded-md ${budget.bg} ${budget.tone}`}>
+                  <Icon className="size-4" name={budget.icon} />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="break-words font-semibold text-[#0b1c30]">{budget.category}</h3>
+                  {budget.planStatus === "Paused" ? <span className="mt-1 inline-flex rounded bg-[#f3f4f6] px-2 py-1 text-[10px] font-bold uppercase text-[#45464d]">Paused</span> : null}
+                </div>
+              </div>
+              <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[budget.status]}`}>{budget.status}</span>
+            </div>
+
+            <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3">
+              <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Budget</dt>
+                <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={budget.budget}>{budget.budget}</dd>
+              </div>
+              <div className="grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Actual</dt>
+                  <dd className={`amount-value mt-1 font-semibold ${budget.status === "Over Budget" ? "text-[#b42318]" : "text-[#0b1c30]"}`} title={budget.actual}>{budget.actual}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Remaining</dt>
+                  <dd className={`amount-value mt-1 font-semibold ${budget.remaining.startsWith("-") ? "text-[#b42318]" : "text-[#047857]"}`} title={budget.remaining}>{budget.remaining}</dd>
+                </div>
+              </div>
+            </dl>
+
+            <div className="mt-4 rounded-md border border-[#c6c6cd]/40 bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-3 text-xs font-bold uppercase text-[#45464d]">
+                <span>Usage</span>
+                <span>{budget.usagePercent}%</span>
+              </div>
+              <ProgressMeter
+                ariaLabel={`${budget.category} budget usage`}
+                className="h-2"
+                colorClassName={budget.status === "Over Budget" ? "bg-[#ba1a1a]" : budget.status === "Near Limit" ? "bg-[#92400e]" : "bg-[#047857]"}
+                percent={budget.usagePercent}
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end border-t border-[#c6c6cd]/40 pt-3">
+              <RecordActions editHref={`/budgets/${budget.id}/edit`} itemId={budget.id} itemLabel={`${budget.category} budget`} onDelete={onDelete} />
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );

@@ -82,8 +82,8 @@ export function ForgotPasswordForm() {
           <Icon className="size-6" name="mail" />
         </span>
         <h2 className="mt-5 text-xl font-semibold text-[#0b1c30]">{emailServicesEnabled ? "Check your inbox" : "Password updated"}</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f6168]">
-          {emailServicesEnabled ? <>A password reset link was sent to <strong className="text-[#0b1c30]">{submittedEmail}</strong>.</> : <>The password for <strong className="text-[#0b1c30]">{submittedEmail}</strong> was updated successfully.</>}
+        <p className="mt-2 break-words text-sm leading-6 text-[#5f6168]">
+          {emailServicesEnabled ? <>A password reset link was sent to <strong className="break-all text-[#0b1c30]">{submittedEmail}</strong>.</> : <>The password for <strong className="break-all text-[#0b1c30]">{submittedEmail}</strong> was updated successfully.</>}
         </p>
         <Link className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white transition hover:bg-[#1f2937]" href="/login">Return to Sign In</Link>
         <button className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md text-sm font-semibold text-[#0058be] transition hover:bg-[#eff4ff]" onClick={() => setSubmittedEmail("")} type="button">Use another email</button>
@@ -99,7 +99,7 @@ export function ForgotPasswordForm() {
           <AuthField autoComplete="off" icon="lock" label="Recovery Code" name="recoveryCode" onChange={setRecoveryCode} placeholder="Paste the code saved during registration" value={recoveryCode} />
           <AuthField autoComplete="new-password" icon="lock" label="New Password" name="newPassword" onChange={setNewPassword} placeholder="Enter a new password" type="password" value={newPassword} />
           <AuthField autoComplete="new-password" icon="lock" label="Confirm New Password" name="confirmPassword" onChange={setConfirmPassword} placeholder="Enter the password again" type="password" value={confirmPassword} />
-          <div className="rounded-md border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm font-medium text-[#92400e]" role="status">Use the private recovery code shown when this account was created.</div>
+          <div className="break-words rounded-md border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm font-medium text-[#92400e]" role="status">Use the private recovery code shown when this account was created.</div>
         </>
       ) : null}
       <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Working…" type="submit">{emailServicesEnabled ? "Send Reset Link" : "Reset Password"}</LoadingButton>
@@ -107,7 +107,7 @@ export function ForgotPasswordForm() {
         <Icon className="mr-2 size-4" name="chevronLeft" />
         Back to Sign In
       </Link>
-      <p className="text-center text-sm text-[#5f6168]">
+      <p className="break-words text-center text-sm text-[#5f6168]">
         Need an account?{" "}
         <Link className="font-semibold text-[#0058be] hover:underline" href="/register">Register now</Link>
       </p>

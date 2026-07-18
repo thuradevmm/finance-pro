@@ -45,7 +45,7 @@ export function UpdatePasswordForm() {
     <form className="space-y-5" noValidate onSubmit={handleSubmit}>
       <AuthField autoComplete="new-password" icon="lock" label="New Password" name="password" onChange={setPassword} placeholder="Enter a new password" type="password" value={password} />
       <AuthField autoComplete="new-password" icon="lock" label="Confirm Password" name="confirmPassword" onChange={setConfirmPassword} placeholder="Enter the password again" type="password" value={confirmPassword} />
-      {error ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
+      {error ? <div className="break-words rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b] [overflow-wrap:anywhere]" role="alert">{error}</div> : null}
       <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Updating…" type="submit">Update Password</LoadingButton>
     </form>
   );

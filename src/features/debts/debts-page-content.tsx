@@ -22,6 +22,15 @@ const statusStyles: Record<DebtStatus, string> = {
 };
 type DebtSortKey = "monthlyPayment" | "name" | "remainingBalance" | "repaidAmount" | "status" | "totalAmount";
 
+const debtSortOptions: { label: string; value: DebtSortKey }[] = [
+  { label: "Debt Name", value: "name" },
+  { label: "Total Amount", value: "totalAmount" },
+  { label: "Principal / Applied", value: "repaidAmount" },
+  { label: "Remaining Balance", value: "remainingBalance" },
+  { label: "Payment Due", value: "monthlyPayment" },
+  { label: "Status", value: "status" },
+];
+
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.-]/g, "")) || 0;
 }
@@ -129,7 +138,7 @@ function DebtsTable({
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
-      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#c6c6cd]/60 px-4 py-4">
+      <div className="flex min-w-0 flex-col items-stretch gap-3 border-b border-[#c6c6cd]/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
           <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue debts" : "Showing paid debts too"}</p>
@@ -139,19 +148,20 @@ function DebtsTable({
             aria-label={visibilityToggle.ariaLabel}
             aria-pressed={visibilityToggle.isPressed}
             className={showActiveOnly
-              ? "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-[#eff6ff] px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
-              : "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"}
+              ? "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-[#eff6ff] px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 sm:w-auto"
+              : "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 sm:w-auto"}
             onClick={onToggleActiveOnly}
             title={visibilityToggle.label}
             type="button"
           >
             <Icon className="size-4" name="category" />
-            <span className="hidden sm:inline">{visibilityToggle.label}</span>
+            <span>{visibilityToggle.label}</span>
           </button>
         ) : null}
       </div>
 
-      {sortedDebts.length > 0 ? <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      {sortedDebts.length > 0 ? <>
+        <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
         <table className="w-full min-w-[1120px] border-collapse text-left">
           <thead>
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
@@ -201,7 +211,80 @@ function DebtsTable({
             ))}
           </tbody>
         </table>
-      </div> : (
+        </div>
+        <div className="grid min-w-0 grid-cols-1 gap-2 border-b border-[#c6c6cd]/40 bg-white p-3 min-[420px]:grid-cols-[minmax(0,1fr)_auto] sm:p-4 xl:hidden">
+          <label className="min-w-0">
+            <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Sort by</span>
+            <span className="relative block min-w-0">
+              <select
+                aria-label="Sort debt cards by"
+                className="h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-10 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                onChange={(event) => handleSort(event.target.value as DebtSortKey)}
+                value={sortKey}
+              >
+                {debtSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <Icon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+            </span>
+          </label>
+          <button
+            aria-label={`Sort debt cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 min-[420px]:w-auto"
+            onClick={() => handleSort(sortKey)}
+            type="button"
+          >
+            <Icon className="size-4" name={sortDirection === "asc" ? "trendingUp" : "trendingDown"} />
+            {sortDirection === "asc" ? "Ascending" : "Descending"}
+          </button>
+        </div>
+        <div className="grid min-w-0 gap-3 p-3 sm:p-4 xl:hidden">
+          {sortedDebts.map((debt) => (
+            <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm" key={`mobile-${debt.id}`}>
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className={`grid size-10 shrink-0 place-items-center rounded-md ${debt.bg} ${debt.tone}`}>
+                    <Icon className="size-4" name={debt.icon} />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="break-words font-semibold text-[#0b1c30]">{debt.name}</h3>
+                    <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{debt.lender}</p>
+                  </div>
+                </div>
+                <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.status]}`}>{debt.status}</span>
+              </div>
+
+              <DebtProgress debt={debt} />
+
+              <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Total Amount</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={debt.totalAmount}>{debt.totalAmount}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f0fdf4] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#166534]">Principal / Applied</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#047857]" title={debt.repaidAmount}>{debt.repaidAmount}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Remaining Balance</dt>
+                  <dd className={`amount-value mt-1 font-semibold ${debt.remainingBalance === "MMK 0.00" ? "text-[#047857]" : "text-[#0b1c30]"}`} title={debt.remainingBalance}>{debt.remainingBalance}</dd>
+                </div>
+                <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">Payment Due</dt>
+                  <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={debt.monthlyPayment}>{debt.monthlyPayment}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-[#c6c6cd]/40 pt-3">
+                {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
+                  <span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card debt is managed from Accounts">Managed in Accounts</span>
+                ) : (
+                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </> : (
         <div className="p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
           <h3 className="mt-3 text-lg font-semibold text-[#0b1c30]">{emptyState.title}</h3>
@@ -226,7 +309,7 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
               <p className="truncate text-sm font-semibold text-[#0b1c30]">{payment.debtName}</p>
               <p className={`mt-1 text-xs font-bold ${payment.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{payment.dueLabel}</p>
             </div>
-            <p className="amount-value max-w-full overflow-hidden rounded-md bg-[#f8f9ff] px-3 py-2 text-right text-base font-semibold text-[#0b1c30] sm:text-lg" title={payment.amount}>{payment.amount}</p>
+            <p className="amount-value max-w-full rounded-md bg-[#f8f9ff] px-3 py-2 text-left text-base font-semibold text-[#0b1c30] sm:text-right sm:text-lg" title={payment.amount}>{payment.amount}</p>
           </div>
         )) : (
           <div className="rounded-lg border border-dashed border-[#c6c6cd] bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
@@ -283,7 +366,7 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
                       <p className="truncate text-sm font-semibold text-[#0b1c30]">{entry.debtName}</p>
                       <p className={`mt-1 text-xs font-bold ${entry.isOverdue ? "text-[#b42318]" : "text-[#45464d]"}`}>{entry.dateLabel}</p>
                     </div>
-                    <p className="amount-value text-right text-sm font-semibold text-[#0b1c30]" title={entry.amount}>{entry.amount}</p>
+                    <p className="amount-value text-left text-sm font-semibold text-[#0b1c30] sm:text-right" title={entry.amount}>{entry.amount}</p>
                     <span className={`w-fit rounded px-2 py-1 text-xs font-bold ${entry.isOverdue ? "bg-[#ffdad6] text-[#93000a]" : "bg-[#d8e2ff] text-[#004395]"}`}>
                       {entry.isOverdue ? "Overdue" : "Scheduled"}
                     </span>

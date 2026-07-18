@@ -456,7 +456,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         {paginatedTransactions.length > 0 ? (
           paginatedTransactions.map((transaction) => (
             <article className="min-w-0 max-w-full overflow-hidden rounded-md border border-[#c6c6cd]/60 bg-white p-4" key={transaction.id}>
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 gap-3">
                   <input
                     aria-label={`Select ${transaction.id}`}
@@ -472,8 +472,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <p className="mt-1 text-xs text-[#45464d]">{transaction.date}</p>
                   </div>
                 </div>
-                <div className="min-w-0 max-w-[45%] shrink text-right">
-                  <p className={`amount-value overflow-hidden text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`} title={transaction.amount}>{transaction.amount}</p>
+                <div className="min-w-0 w-full pl-7 text-left sm:w-auto sm:max-w-[45%] sm:pl-0 sm:text-right">
+                  <p className={`amount-value text-sm font-semibold ${amountClass(transaction.type, transaction.transferDirection)}`} title={transaction.amount}>{transaction.amount}</p>
                 </div>
               </div>
               <div className="mt-4 flex min-w-0 max-w-full flex-wrap items-center gap-2">
@@ -620,12 +620,12 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       >
         {viewedTransaction ? (
           <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
+            <div className="flex min-w-0 flex-col items-stretch gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <TransactionTypeBadge transferDirection={viewedTransaction.transferDirection} type={viewedTransaction.type} />
                 <CategoryBadge category={viewedTransaction.category} />
               </div>
-              <p className={`amount-value text-lg font-bold ${amountClass(viewedTransaction.type, viewedTransaction.transferDirection)}`}>{viewedTransaction.amount}</p>
+              <p className={`amount-value text-left text-lg font-bold sm:text-right ${amountClass(viewedTransaction.type, viewedTransaction.transferDirection)}`}>{viewedTransaction.amount}</p>
             </div>
             <DetailModalSection title="Transaction information">
               <DetailModalField label="Date" value={viewedTransaction.date} />

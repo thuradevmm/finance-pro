@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { createAccount, updateAccount } from "@/app/accounts/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
@@ -88,8 +88,8 @@ const accountCategoryKeywords: Record<AccountType, string[]> = {
   Savings: ["saving", "savings", "emergency", "goal"],
 };
 
-function FieldLabel({ children }: { children: string }) {
-  return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{children}</label>;
+function FieldLabel({ children, htmlFor }: { children: string; htmlFor: string }) {
+  return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]" htmlFor={htmlFor}>{children}</label>;
 }
 
 function FormCard({ children, title }: { children: ReactNode; title: string }) {
@@ -112,12 +112,15 @@ function SelectInput({
   options: string[];
   value?: string;
 }) {
+  const inputId = useId();
+
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      <FieldLabel htmlFor={inputId}>{label}</FieldLabel>
       <div className="relative">
         <select
           className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          id={inputId}
           onChange={(event) => onChange?.(event.target.value)}
           value={value}
         >
@@ -144,11 +147,14 @@ function TextInput({
   value?: string;
   type?: "text" | "number";
 }) {
+  const inputId = useId();
+
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      <FieldLabel htmlFor={inputId}>{label}</FieldLabel>
       <input
         className="h-12 w-full rounded-lg border border-[#c6c6cd] bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+        id={inputId}
         onChange={(event) => onChange?.(event.target.value)}
         placeholder={placeholder}
         type={type}
@@ -189,6 +195,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
+  const notesInputId = useId();
   const [selectedType, setSelectedType] = useState<AccountType>(account?.type ?? "Bank Account");
   const [accountName, setAccountName] = useState(account?.name ?? "");
   const [institution, setInstitution] = useState(account?.institution ?? "");
@@ -402,7 +409,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <FieldLabel>{isCreditCard ? "Available Credit" : "Total Amount"}</FieldLabel>
+                <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Available Credit" : "Total Amount"}</span>
                 <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-xl font-semibold text-[#0b1c30]">
                   <ResponsiveAmount maxSizeRem={1.25}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
                 </div>
@@ -493,9 +500,10 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
             ) : null}
 
             <div className="mt-5">
-              <FieldLabel>Notes</FieldLabel>
+              <FieldLabel htmlFor={notesInputId}>Notes</FieldLabel>
               <textarea
                 className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                id={notesInputId}
                 onChange={(event) => setNotes(event.target.value)}
                 placeholder="Optional notes for this account..."
                 rows={4}
@@ -570,7 +578,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
               <>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs font-bold uppercase text-[#45464d]">Credit Limit</span>
-                  <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{formatMmkPreview(Number.isFinite(creditLimitValue) ? creditLimitValue : 0)}</span>
+                  <ResponsiveAmount className="max-w-48 text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(Number.isFinite(creditLimitValue) ? creditLimitValue : 0)}</ResponsiveAmount>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs font-bold uppercase text-[#45464d]">Payment Due Day</span>

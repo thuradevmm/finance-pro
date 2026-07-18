@@ -3,9 +3,10 @@
 .amount-value {
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
   font-variant-numeric: tabular-nums;
 }
 

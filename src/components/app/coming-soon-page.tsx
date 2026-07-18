@@ -28,7 +28,7 @@ export function ComingSoonPage({ activeNavLabel, description, icon, title }: Com
           </span>
           <p className="mt-5 text-xs font-bold uppercase text-[#45464d]">Coming Soon</p>
           <h2 className="mt-2 break-words text-xl font-semibold text-[#0b1c30] sm:text-2xl">{title} is not developed yet</h2>
-          <p className="mt-3 text-sm leading-6 text-[#45464d]">
+          <p className="mt-3 break-words text-sm leading-6 text-[#45464d] [overflow-wrap:anywhere]">
             This section is reserved for the next development phase. The navigation is ready, and the full workflow will be added here later.
           </p>
         </div>

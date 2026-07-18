@@ -74,10 +74,10 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
         </div>
       </div>
 
-      {errors.form ? <div className="rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{errors.form}</div> : null}
+      {errors.form ? <div className="break-words rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b] [overflow-wrap:anywhere]" role="alert">{errors.form}</div> : null}
 
       <LoadingButton className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60" isLoading={isSubmitting} loadingLabel="Signing In…" type="submit">Sign In</LoadingButton>
-      <p className="text-center text-sm text-[#5f6168]">
+      <p className="break-words text-center text-sm text-[#5f6168]">
         New to FinancePro?{" "}
         <Link className="font-semibold text-[#0058be] hover:underline" href="/register">Create an account</Link>
       </p>

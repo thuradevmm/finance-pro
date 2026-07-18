@@ -17,7 +17,7 @@ export function ResponsiveAmount({
   const style = { fontSize: `${fontSize}rem`, lineHeight: 1.15 } satisfies CSSProperties;
 
   return (
-    <span className={`amount-value block max-w-full overflow-hidden ${className}`} style={style} title={displayText}>
+    <span className={`amount-value block max-w-full ${className}`} style={style} title={displayText}>
       {children}
     </span>
   );

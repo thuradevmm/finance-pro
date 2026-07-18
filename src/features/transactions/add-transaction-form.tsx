@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { createTransaction, updateTransaction } from "@/app/transactions/actions";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
@@ -54,8 +54,8 @@ export type TransactionFormInitialValues = {
   type?: TransactionType;
 };
 
-function FieldLabel({ children }: { children: string }) {
-  return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{children}</label>;
+function FieldLabel({ children, htmlFor }: { children: string; htmlFor: string }) {
+  return <label className="mb-2 block text-xs font-bold uppercase text-[#45464d]" htmlFor={htmlFor}>{children}</label>;
 }
 
 function FormCard({ children, title }: { children: ReactNode; title: string }) {
@@ -68,13 +68,16 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
 }
 
 function SelectInput({ disabled = false, label, onChange, options, value }: { disabled?: boolean; label: string; onChange: (value: string) => void; options: string[]; value: string }) {
+  const inputId = useId();
+
   return (
     <div>
-      <FieldLabel>{label}</FieldLabel>
+      <FieldLabel htmlFor={inputId}>{label}</FieldLabel>
       <div className="relative">
         <select
           className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
           disabled={disabled}
+          id={inputId}
           onChange={(event) => onChange(event.target.value)}
           value={value}
         >
@@ -157,6 +160,11 @@ export function AddTransactionForm({
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
+  const amountInputId = useId();
+  const dateInputId = useId();
+  const noteInputId = useId();
+  const subscriptionBilledAmountInputId = useId();
+  const subscriptionExchangeRateInputId = useId();
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
   const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : initialValues?.amount ?? "");
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? initialValues?.date ?? new Date().toISOString().slice(0, 10));
@@ -419,12 +427,13 @@ export function AddTransactionForm({
           <FormCard title="Transaction Details">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <FieldLabel>Amount</FieldLabel>
+                <FieldLabel htmlFor={amountInputId}>Amount</FieldLabel>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">MMK</span>
                   <input
                     aria-invalid={amountHasError}
                     className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
+                    id={amountInputId}
                     onChange={(event) => setAmount(event.target.value)}
                     onWheel={(event) => event.currentTarget.blur()}
                     placeholder="0"
@@ -435,8 +444,8 @@ export function AddTransactionForm({
                 {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter an amount greater than zero.</p> : null}
               </div>
               <div>
-                <FieldLabel>Date</FieldLabel>
-                <DateInput error={dateHasError} label="Date" onChange={setTransactionDate} value={transactionDate} />
+                <FieldLabel htmlFor={dateInputId}>Date</FieldLabel>
+                <DateInput error={dateHasError} id={dateInputId} label="Date" onChange={setTransactionDate} value={transactionDate} />
                 {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Transaction date is required.</p> : null}
               </div>
             </div>
@@ -482,8 +491,8 @@ export function AddTransactionForm({
           </FormCard>
 
           <FormCard title="Additional Information">
-            <FieldLabel>Note / Description</FieldLabel>
-            <textarea className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" onChange={(event) => setNote(event.target.value)} placeholder={isTransfer ? "Transfer purpose or memo..." : "Optional details..."} rows={4} value={note} />
+            <FieldLabel htmlFor={noteInputId}>Note / Description</FieldLabel>
+            <textarea className="min-h-28 w-full resize-none rounded-lg border border-[#c6c6cd] bg-white px-4 py-3 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" id={noteInputId} onChange={(event) => setNote(event.target.value)} placeholder={isTransfer ? "Transfer purpose or memo..." : "Optional details..."} rows={4} value={note} />
           </FormCard>
 
           <FormCard title="Transaction Impact">
@@ -519,13 +528,13 @@ export function AddTransactionForm({
             ) : null}
             {subscriptionPayment ? (
               <div className="mt-4 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase text-[#45464d]">Subscription Payment</p>
                     <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{subscriptionPayment.billingCycle} billing · {subscriptionPayment.nextBillingDate ? formatDisplayDate(subscriptionPayment.nextBillingDate) : "No due date"}</p>
                   </div>
                   <button
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937]"
+                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937] sm:min-h-10 sm:w-auto"
                     onClick={handleUseSubscriptionPaymentAmount}
                     type="button"
                   >
@@ -535,9 +544,10 @@ export function AddTransactionForm({
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <FieldLabel>Billed Amount</FieldLabel>
+                    <FieldLabel htmlFor={subscriptionBilledAmountInputId}>Billed Amount</FieldLabel>
                     <input
                       className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                      id={subscriptionBilledAmountInputId}
                       onChange={(event) => updateSubscriptionPaymentDraft("billedAmount", event.target.value)}
                       onWheel={(event) => event.currentTarget.blur()}
                       type="number"
@@ -546,9 +556,10 @@ export function AddTransactionForm({
                   </div>
                   {isForeignSubscriptionPayment ? (
                     <div>
-                      <FieldLabel>Payment Exchange Rate</FieldLabel>
+                      <FieldLabel htmlFor={subscriptionExchangeRateInputId}>Payment Exchange Rate</FieldLabel>
                       <input
                         className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                        id={subscriptionExchangeRateInputId}
                         onChange={(event) => updateSubscriptionPaymentDraft("exchangeRate", event.target.value)}
                         onWheel={(event) => event.currentTarget.blur()}
                         type="number"
@@ -557,7 +568,7 @@ export function AddTransactionForm({
                     </div>
                   ) : (
                     <div>
-                      <FieldLabel>Payment Exchange Rate</FieldLabel>
+                      <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Payment Exchange Rate</span>
                       <div className="flex h-11 items-center rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d]">No conversion</div>
                     </div>
                   )}
@@ -580,13 +591,13 @@ export function AddTransactionForm({
             ) : null}
             {debtPayoffQuote && debtPayoffQuote.payoffAmount > 0 ? (
               <div className="mt-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase text-[#0058be]">Debt Payoff</p>
                     <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(debtPayoffQuote.asOfDate)}</p>
                   </div>
                   <button
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937]"
+                    className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937] sm:min-h-10 sm:w-auto"
                     onClick={handleUseDebtPayoffAmount}
                     type="button"
                   >
