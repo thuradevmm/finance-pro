@@ -278,7 +278,7 @@ select
   debt.user_id,
   debt.name,
   coalesce(debt.lender_name, debt.lender) as lender_name,
-  debt.calculated_total as total_amount,
+  debt.calculated_total::numeric(14, 2) as total_amount,
   debt.initial_paid_amount,
   debt.calculated_paid as paid_amount,
   debt.calculated_remaining as remaining_amount,
@@ -286,10 +286,10 @@ select
     when debt.calculated_total <= 0 then 0
     else round(least(greatest(debt.calculated_paid / debt.calculated_total, 0), 1) * 100, 2)
   end as progress_percentage,
-  coalesce(debt.repayment_amount, debt.monthly_payment) as repayment_amount,
-  debt.repayment_cycle,
   debt.start_date,
   coalesce(debt.next_payment_date, debt.due_date) as due_date,
+  coalesce(debt.repayment_amount, debt.monthly_payment)::numeric(14, 2) as repayment_amount,
+  debt.repayment_cycle,
   case
     when debt.calculated_remaining <= 0.005 then 'paid'
     when coalesce(debt.next_payment_date, debt.due_date) < current_date then 'overdue'
