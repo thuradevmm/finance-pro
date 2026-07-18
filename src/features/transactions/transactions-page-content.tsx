@@ -27,6 +27,8 @@ type TransactionsPageContentProps = {
   filterOptions: TransactionFilterOptions;
   initialAccountFilter?: string;
   initialCategoryFilter?: string;
+  initialDateFrom: string;
+  initialDateTo: string;
   transactions: TransactionRecord[];
 };
 
@@ -39,30 +41,24 @@ function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function defaultDateRange() {
-  return {
-    dateFrom: "",
-    dateTo: "",
-  };
-}
-
 function getInitialFilters(
   filterOptions: TransactionFilterOptions,
   initialAccountFilter?: string,
   initialCategoryFilter?: string,
+  initialDateFrom = "",
+  initialDateTo = "",
 ): TransactionFiltersState {
   const accountFilter =
     initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
   const categoryFilter =
     initialCategoryFilter && filterOptions.category.includes(initialCategoryFilter) ? initialCategoryFilter : filterOptions.category[0];
-  const range = defaultDateRange();
 
   return {
     account: accountFilter,
     amount: filterOptions.amount[0],
     category: categoryFilter,
-    dateFrom: range.dateFrom,
-    dateTo: range.dateTo,
+    dateFrom: initialDateFrom,
+    dateTo: initialDateTo,
     fromAccount: filterOptions.account[0],
     relatedAccount: accountFilter,
     toAccount: filterOptions.account[0],
@@ -141,7 +137,14 @@ function filterTransactions(transactions: TransactionRecord[], filters: Transact
   });
 }
 
-export function TransactionsPageContent({ filterOptions, initialAccountFilter, initialCategoryFilter, transactions }: TransactionsPageContentProps) {
+export function TransactionsPageContent({
+  filterOptions,
+  initialAccountFilter,
+  initialCategoryFilter,
+  initialDateFrom,
+  initialDateTo,
+  transactions,
+}: TransactionsPageContentProps) {
   const effectiveFilterOptions = useMemo(() => ({
     ...filterOptions,
     category: initialCategoryFilter && !filterOptions.category.includes(initialCategoryFilter)
@@ -149,8 +152,8 @@ export function TransactionsPageContent({ filterOptions, initialAccountFilter, i
       : filterOptions.category,
   }), [filterOptions, initialCategoryFilter]);
   const initialFilters = useMemo(
-    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter),
-    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter],
+    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo),
+    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo],
   );
   const [filters, setFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));

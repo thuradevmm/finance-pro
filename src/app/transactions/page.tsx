@@ -8,6 +8,7 @@ import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getDefaultTransactionDateRange } from "@/lib/transactions/date-range";
 import { getTransactionFilterOptions, getTransactions } from "@/lib/transactions/supabase";
 
 export default async function TransactionsPage({
@@ -24,6 +25,7 @@ export default async function TransactionsPage({
   const categories = user ? await getCategories({ limit: 200 }) : [];
   const transactions = user ? await getTransactions(supabase, user.id, accounts, categories) : [];
   const transactionFilterOptions = getTransactionFilterOptions(transactions, accounts, categories);
+  const defaultDateRange = getDefaultTransactionDateRange();
 
   return (
     <AppShell
@@ -64,6 +66,8 @@ export default async function TransactionsPage({
         filterOptions={transactionFilterOptions}
         initialAccountFilter={requestedAccount}
         initialCategoryFilter={requestedCategory}
+        initialDateFrom={defaultDateRange.dateFrom}
+        initialDateTo={defaultDateRange.dateTo}
         transactions={transactions}
       />
     </AppShell>
