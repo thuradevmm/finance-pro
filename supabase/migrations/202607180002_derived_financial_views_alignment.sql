@@ -277,6 +277,30 @@ from progress;
 
 alter view public.v_savings_goal_progress set (security_invoker = true);
 
+-- Earlier deployments exposed the people totals in the opposite column order.
+-- Align the existing column names before CREATE OR REPLACE so PostgreSQL can
+-- preserve the view and its grants without interpreting this as a rename.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'v_people_payment_summary'
+      and ordinal_position = 4
+      and column_name = 'total_outgoing'
+  ) then
+    alter view public.v_people_payment_summary rename column total_outgoing to legacy_total_outgoing;
+    alter view public.v_people_payment_summary rename column total_incoming to total_outgoing;
+    alter view public.v_people_payment_summary rename column legacy_total_outgoing to total_incoming;
+
+    alter view public.v_people_payment_summary rename column unpaid_lent_amount to legacy_unpaid_lent_amount;
+    alter view public.v_people_payment_summary rename column unpaid_borrowed_amount to unpaid_lent_amount;
+    alter view public.v_people_payment_summary rename column legacy_unpaid_lent_amount to unpaid_borrowed_amount;
+  end if;
+end;
+$$;
+
 create or replace view public.v_people_payment_summary as
 select
   person.id as person_id,
