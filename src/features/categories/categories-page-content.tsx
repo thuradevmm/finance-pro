@@ -52,9 +52,9 @@ function CategoryListItem({ category, onDelete }: { category: CategoryRecord; on
       </div>
 
       <div className="min-w-0">
-        <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Monthly Avg</span>
+        <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">{category.activityLabel}</span>
         <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.25}>{category.monthlyAverage}</ResponsiveAmount>
-        <span className="mt-1 block text-xs font-semibold text-[#45464d]">{category.transactionCount} Transactions</span>
+        <span className="mt-1 block text-xs font-semibold text-[#45464d]">{category.transactionCount} {category.countLabel}</span>
       </div>
 
       <div className="flex min-h-11 items-center justify-end border-t border-[#c6c6cd]/40 pt-3 xl:border-0 xl:pt-0">
@@ -83,7 +83,7 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
   const filteredCategories = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleCategories.filter((category) => {
-      const searchable = `${category.name} ${category.description} ${category.type} ${category.monthlyAverage} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
+      const searchable = `${category.name} ${category.description} ${category.type} ${category.activityLabel} ${category.monthlyAverage} ${category.countLabel} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
       return category.type === activeType && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [activeType, search, visibleCategories]);

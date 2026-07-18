@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { resolveAssetCurrentValue, resolveAssetPurchaseValue } from "@/lib/assets/calculations";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { linkedExpenseContributionDelta, roundCurrencyValue } from "@/lib/ledger";
 import type { AssetRecord, AssetStatus, SummaryMetric } from "@/types/finance";
 
 export type AssetFormData = {
@@ -13,6 +15,7 @@ export type AssetFormData = {
   note: string;
   purchaseAmount: number;
   purchaseDate: string;
+  serialReference: string;
   startUsingDate: string;
   status: AssetStatus;
 };
@@ -24,6 +27,7 @@ export type AssetRecordWithValues = AssetRecord & {
   purchaseAmountValue: number;
   purchaseDateTimeValue: string;
   purchaseDateValue: string;
+  serialReference: string;
   startUsingDateTimeValue: string;
   startUsingDateValue: string;
 };
@@ -45,26 +49,29 @@ type AssetRow = {
 
 type LinkedTransactionRow = {
   amount: number | string | null;
+  id: string;
+  metadata: unknown;
   related_entity_id: string | null;
   status: string | null;
+  type: string | null;
 };
 
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
 }
 
-function numericValue(value: unknown, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
 function normalizeCondition(value: unknown): AssetRecord["condition"] {
-  if (value === "Excellent" || value === "Good" || value === "Fair" || value === "Needs Repair") return value;
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "excellent") return "Excellent";
+  if (normalized === "fair") return "Fair";
+  if (normalized === "needs repair" || normalized === "needs_repair") return "Needs Repair";
   return "Good";
 }
 
 function normalizeStatus(value: unknown): AssetStatus {
-  if (value === "Sold" || value === "Archived") return value;
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "sold") return "Sold";
+  if (normalized === "archived") return "Archived";
   return "Active";
 }
 
@@ -72,9 +79,15 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
-  const storedPurchaseAmount = numericValue(row.purchase_amount) || numericValue(metadata.purchase_amount);
-  const purchaseAmountValue = storedPurchaseAmount || (linkedPurchasesByAssetId.get(row.id) ?? 0);
-  const currentValueValue = numericValue(row.current_value) || numericValue(metadata.current_value, purchaseAmountValue);
+  // The asset record is authoritative for purchase price; a linked payment is
+  // evidence of that purchase and is only a fallback for legacy rows where no
+  // price was stored. It must never be added to the stored price.
+  const purchaseAmountValue = resolveAssetPurchaseValue(
+    row.purchase_amount,
+    metadata.purchase_amount,
+    linkedPurchasesByAssetId.get(row.id),
+  );
+  const currentValueValue = resolveAssetCurrentValue(row.current_value, metadata.current_value, purchaseAmountValue);
   const purchaseDateValue = row.purchase_date ?? (typeof metadata.purchase_date === "string" ? metadata.purchase_date : "");
   const startUsingDateValue = row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : purchaseDateValue);
 
@@ -95,6 +108,7 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
     purchaseDate: formatDisplayDate(purchaseDateValue, ""),
     purchaseDateTimeValue: combineDateWithTimestampTime(purchaseDateValue, row.created_at),
     purchaseDateValue,
+    serialReference: typeof metadata.serial_reference === "string" ? metadata.serial_reference : "",
     startUsingDate: formatDisplayDate(startUsingDateValue, ""),
     startUsingDateTimeValue: combineDateWithTimestampTime(startUsingDateValue, row.created_at),
     startUsingDateValue,
@@ -110,7 +124,7 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
 
   const [assetsResult, transactionsResult] = await Promise.all([
     assetsQuery,
-    supabase.from("transactions").select("related_entity_id,amount,status").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
+    supabase.from("transactions").select("id,related_entity_id,type,amount,status,metadata").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
   ]);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
@@ -118,10 +132,12 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
   const linkedPurchasesByAssetId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
-    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
     linkedPurchasesByAssetId.set(
       transaction.related_entity_id,
-      (linkedPurchasesByAssetId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),
+      roundCurrencyValue(
+        (linkedPurchasesByAssetId.get(transaction.related_entity_id) ?? 0)
+        + linkedExpenseContributionDelta(transaction),
+      ),
     );
   }
   return (assetsResult.data as AssetRow[])
@@ -136,10 +152,12 @@ export async function getAsset(supabase: SupabaseClient, userId: string, assetId
 
 export function getAssetSummaries(assets: AssetRecordWithValues[]): SummaryMetric[] {
   const purchaseValue = assets.reduce((sum, asset) => sum + asset.purchaseAmountValue, 0);
-  const currentValue = assets.reduce((sum, asset) => sum + asset.currentValueValue, 0);
+  const currentValue = assets
+    .filter((asset) => asset.status === "Active")
+    .reduce((sum, asset) => sum + asset.currentValueValue, 0);
   return [
     { label: "Purchase Value", value: formatMmk(purchaseValue), icon: "box", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
-    { label: "Current Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Active Current Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Assets", value: String(assets.filter((asset) => asset.status === "Active").length), icon: "dashboard", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Archived/Sold", value: String(assets.filter((asset) => asset.status !== "Active").length), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];

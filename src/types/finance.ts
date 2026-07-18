@@ -82,10 +82,14 @@ export type DebtRecord = {
 
 export type UpcomingDebtPayment = {
   id: string;
+  category: string;
+  debtId: string;
   debtName: string;
   dueLabel: string;
+  dueDateValue: string;
   dueDateTimeValue?: string;
   amount: string;
+  amountValue: number;
   isOverdue?: boolean;
 };
 
@@ -191,6 +195,8 @@ export type Transaction = {
   linkedDebtId?: string;
   linkedSavingsGoalId?: string;
   linkedSubscriptionId?: string;
+  isReversal?: boolean;
+  isReversed?: boolean;
 };
 
 export type SummaryMetric = {

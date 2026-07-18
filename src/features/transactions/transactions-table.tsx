@@ -124,6 +124,10 @@ function amountTypeMovementLabel(transaction: Transaction) {
     : transaction.accountAmountType;
 }
 
+function transactionIsImmutable(transaction: Transaction) {
+  return transaction.isReversal === true || transaction.isReversed === true;
+}
+
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
   const { showError, showSuccess } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -152,7 +156,10 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   const resultStart = sortedTransactions.length > 0 ? pageStartIndex + 1 : 0;
   const resultEnd = Math.min(pageStartIndex + paginatedTransactions.length, sortedTransactions.length);
   const visibleTotalResults = Math.min(totalResults, sortedTransactions.length);
-  const pageTransactionIds = useMemo(() => paginatedTransactions.map((transaction) => transaction.id), [paginatedTransactions]);
+  const pageTransactionIds = useMemo(
+    () => paginatedTransactions.filter((transaction) => !transactionIsImmutable(transaction)).map((transaction) => transaction.id),
+    [paginatedTransactions],
+  );
   const selectedVisibleTransactions = useMemo(
     () => visibleTransactions.filter((transaction) => selectedTransactionIds.includes(transaction.id)),
     [selectedTransactionIds, visibleTransactions],
@@ -160,7 +167,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   const selectedVisibleCount = selectedVisibleTransactions.length;
   const selectedPageCount = selectedTransactionIds.filter((id) => pageTransactionIds.includes(id)).length;
   const hasSelectedTransactions = selectedVisibleCount > 0;
-  const allVisibleSelected = paginatedTransactions.length > 0 && selectedPageCount === paginatedTransactions.length;
+  const allVisibleSelected = pageTransactionIds.length > 0 && selectedPageCount === pageTransactionIds.length;
   const paginationItems = useMemo(() => {
     if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1);
 
@@ -177,6 +184,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   function handleAction(action: TransactionAction, transaction: Transaction) {
     if (action === "view") {
       setViewedTransaction(transaction);
+      return;
+    }
+
+    if (transactionIsImmutable(transaction)) {
+      showError("Reversal records and transactions with a posted reversal are immutable financial history.");
       return;
     }
 
@@ -335,7 +347,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   aria-label="Select all visible transactions"
                   checked={allVisibleSelected}
                   className="size-4 rounded border-[#c6c6cd]"
-                  disabled={visibleTransactions.length === 0}
+                  disabled={pageTransactionIds.length === 0}
                   onChange={toggleAllVisibleTransactions}
                   type="checkbox"
                 />
@@ -367,7 +379,9 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                       aria-label={`Select ${transaction.id}`}
                       checked={selectedTransactionIds.includes(transaction.id)}
                       className="size-4 rounded border-[#c6c6cd]"
+                      disabled={transactionIsImmutable(transaction)}
                       onChange={() => toggleTransactionSelection(transaction.id)}
+                      title={transactionIsImmutable(transaction) ? "Reconciled reversal history cannot be deleted." : undefined}
                       type="checkbox"
                     />
                   </td>
@@ -399,7 +413,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <td className="w-52 px-4 py-4 text-right">
                     <div className="flex min-w-48 justify-end gap-1">
                       {transactionActions.map((item) => (
-                        item.action === "edit" ? (
+                        item.action === "edit" && !transactionIsImmutable(transaction) ? (
                           <Link
                             aria-label={`${item.label} for ${transaction.id}`}
                             className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
@@ -412,11 +426,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                         ) : (
                           <button
                             aria-label={`${item.label} for ${transaction.id}`}
-                            className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
-                            disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
+                            className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 disabled:cursor-not-allowed disabled:opacity-40 ${item.tone}`}
+                            disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
                             key={item.action}
                             onClick={() => handleAction(item.action, transaction)}
-                            title={item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
+                            title={transactionIsImmutable(transaction) && item.action !== "view" ? "Reconciled reversal history is immutable" : item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
                             type="button"
                           >
                             <Icon className="size-4" name={item.icon} />
@@ -448,7 +462,9 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     aria-label={`Select ${transaction.id}`}
                     checked={selectedTransactionIds.includes(transaction.id)}
                     className="mt-1 size-4 shrink-0 rounded border-[#c6c6cd]"
+                    disabled={transactionIsImmutable(transaction)}
                     onChange={() => toggleTransactionSelection(transaction.id)}
+                    title={transactionIsImmutable(transaction) ? "Reconciled reversal history cannot be deleted." : undefined}
                     type="checkbox"
                   />
                   <div className="min-w-0">
@@ -465,10 +481,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                 <CategoryBadge category={transaction.category} />
                 <MetadataChip>{accountMovementLabel(transaction)}</MetadataChip>
                 <MetadataChip>{amountTypeMovementLabel(transaction)}</MetadataChip>
+                {transaction.isReversal ? <MetadataChip>Reversal</MetadataChip> : transaction.isReversed ? <MetadataChip>Reversed</MetadataChip> : null}
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
                 {transactionActions.map((item) => (
-                  item.action === "edit" ? (
+                  item.action === "edit" && !transactionIsImmutable(transaction) ? (
                     <Link
                       aria-label={`${item.label} for ${transaction.id}`}
                       className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
@@ -481,11 +498,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   ) : (
                     <button
                       aria-label={`${item.label} for ${transaction.id}`}
-                      className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 ${item.tone}`}
-                      disabled={item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id))}
+                      className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 disabled:cursor-not-allowed disabled:opacity-40 ${item.tone}`}
+                      disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
                       key={item.action}
                       onClick={() => handleAction(item.action, transaction)}
-                      title={item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
+                      title={transactionIsImmutable(transaction) && item.action !== "view" ? "Reconciled reversal history is immutable" : item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
                       type="button"
                     >
                       <Icon className="size-4" name={item.icon} />
@@ -568,7 +585,11 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
       </div>
       <DetailModal
         actions={
-          <>
+          viewedTransaction && transactionIsImmutable(viewedTransaction) ? (
+            <span className="inline-flex min-h-11 items-center rounded-md border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-semibold text-[#45464d]">
+              Reconciled financial history
+            </span>
+          ) : <>
             <Link
               className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff]"
               href={viewedTransaction ? `/transactions/${viewedTransaction.id}/edit` : "/transactions"}
@@ -616,6 +637,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               {viewedTransaction.transferAccountAmountType ? <DetailModalField label="Transfer amount type" value={amountTypeMovementLabel(viewedTransaction)} /> : null}
               <DetailModalField label="Attachment" value={getAttachmentLabel(viewedTransaction.attachment)} />
               <DetailModalField label="Reflects to" value={getImpactLabel(viewedTransaction)} />
+              {viewedTransaction.isReversal ? <DetailModalField label="Ledger state" value="Reversal record" /> : null}
+              {viewedTransaction.isReversed ? <DetailModalField label="Ledger state" value="Reversed" /> : null}
             </DetailModalSection>
             <DetailModalSection title="Note">
               <div className="rounded-md border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-3 sm:col-span-2">

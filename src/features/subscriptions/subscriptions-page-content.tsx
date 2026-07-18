@@ -72,7 +72,7 @@ function billingTimelineMeta(billing: UpcomingSubscriptionBilling) {
 }
 
 function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
-  const reminderItems = subscriptions.filter((subscription) => subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in")).slice(0, 4);
+  const reminderItems = subscriptions.filter((subscription) => subscription.status !== "Paused" && (subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in"))).slice(0, 4);
 
   return (
     <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
@@ -106,7 +106,7 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
 }
 
 function PaidCyclePanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
-  const paidItems = subscriptions.filter((subscription) => subscription.isPaidForCurrentPeriod).slice(0, 4);
+  const paidItems = subscriptions.filter((subscription) => subscription.status !== "Paused" && subscription.isPaidForCurrentPeriod).slice(0, 4);
   const attentionItems = subscriptions.filter((subscription) => subscription.paymentStatus === "Overdue" || subscription.paymentStatus === "Due soon").slice(0, 4);
 
   return (

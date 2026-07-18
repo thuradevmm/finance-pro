@@ -34,6 +34,8 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const selectedStyle = getCategoryTypeStyle(selectedType);
   const monthlyAverage = category && category.type === selectedType ? category.monthlyAverage : formatMmkPreview(0);
   const transactionCount = category && category.type === selectedType ? category.transactionCount : 0;
+  const activityLabel = category && category.type === selectedType ? category.activityLabel : selectedType === "Expense" || selectedType === "Income" ? "Monthly Avg" : "Tracked Value";
+  const countLabel = category && category.type === selectedType ? category.countLabel : selectedType === "Savings Goal" ? "Goals" : `${selectedType}s`;
 
   async function handleSaveCategory(addAnother = false) {
     const hasErrors = name.trim() === "";
@@ -121,7 +123,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Category name is required.</p> : null}
             </div>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
-              <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated Monthly Avg</span>
+              <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated {activityLabel}</span>
               <ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{monthlyAverage}</ResponsiveAmount>
             </div>
           </div>
@@ -144,7 +146,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             Category usage is now controlled by category type. Income and expense categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate from transaction income/expense categories.
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
-            Monthly average and transaction count are calculated from related transaction records. When a transaction uses this category, that transaction amount is what updates reports, budgets, account summaries, and linked modules.
+            Income and expense monthly averages use the full calendar span between the first and latest posted transaction, including zero-activity months. Page categories show the related module&apos;s tracked value and record count instead of calling those records transactions.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {selectedScopes.map((scope) => (
@@ -225,10 +227,10 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             </div>
             <div className="flex items-end justify-between gap-4 border-t border-[#c6c6cd]/40 pt-4">
               <div>
-                <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Monthly Avg</span>
+                <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">{activityLabel}</span>
                 <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.5}>{monthlyAverage}</ResponsiveAmount>
               </div>
-              <span className="text-right text-xs font-semibold text-[#45464d]">{transactionCount} Transactions</span>
+              <span className="text-right text-xs font-semibold text-[#45464d]">{transactionCount} {countLabel}</span>
             </div>
           </div>
         </div>

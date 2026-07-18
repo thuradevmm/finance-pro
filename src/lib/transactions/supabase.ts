@@ -13,7 +13,9 @@ import {
   isCreditCardPayment,
   ledgerRelevantMetadata,
   summarizeLedgerTransactions,
+  transactionStatusAffectsBalance,
 } from "@/lib/ledger";
+import { effectiveTransferVolume } from "@/lib/transactions/summary";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 export type TransactionSubscriptionPaymentSnapshot = {
@@ -21,6 +23,12 @@ export type TransactionSubscriptionPaymentSnapshot = {
   billingCurrency: string;
   billingDueDate: string;
   exchangeRate: number;
+};
+
+export type TransactionFuturePlan = {
+  endDate: string;
+  recurrence: "Monthly" | "Once" | "Weekly" | "Yearly";
+  status: "Active" | "Paused";
 };
 
 export type TransactionRecord = Transaction & {
@@ -33,6 +41,9 @@ export type TransactionRecord = Transaction & {
   creditCardDebtImpact: "charge" | "repayment" | "";
   creditCardPayment: boolean;
   dateValue: string;
+  futurePlan?: TransactionFuturePlan;
+  isReversal: boolean;
+  isReversed: boolean;
   ledgerMetadata: Record<string, unknown>;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
@@ -48,6 +59,7 @@ export type TransactionRecord = Transaction & {
 export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type TransactionRelatedOption = {
+  categoryId?: string;
   creditCardDebt?: {
     accountId: string;
     accountName: string;
@@ -82,6 +94,7 @@ export type TransactionFormData = {
   amount: number;
   categoryId: string;
   date: string;
+  futurePlan?: TransactionFuturePlan;
   note: string;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
@@ -189,11 +202,6 @@ function formatTransferAmount(value: number, direction: Transaction["transferDir
   return formatMmk(value);
 }
 
-function isPostedTransaction(transaction: Pick<TransactionRecord, "status">) {
-  const status = String(transaction.status ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
-}
-
 function subscriptionPaymentSnapshot(row: TransactionRow, metadata: Record<string, unknown>): TransactionSubscriptionPaymentSnapshot | undefined {
   if (row.related_entity_type !== "subscription") return undefined;
 
@@ -211,7 +219,35 @@ function subscriptionPaymentSnapshot(row: TransactionRow, metadata: Record<strin
   };
 }
 
-function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord>, accountList: AccountRecord[], categories: Map<string, CategoryRecord>): TransactionRecord | null {
+function futurePlanSnapshot(metadata: Record<string, unknown>): TransactionFuturePlan | undefined {
+  const hasFuturePlan = metadata.future_plan === true
+    || typeof metadata.future_recurrence === "string"
+    || typeof metadata.future_end_date === "string";
+  if (!hasFuturePlan) return undefined;
+
+  const recurrenceValue = String(metadata.future_recurrence ?? "once").toLowerCase();
+  const recurrence: TransactionFuturePlan["recurrence"] = recurrenceValue === "weekly"
+    ? "Weekly"
+    : recurrenceValue === "monthly"
+      ? "Monthly"
+      : recurrenceValue === "yearly"
+        ? "Yearly"
+        : "Once";
+
+  return {
+    endDate: typeof metadata.future_end_date === "string" ? metadata.future_end_date : "",
+    recurrence,
+    status: String(metadata.future_status ?? "active").toLowerCase() === "paused" ? "Paused" : "Active",
+  };
+}
+
+function mapTransaction(
+  row: TransactionRow,
+  accounts: Map<string, AccountRecord>,
+  accountList: AccountRecord[],
+  categories: Map<string, CategoryRecord>,
+  reversedGroupIds: Set<string>,
+): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
   const type = direction ? "Transfer" : normalizeType(row.type);
@@ -238,8 +274,11 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
   const category = row.category_id ? categories.get(row.category_id) : undefined;
   const note = row.note || row.description || row.title || `${type} transaction`;
   const subscriptionPayment = subscriptionPaymentSnapshot(row, metadata);
+  const futurePlan = futurePlanSnapshot(metadata);
   const linkedCreditCardAccountId = creditCardAccountId(metadata);
   const linkedCreditCardAccount = linkedCreditCardAccountId ? accounts.get(linkedCreditCardAccountId) : undefined;
+  const groupId = transferGroupId(metadata, row.id, type);
+  const reversalSourceId = metadataString(metadata, "reversed_transaction_id");
 
   return {
     account: accountLabel,
@@ -256,7 +295,10 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     date: formatDisplayDate(row.transaction_date),
     dateValue: row.transaction_date,
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
+    ...(futurePlan ? { futurePlan } : {}),
     id: row.id,
+    isReversal: transactionStatusAffectsBalance(row.status) && Boolean(reversalSourceId),
+    isReversed: reversedGroupIds.has(groupId || row.id),
     ledgerMetadata: ledgerRelevantMetadata(metadata),
     note,
     relatedEntityId: row.related_entity_id ?? "",
@@ -269,7 +311,7 @@ function mapTransaction(row: TransactionRow, accounts: Map<string, AccountRecord
     transferDirection: direction,
     transferFromAccount,
     transferFromAccountId,
-    transferGroupId: transferGroupId(metadata, row.id, type),
+    transferGroupId: groupId,
     transferToAccount,
     transferToAccountId,
     type,
@@ -316,8 +358,21 @@ export async function getTransactions(
     ...row,
     metadata: deriveCreditCardDebtMetadata(row, debtRows, accounts),
   }));
+  const rowsById = new Map(enrichedRows.map((row) => [row.id, row]));
+  const reversedGroupIds = new Set(enrichedRows.flatMap((row) => {
+    const metadata = metadataRecord(row.metadata);
+    const sourceId = metadataString(metadata, "reversed_transaction_id");
+    if (!sourceId || !transactionStatusAffectsBalance(row.status)) return [];
+    const source = rowsById.get(sourceId);
+    if (!source) return [sourceId];
+    const sourceMetadata = metadataRecord(source.metadata);
+    const sourceType = transferDirection(sourceMetadata) ? "Transfer" : normalizeType(source.type);
+    return [transferGroupId(sourceMetadata, source.id, sourceType) || source.id];
+  }));
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
   return enrichedRows.flatMap((row) => {
-    const transaction = mapTransaction(row, new Map(accounts.map((a) => [a.id, a])), accounts, new Map(categories.map((c) => [c.id, c])));
+    const transaction = mapTransaction(row, accountsById, accounts, categoriesById, reversedGroupIds);
     return transaction ? [transaction] : [];
   });
 }
@@ -348,17 +403,7 @@ export function getTransactionSummaries(transactions: TransactionRecord[]): Summ
     })),
   );
 
-  const transferGroups = new Set<string>();
-  const transfers = transactions
-    .filter((transaction) => {
-      if (!isPostedTransaction(transaction)) return false;
-      if (transaction.type !== "Transfer") return false;
-      const groupId = transaction.transferGroupId ?? transaction.id;
-      if (transferGroups.has(groupId)) return false;
-      transferGroups.add(groupId);
-      return true;
-    })
-    .reduce((sum, t) => sum + (t.amountValue ?? 0), 0);
+  const transfers = effectiveTransferVolume(transactions);
   return [
     { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },

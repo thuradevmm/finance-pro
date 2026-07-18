@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607130004",
+  "sealedThrough": "202607180002",
   "migrations": [
     {
       "version": "202606180001",
@@ -96,6 +96,16 @@
       "version": "202607130004",
       "file": "202607130004_prevent_used_account_hard_delete.sql",
       "sha256": "f878e244940ea2c0d4d620900a380cfdaef6098fa6c4947b66fbd2998348af1a"
+    },
+    {
+      "version": "202607180001",
+      "file": "202607180001_account_integrity_reconciliation.sql",
+      "sha256": "d3fb4c3781b9935c816df2e1b7fab0bd0e50cbf86c689774b4484d385f86f96f"
+    },
+    {
+      "version": "202607180002",
+      "file": "202607180002_derived_financial_views_alignment.sql",
+      "sha256": "05a7ff4b9eacb7a785a4b11170d0333be6bc29e6fc0f3829579e2d1f16e920e5"
     }
   ],
   "historyRepairs": [

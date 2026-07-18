@@ -12,6 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
+import { isValidCalendarDate } from "@/lib/date-validation";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -34,7 +35,8 @@ function parseAmount(value: string) {
 }
 
 function defaultNextBillingDate() {
-  return new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 }
 
 export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
@@ -42,7 +44,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Subscription"), [categories]);
-  const paymentAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
+  const paymentAccounts = useMemo(() => accounts.filter((account) => account.status !== "Archived"), [accounts]);
   const [serviceName, setServiceName] = useState(subscription?.name ?? "");
   const [billingCurrency, setBillingCurrency] = useState(subscription?.billingCurrency ?? SYSTEM_CURRENCY);
   const [billedAmount, setBilledAmount] = useState(subscription ? String(subscription.billedAmountValue) : "");
@@ -63,14 +65,14 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
   const nameHasError = showErrors && serviceName.trim() === "";
   const amountHasError = showErrors && (billedAmount.trim() === "" || parseAmount(billedAmount) <= 0);
   const exchangeRateHasError = showErrors && isForeignCurrency && (exchangeRate.trim() === "" || parseAmount(exchangeRate) <= 0);
-  const billingDateHasError = showErrors && nextBillingDate.trim() === "";
+  const billingDateHasError = showErrors && !isValidCalendarDate(nextBillingDate);
   const parsedBilledAmount = parseAmount(billedAmount);
   const parsedExchangeRate = isForeignCurrency ? parseAmount(exchangeRate) : 1;
   const convertedAmount = parsedBilledAmount > 0 && parsedExchangeRate > 0 ? parsedBilledAmount * parsedExchangeRate : 0;
   const yearlyAmount = billingCycle === "Yearly" ? convertedAmount : billingCycle === "Weekly" ? convertedAmount * 52 : convertedAmount * 12;
 
   async function handleSaveSubscription(addAnother = false) {
-    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateHasError || nextBillingDate.trim() === "";
+    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateHasError || !isValidCalendarDate(nextBillingDate);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;

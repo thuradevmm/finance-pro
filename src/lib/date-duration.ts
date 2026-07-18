@@ -1,14 +1,25 @@
 export function calculateUsageDuration(startDate: string, referenceDate = new Date()) {
-  const startedAt = new Date(startDate);
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+  const startedAt = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(startDate);
 
   if (!startDate || Number.isNaN(startedAt.getTime())) {
     return "Not started";
   }
+  if (dateOnlyMatch && (
+    startedAt.getFullYear() !== Number(dateOnlyMatch[1])
+    || startedAt.getMonth() !== Number(dateOnlyMatch[2]) - 1
+    || startedAt.getDate() !== Number(dateOnlyMatch[3])
+  )) return "Not started";
 
-  let years = referenceDate.getFullYear() - startedAt.getFullYear();
-  let months = referenceDate.getMonth() - startedAt.getMonth();
+  const referenceDay = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  if (startedAt > referenceDay) return "Not started";
 
-  if (referenceDate.getDate() < startedAt.getDate()) {
+  let years = referenceDay.getFullYear() - startedAt.getFullYear();
+  let months = referenceDay.getMonth() - startedAt.getMonth();
+
+  if (referenceDay.getDate() < startedAt.getDate()) {
     months -= 1;
   }
 

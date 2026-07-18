@@ -36,6 +36,11 @@ export type LedgerSummary = {
   net: number;
 };
 
+export type EconomicTransactionDelta = {
+  expenseDelta: number;
+  incomeDelta: number;
+};
+
 export type FinancialPositionSummary = {
   cardCredit: number;
   cardLiability: number;
@@ -98,7 +103,9 @@ export function numericValue(value: unknown, fallback = 0) {
 }
 
 export function roundCurrencyValue(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(value) || value === 0) return 0;
+  const roundedMagnitude = Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
+  return value < 0 ? -roundedMagnitude : roundedMagnitude;
 }
 
 /**
@@ -173,11 +180,85 @@ export function isCreditCardPayment(metadata: Record<string, unknown>) {
   return metadata.credit_card_payment === true || metadata.financial_event === "credit_card_payment";
 }
 
+export function reversedTransactionType(transaction: Pick<LedgerTransactionInput, "metadata" | "type">) {
+  const metadata = metadataRecord(transaction.metadata);
+  if (typeof metadata.reversed_transaction_id !== "string" || !metadata.reversed_transaction_id) return "";
+
+  const explicitType = typeof metadata.reversed_transaction_type === "string"
+    ? metadata.reversed_transaction_type.trim().toLowerCase()
+    : "";
+  if (explicitType === "income" || explicitType === "expense" || explicitType === "transfer") return explicitType;
+
+  // Older reversals did not persist the source type. The reversal action uses
+  // the opposite income/expense type, so this inference preserves their
+  // economic meaning without rewriting historical rows.
+  const transactionType = String(transaction.type ?? "").trim().toLowerCase();
+  if (transactionType === "income") return "expense";
+  if (transactionType === "expense") return "income";
+  if (transactionType === "transfer") return "transfer";
+  return "";
+}
+
+/**
+ * Returns signed economic income and expense deltas for reports, categories,
+ * budgets, and forecasts. Reversal rows reduce the original economic bucket;
+ * credit-card settlements are liability movements and therefore contribute to
+ * neither income nor spending.
+ */
+export function economicTransactionDelta(transaction: LedgerTransactionInput): EconomicTransactionDelta {
+  const empty = { expenseDelta: 0, incomeDelta: 0 };
+  if (!transactionStatusAffectsBalance(transaction.status)) return empty;
+
+  const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
+  if (amount <= 0) return empty;
+
+  const metadata = metadataRecord(transaction.metadata);
+  const reversalType = reversedTransactionType(transaction);
+  if (isCreditCardPayment(metadata) || (reversalType && metadata.reversed_credit_card_payment === true)) return empty;
+
+  if (reversalType === "expense") return { expenseDelta: -amount, incomeDelta: 0 };
+  if (reversalType === "income") return { expenseDelta: 0, incomeDelta: -amount };
+  if (reversalType) return empty;
+
+  const transactionType = String(transaction.type ?? "").trim().toLowerCase();
+  if (transactionType === "expense") return { expenseDelta: amount, incomeDelta: 0 };
+  if (transactionType === "income") return { expenseDelta: 0, incomeDelta: amount };
+  return empty;
+}
+
+/**
+ * Linked savings goals and asset purchases treat a posted Expense (or the
+ * debit half of a Transfer) as one contribution. A posted reversal subtracts
+ * it. Arbitrary Income and the credit half of paired transfers are ignored.
+ */
+export function linkedExpenseContributionDelta(transaction: LedgerTransactionInput) {
+  if (!transactionStatusAffectsBalance(transaction.status)) return 0;
+  const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
+  if (amount <= 0) return 0;
+
+  const metadata = metadataRecord(transaction.metadata);
+  const reversalType = reversedTransactionType(transaction);
+  const transactionType = String(transaction.type ?? "").trim().toLowerCase();
+
+  if (transactionType === "transfer") {
+    const direction = transferDirection(metadata);
+    if (direction === "credit") return 0;
+    return reversalType === "transfer" ? -amount : reversalType ? 0 : amount;
+  }
+
+  if (reversalType === "expense" && transactionType === "income") return -amount;
+  if (reversalType) return 0;
+  return transactionType === "expense" ? amount : 0;
+}
+
 function debtCreditCardAccountId(debt: CreditCardDebtInput, creditCardAccountIds: Set<string>) {
   const metadata = metadataRecord(debt.metadata);
   if (typeof metadata.credit_card_account_id === "string") return metadata.credit_card_account_id;
   if (typeof metadata.auto_credit_card_account_id === "string") return metadata.auto_credit_card_account_id;
-  if (debt.payment_account_id && creditCardAccountIds.has(debt.payment_account_id)) return debt.payment_account_id;
+  const normalizedDebtType = String(debt.type ?? metadata.type ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (normalizedDebtType === "creditcard" && debt.payment_account_id && creditCardAccountIds.has(debt.payment_account_id)) {
+    return debt.payment_account_id;
+  }
   return "";
 }
 
@@ -195,9 +276,11 @@ export function deriveCreditCardDebtMetadata(
   const metadata = metadataRecord(transaction.metadata);
   if (creditCardDebtImpact(metadata) && creditCardAccountId(metadata)) return metadata;
 
-  const debtId = transaction.related_entity_type === "debt" && transaction.related_entity_id
-    ? transaction.related_entity_id
-    : typeof metadata.credit_card_debt_id === "string" ? metadata.credit_card_debt_id : "";
+  const debtId = typeof metadata.credit_card_debt_id === "string" && metadata.credit_card_debt_id
+    ? metadata.credit_card_debt_id
+    : transaction.related_entity_type === "debt" && transaction.related_entity_id
+      ? transaction.related_entity_id
+      : "";
   if (!debtId) return metadata;
 
   const creditCardAccountIds = new Set(accounts.filter((account) => isCreditCardType(account.type)).map((account) => account.id));
@@ -206,13 +289,46 @@ export function deriveCreditCardDebtMetadata(
   const linkedAccountId = debtCreditCardAccountId(debt, creditCardAccountIds);
   if (!linkedAccountId) return metadata;
 
-  const physicallyTouchesCard = transaction.account_id === linkedAccountId || transaction.transfer_account_id === linkedAccountId;
-  if (physicallyTouchesCard) return metadata;
-
   const transactionType = String(transaction.type ?? "").toLowerCase();
   const direction = transferDirection(metadata);
+  const usesCreditCardAccount = transaction.account_id === linkedAccountId;
+  const paysCreditCardAccount = transaction.transfer_account_id === linkedAccountId;
+  const physicallyTouchesCard = usesCreditCardAccount || paysCreditCardAccount;
+  const isReversal = typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id;
+
+  if (physicallyTouchesCard) {
+    let impact: CreditCardDebtImpact = "";
+    if (transactionType === "transfer" && direction) {
+      // The metadata is duplicated across paired rows; the card-primary half
+      // alone represents the liability movement.
+      if (!usesCreditCardAccount) return metadata;
+      impact = direction === "debit" ? "charge" : "repayment";
+    } else if (usesCreditCardAccount && transactionType === "expense") {
+      impact = "charge";
+    } else if (usesCreditCardAccount && transactionType === "income") {
+      impact = "repayment";
+    } else if (transactionType === "transfer" && paysCreditCardAccount) {
+      impact = "repayment";
+    }
+    if (!impact) return metadata;
+
+    const isPayment = impact === "repayment" && transactionType === "income" && !isReversal;
+    const isPaymentReversal = Boolean(isReversal && metadata.reversed_credit_card_payment === true);
+    return {
+      ...metadata,
+      credit_card_account_id: linkedAccountId,
+      credit_card_debt_id: debtId,
+      credit_card_debt_impact: impact,
+      credit_card_payment: isPayment,
+      financial_event: isPaymentReversal
+        ? "credit_card_payment_reversal"
+        : isReversal ? "credit_card_activity_reversal" : impact === "charge" ? "credit_card_charge" : isPayment ? "credit_card_payment" : "credit_card_credit",
+      ...(isPaymentReversal ? { reversed_credit_card_payment: true } : {}),
+    };
+  }
+
   const isRepayment = transactionType === "expense" || (transactionType === "transfer" && direction !== "credit");
-  const isPaymentReversal = transactionType === "income" && typeof metadata.reversed_transaction_id === "string";
+  const isPaymentReversal = transactionType === "income" && Boolean(isReversal);
   if (!isRepayment && !isPaymentReversal) return metadata;
 
   return {
@@ -349,35 +465,10 @@ export function summarizeLedgerTransactions(
   const summary: LedgerSummary = { expenses: 0, income: 0, net: 0 };
 
   for (const transaction of transactions) {
-    if (!transactionStatusAffectsBalance(transaction.status)) continue;
-    const amount = Math.abs(numericValue(transaction.amount));
-    if (amount <= 0) continue;
-
-    const metadata = metadataRecord(transaction.metadata);
-    const transactionType = String(transaction.type ?? "").toLowerCase();
-    const isReversal = typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id !== "";
-    const reversedType = typeof metadata.reversed_transaction_type === "string"
-      ? metadata.reversed_transaction_type.toLowerCase()
-      : "";
-
-    // Paying a credit-card balance settles a liability; it is not a second
-    // expense after the original card purchase. A reversal of that payment is
-    // likewise not income. Card purchases themselves remain normal expenses.
-    if (isCreditCardPayment(metadata) || (isReversal && metadata.reversed_credit_card_payment === true)) continue;
-
-    if (isReversal && (reversedType === "expense" || (!reversedType && transactionType === "income"))) {
-      summary.expenses = roundCurrencyValue(summary.expenses - amount);
-      summary.net = roundCurrencyValue(summary.net + amount);
-    } else if (isReversal && (reversedType === "income" || (!reversedType && transactionType === "expense"))) {
-      summary.income = roundCurrencyValue(summary.income - amount);
-      summary.net = roundCurrencyValue(summary.net - amount);
-    } else if (transactionType === "income") {
-      summary.income = roundCurrencyValue(summary.income + amount);
-      summary.net = roundCurrencyValue(summary.net + amount);
-    } else if (transactionType === "expense") {
-      summary.expenses = roundCurrencyValue(summary.expenses + amount);
-      summary.net = roundCurrencyValue(summary.net - amount);
-    }
+    const delta = economicTransactionDelta(transaction);
+    summary.expenses = roundCurrencyValue(summary.expenses + delta.expenseDelta);
+    summary.income = roundCurrencyValue(summary.income + delta.incomeDelta);
+    summary.net = roundCurrencyValue(summary.income - summary.expenses);
   }
 
   return summary;

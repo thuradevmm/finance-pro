@@ -80,6 +80,7 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
           <div className="min-w-0">
             <h2 className="truncate text-base font-semibold text-[#0b1c30]">{asset.name}</h2>
             <p className="mt-1 text-sm font-medium text-[#45464d]">{asset.category}</p>
+            {asset.serialReference ? <p className="mt-1 truncate text-xs font-semibold text-[#76777d]">Ref: {asset.serialReference}</p> : null}
           </div>
         </div>
         <span className={`rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span>
@@ -169,6 +170,7 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; on
                     <div>
                       <p className="font-semibold text-[#0b1c30]">{asset.name}</p>
                       <p className="mt-1 text-xs font-medium text-[#45464d]">{asset.category}</p>
+                      {asset.serialReference ? <p className="mt-1 text-xs font-medium text-[#76777d]">Ref: {asset.serialReference}</p> : null}
                     </div>
                   </div>
                 </td>
@@ -211,7 +213,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
 
     return assets
       .filter((asset) => {
-        const searchTarget = `${asset.name} ${asset.category} ${asset.note}`.toLowerCase();
+        const searchTarget = `${asset.name} ${asset.category} ${asset.serialReference} ${asset.note}`.toLowerCase();
         const searchMatches = normalizedSearch === "" || searchTarget.includes(normalizedSearch);
         const categoryMatches = category === "All categories" || asset.category === category;
         const yearMatches = year === "All years" || getPurchaseYear(asset) === year;
@@ -312,7 +314,7 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
   const filteredAssets = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleAssets.filter((asset) => {
-      const searchable = `${asset.name} ${asset.category} ${asset.purchaseDate} ${asset.purchaseAmount} ${asset.currentValue} ${asset.condition} ${asset.status} ${asset.note}`.toLowerCase();
+      const searchable = `${asset.name} ${asset.category} ${asset.serialReference} ${asset.purchaseDate} ${asset.purchaseAmount} ${asset.currentValue} ${asset.condition} ${asset.status} ${asset.note}`.toLowerCase();
       return normalizedSearch === "" || searchable.includes(normalizedSearch);
     });
   }, [search, visibleAssets]);

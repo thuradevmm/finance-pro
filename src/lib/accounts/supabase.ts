@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
-import { maskCardNumber } from "@/lib/accounts/card-display";
+import { calculateCreditCardPosition, maskCardNumber } from "@/lib/accounts/card-display";
+import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
+import { creditCardOpeningBalancesByAccount } from "@/lib/debts/transactions";
 import {
   buildAccountLedgerActivities,
   deriveCreditCardDebtMetadata,
@@ -32,6 +34,7 @@ export type AccountRecord = FinancialAccount & {
   creditStatementDay: number | null;
   creditUsed: string;
   creditUsedValue: number;
+  categoryId: string;
   initialBalanceValue: number;
   monthlyBudgetLimit: number | null;
   notes: string;
@@ -48,6 +51,7 @@ export type AccountFormData = {
   phoneNumber: string;
   amountTypes: { type: string }[];
   category: string;
+  categoryId: string;
   currency: string;
   institution: string;
   creditLimit: number | null;
@@ -133,6 +137,8 @@ type AccountDebtRow = {
   id: string;
   metadata: unknown;
   payment_account_id: string | null;
+  repaid_amount: number | string | null;
+  total_amount: number | string | null;
   type: string | null;
 };
 
@@ -261,7 +267,7 @@ function emptyActivity(): LedgerAccountActivity {
   return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
 }
 
-function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActivity()): AccountRecord {
+function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActivity(), categoryNames = new Map<string, string>()): AccountRecord {
   const metadata = metadataRecord(row.metadata);
   const type = typeMap[normalizeTypeKey(row.type)] ?? "Bank Account";
   const isCreditCard = type === "Credit Card";
@@ -282,19 +288,18 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     : displayAmountTypeBreakdowns(amountTypeValues, activity.deltas);
   const storedMonthlyBudgetLimit = optionalNumericValue(metadata.monthly_budget_limit);
   const storedCreditLimit = optionalNumericValue(metadata.credit_limit);
-  const monthlyBudgetLimit = isCreditCard ? (storedCreditLimit ?? storedMonthlyBudgetLimit) : storedMonthlyBudgetLimit;
+  const configuredCreditLimit = storedCreditLimit ?? storedMonthlyBudgetLimit ?? 0;
+  const creditPosition = calculateCreditCardPosition(isCreditCard ? activity.creditUsed : 0, configuredCreditLimit);
+  const monthlyBudgetLimit = isCreditCard ? creditPosition.limit : storedMonthlyBudgetLimit;
   const cashBalanceValue = roundCurrencyValue(Array.from(displayAmountTypes.values()).reduce((total, amount) => total + roundCurrencyValue(amount), 0));
-  const creditLimitValue = isCreditCard ? roundCurrencyValue(monthlyBudgetLimit ?? 0) : 0;
+  const creditLimitValue = isCreditCard ? creditPosition.limit : 0;
   // The configured credit limit is a fixed ceiling. Repayments can reduce
   // utilization to zero, but they must never manufacture additional limit.
-  const signedCreditCardBalance = isCreditCard ? roundCurrencyValue(activity.creditUsed) : 0;
-  const creditUsedValue = isCreditCard ? roundCurrencyValue(Math.max(signedCreditCardBalance, 0)) : 0;
+  const creditUsedValue = isCreditCard ? creditPosition.outstanding : 0;
   // Payments beyond the amount owed are an asset (the card issuer owes the
   // user), even though available credit remains capped at the fixed limit.
-  const creditBalanceValue = isCreditCard ? roundCurrencyValue(Math.max(-signedCreditCardBalance, 0)) : 0;
-  const creditAvailableValue = isCreditCard
-    ? roundCurrencyValue(Math.min(Math.max(creditLimitValue - creditUsedValue, 0), creditLimitValue))
-    : 0;
+  const creditBalanceValue = isCreditCard ? creditPosition.cardCredit : 0;
+  const creditAvailableValue = isCreditCard ? creditPosition.available : 0;
   const creditMinimumPaymentValue = isCreditCard ? roundCurrencyValue(Math.max(numericValue(metadata.credit_minimum_payment), 0)) : 0;
   const creditStatementDay = isCreditCard ? dayOfMonthValue(metadata.credit_statement_day) : null;
   const creditPaymentDueDay = isCreditCard ? dayOfMonthValue(metadata.credit_payment_due_day) : null;
@@ -332,7 +337,9 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     cardSecurityCode,
     cardExpiryCode,
     cardType,
-    category: typeof metadata.category === "string" ? metadata.category : "",
+    category: categoryNames.get(typeof metadata.category_id === "string" ? metadata.category_id : "")
+      ?? (typeof metadata.category === "string" ? metadata.category : ""),
+    categoryId: typeof metadata.category_id === "string" ? metadata.category_id : "",
     creditAvailable: formatMmk(creditAvailableValue),
     creditAvailableValue,
     creditBalance: formatMmk(creditBalanceValue),
@@ -376,7 +383,7 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
 
   if (options.limit) accountsQuery = accountsQuery.limit(options.limit);
 
-  const [accountsResult, transactionsResult, debtsResult] = await Promise.all([
+  const [accountsResult, transactionsResult, debtsResult, categoriesResult] = await Promise.all([
     accountsQuery,
     supabase
       .from("transactions")
@@ -385,7 +392,12 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
       .is("deleted_at", null),
     supabase
       .from("debts")
-      .select("id,payment_account_id,type,metadata")
+      .select("id,payment_account_id,total_amount,repaid_amount,type,metadata")
+      .eq("user_id", userId)
+      .is("deleted_at", null),
+    supabase
+      .from("categories")
+      .select("id,name")
       .eq("user_id", userId)
       .is("deleted_at", null),
   ]);
@@ -393,6 +405,7 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
   if (accountsResult.error) throw new Error(accountsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
   if (debtsResult.error) throw new Error(debtsResult.error.message);
+  if (categoriesResult.error) throw new Error(categoriesResult.error.message);
 
   const accountRows = accountsResult.data as AccountRow[];
   const debtRows = debtsResult.data as AccountDebtRow[];
@@ -401,7 +414,16 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
     metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
   }));
   const activities = buildAccountLedgerActivities(transactions, accountRows);
-  return accountRows.map((account) => mapAccount(account, activities.get(account.id)));
+  const accountById = new Map(accountRows.map((account) => [account.id, account]));
+  for (const [accountId, openingBalance] of creditCardOpeningBalancesByAccount(debtRows)) {
+    const account = accountById.get(accountId);
+    if (!account || normalizeTypeKey(account.type) !== "credit_card") continue;
+    const activity = activities.get(accountId) ?? emptyActivity();
+    activity.creditUsed = roundCurrencyValue(activity.creditUsed + openingBalance);
+    activities.set(accountId, activity);
+  }
+  const categoryNames = new Map((categoriesResult.data as Array<{ id: string; name: string }>).map((category) => [category.id, category.name]));
+  return accountRows.map((account) => mapAccount(account, activities.get(account.id), categoryNames));
 }
 
 export async function getAccount(supabase: SupabaseClient, userId: string, accountId: string) {
@@ -410,7 +432,7 @@ export async function getAccount(supabase: SupabaseClient, userId: string, accou
 }
 
 export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] {
-  const activeAccounts = accounts.filter((account) => account.status === "Active");
+  const activeAccounts = accounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
   const activeCashAccounts = activeAccounts.filter((account) => account.type !== "Credit Card");
   const activeCreditCards = activeAccounts.filter((account) => account.type === "Credit Card");
   const amountTypeTotals = new Map<string, number>();

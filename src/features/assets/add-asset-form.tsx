@@ -12,6 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
+import { isValidCalendarDate } from "@/lib/date-validation";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { calculateUsageDuration } from "@/lib/date-duration";
@@ -21,17 +22,24 @@ import type { AssetRecord, AssetStatus } from "@/types/finance";
 const conditions: AssetRecord["condition"][] = ["Excellent", "Good", "Fair", "Needs Repair"];
 const statuses: AssetStatus[] = ["Active", "Sold", "Archived"];
 
+function localToday() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
 export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithValues; categories: CategoryRecord[] }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
+  const defaultDate = localToday();
   const assetCategories = useMemo(() => getCategoriesForScope(categories, "Assets", "Asset"), [categories]);
   const [name, setName] = useState(asset?.name ?? "");
   const [categoryId, setCategoryId] = useState(asset?.categoryId ?? assetCategories[0]?.id ?? "");
-  const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDateValue ?? "2026-06-15");
-  const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDateValue ?? "2026-06-15");
+  const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDateValue ?? defaultDate);
+  const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDateValue ?? defaultDate);
   const [purchaseAmount, setPurchaseAmount] = useState(asset ? String(asset.purchaseAmountValue) : "");
   const [currentValue, setCurrentValue] = useState(asset ? String(asset.currentValueValue) : "");
+  const [serialReference, setSerialReference] = useState(asset?.serialReference ?? "");
   const [condition, setCondition] = useState<AssetRecord["condition"]>(asset?.condition ?? "Good");
   const [status, setStatus] = useState<AssetStatus>(asset?.status ?? "Active");
   const [note, setNote] = useState(asset?.note ?? "");
@@ -40,13 +48,22 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
   const [isSaving, setIsSaving] = useState(false);
   const selectedCategory = assetCategories.find((item) => item.id === categoryId) ?? assetCategories[0];
   const nameHasError = showErrors && name.trim() === "";
-  const amountHasError = showErrors && purchaseAmount.trim() === "";
-  const dateHasError = showErrors && purchaseDate.trim() === "";
-  const startUsingDateHasError = showErrors && startUsingDate.trim() === "";
+  const purchaseAmountIsInvalid = purchaseAmount.trim() === "" || !Number.isFinite(Number(purchaseAmount)) || Number(purchaseAmount) < 0;
+  const currentValueIsInvalid = currentValue.trim() !== "" && (!Number.isFinite(Number(currentValue)) || Number(currentValue) < 0);
+  const usageDateIsInvalid = Boolean(purchaseDate && startUsingDate && startUsingDate < purchaseDate);
+  const amountHasError = showErrors && purchaseAmountIsInvalid;
+  const currentValueHasError = showErrors && currentValueIsInvalid;
+  const dateHasError = showErrors && !isValidCalendarDate(purchaseDate);
+  const startUsingDateHasError = showErrors && (!isValidCalendarDate(startUsingDate) || usageDateIsInvalid);
   const usageDuration = calculateUsageDuration(startUsingDate);
 
   async function handleSaveAsset(addAnother = false) {
-    const hasErrors = name.trim() === "" || purchaseAmount.trim() === "" || purchaseDate.trim() === "" || startUsingDate.trim() === "";
+    const hasErrors = name.trim() === ""
+      || purchaseAmountIsInvalid
+      || currentValueIsInvalid
+      || !isValidCalendarDate(purchaseDate)
+      || !isValidCalendarDate(startUsingDate)
+      || usageDateIsInvalid;
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -58,6 +75,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
       note,
       purchaseAmount: Number(purchaseAmount),
       purchaseDate,
+      serialReference,
       startUsingDate,
       status,
     };
@@ -74,6 +92,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
       setName("");
       setPurchaseAmount("");
       setCurrentValue("");
+      setSerialReference("");
       setNote("");
       showSuccess("Asset saved successfully.");
       return;
@@ -98,7 +117,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={dateHasError} label="Purchase Date" onChange={setPurchaseDate} placeholder="2026-06-15" type="date" value={purchaseDate} />
+              <TextInput error={dateHasError} label="Purchase Date" onChange={setPurchaseDate} placeholder="YYYY-MM-DD" type="date" value={purchaseDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Purchase date is required.</p> : null}
             </div>
             <div>
@@ -115,8 +134,11 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <TextInput label="Current Value" onChange={setCurrentValue} placeholder="1850" type="number" value={currentValue} />
-            <TextInput label="Serial / Reference" placeholder="Optional" />
+            <div>
+              <TextInput error={currentValueHasError} label="Current Value" onChange={setCurrentValue} placeholder="1850" type="number" value={currentValue} />
+              {currentValueHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Current value cannot be negative.</p> : null}
+            </div>
+            <TextInput label="Serial / Reference" onChange={setSerialReference} placeholder="Optional" value={serialReference} />
           </div>
         </FormCard>
 
@@ -127,11 +149,11 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
                 error={startUsingDateHasError}
                 label="Start Using Date"
                 onChange={setStartUsingDate}
-                placeholder="2026-06-15"
+                placeholder="YYYY-MM-DD"
                 type="date"
                 value={startUsingDate}
               />
-              {startUsingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start using date is required.</p> : null}
+              {startUsingDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start using date is required and cannot be before the purchase date.</p> : null}
             </div>
             <div>
               <p className="mb-2 block text-sm font-semibold text-[#0b1c30]">Usage Duration</p>
@@ -203,6 +225,10 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Started</dt>
                 <dd className="text-sm font-semibold text-[#0b1c30]">{startUsingDate || "-"}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Reference</dt>
+                <dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{serialReference || "-"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Used</dt>

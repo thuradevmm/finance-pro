@@ -12,7 +12,7 @@ import { compareSortValues, SortHeader, type SortDirection } from "@/components/
 import { useToast } from "@/components/ui/toast-provider";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
-import type { DebtRecord, DebtStatus, UpcomingDebtPayment } from "@/types/finance";
+import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
 const statusStyles: Record<DebtStatus, string> = {
   Active: "bg-[#d8e2ff] text-[#004395]",
@@ -25,13 +25,13 @@ function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.-]/g, "")) || 0;
 }
 
-function DebtProgress({ debt }: { debt: DebtRecord }) {
+function DebtProgress({ debt }: { debt: DebtRecordWithValues }) {
   const color = debt.status === "Overdue" ? "bg-[#ba1a1a]" : debt.status === "Paid" ? "bg-[#047857]" : "bg-[#0058be]";
 
   return (
     <div className="mt-3">
       <div className="mb-1 flex items-center justify-between text-xs font-semibold text-[#45464d]">
-        <span>Repaid</span>
+        <span>{debt.isCreditCardDebt ? "Applied payment" : "Principal repaid"}</span>
         <span>{debt.progressPercent}%</span>
       </div>
       <ProgressMeter ariaLabel={`${debt.name} repayment progress`} colorClassName={color} percent={debt.progressPercent} />
@@ -94,7 +94,7 @@ function DebtsTable({
   onToggleActiveOnly,
   showActiveOnly,
 }: {
-  debts: DebtRecord[];
+  debts: DebtRecordWithValues[];
   onDelete: (id: string) => void | Promise<void>;
   onToggleActiveOnly: () => void;
   showActiveOnly: boolean;
@@ -102,7 +102,7 @@ function DebtsTable({
   const [sortKey, setSortKey] = useState<DebtSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const sortedDebts = useMemo(() => {
-    function value(debt: DebtRecord) {
+    function value(debt: DebtRecordWithValues) {
       if (sortKey === "name") return `${debt.name} ${debt.lender}`.toLowerCase();
       if (sortKey === "status") return debt.status.toLowerCase();
       return parseCurrency(debt[sortKey]);
@@ -148,9 +148,9 @@ function DebtsTable({
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Debt Name</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("totalAmount")} sortDirection={sortKey === "totalAmount" ? sortDirection : undefined}>Total Amount</SortHeader></th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("repaidAmount")} sortDirection={sortKey === "repaidAmount" ? sortDirection : undefined}>Repaid Amount</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("repaidAmount")} sortDirection={sortKey === "repaidAmount" ? sortDirection : undefined}>Principal / Applied</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("remainingBalance")} sortDirection={sortKey === "remainingBalance" ? sortDirection : undefined}>Remaining Balance</SortHeader></th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Monthly Payment</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Payment Due</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-center"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="w-36 border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Actions</th>
             </tr>
@@ -181,7 +181,11 @@ function DebtsTable({
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
-                    <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                    {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
+                      <span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card debt is managed from Accounts">Managed in Accounts</span>
+                    ) : (
+                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                    )}
                   </div>
                 </td>
               </tr>

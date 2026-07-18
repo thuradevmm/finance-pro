@@ -12,7 +12,9 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressMeter } from "@/components/ui/progress-meter";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
+import { budgetSelectionRange, effectiveBudgetEndDate, inferBudgetEndDate } from "@/lib/budgets/calculations";
 import { formatMmkPreview } from "@/lib/currency";
+import { isValidCalendarDate } from "@/lib/date-validation";
 import type { BudgetFormData, BudgetRecord } from "@/lib/budgets/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -62,12 +64,13 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
+  const defaultBudgetRange = budgetSelectionRange(new Date(), "Monthly");
   const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
   const [selectedCategoryId, setSelectedCategoryId] = useState(budget?.categoryId ?? expenseCategories[0]?.id ?? "");
   const [period, setPeriod] = useState<BudgetPeriod>(budget?.period ?? "Monthly");
   const [budgetAmount, setBudgetAmount] = useState(budget ? String(budget.amountValue) : "");
-  const [startDate, setStartDate] = useState(budget?.startDate ?? "2026-06-01");
-  const [endDate, setEndDate] = useState(budget?.endDate ?? "");
+  const [startDate, setStartDate] = useState(budget?.startDate ?? defaultBudgetRange.startDate);
+  const [endDate, setEndDate] = useState(budget?.endDate ?? defaultBudgetRange.endDate);
   const [alertThreshold, setAlertThreshold] = useState(`${budget?.alertPercentage ?? 80}%`);
   const [status, setStatus] = useState(budget?.planStatus ?? "Active");
   const [description, setDescription] = useState(budget?.description ?? "");
@@ -75,11 +78,41 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedCategory = expenseCategories.find((category) => category.id === selectedCategoryId) ?? expenseCategories[0];
+  const previewBudgetAmount = Number(budgetAmount);
+  const previewMatchesStoredRange = Boolean(budget
+    && selectedCategoryId === budget.categoryId
+    && period === budget.period
+    && startDate === budget.startDate
+    && effectiveBudgetEndDate(startDate, endDate, period) === budget.endDate);
+  const previewActualAmount = previewMatchesStoredRange ? budget?.actualValue ?? 0 : 0;
+  const previewUsagePercent = Number.isFinite(previewBudgetAmount) && previewBudgetAmount > 0
+    ? Math.max(0, Math.round((previewActualAmount / previewBudgetAmount) * 100))
+    : 0;
+  const effectiveEndDate = effectiveBudgetEndDate(startDate, endDate, period);
   const amountHasError = showErrors && budgetAmount.trim() === "";
-  const startDateHasError = showErrors && startDate.trim() === "";
+  const startDateHasError = showErrors && !isValidCalendarDate(startDate);
+  const endDateHasError = showErrors && (!isValidCalendarDate(effectiveEndDate) || Boolean(effectiveEndDate && startDate && effectiveEndDate < startDate));
+
+  function handlePeriodChange(nextPeriod: BudgetPeriod) {
+    const previousInferredEnd = inferBudgetEndDate(startDate, period);
+    setPeriod(nextPeriod);
+    if (!endDate || endDate === previousInferredEnd) setEndDate(inferBudgetEndDate(startDate, nextPeriod));
+  }
+
+  function handleStartDateChange(nextStartDate: string) {
+    const previousInferredEnd = inferBudgetEndDate(startDate, period);
+    setStartDate(nextStartDate);
+    if (!endDate || endDate === previousInferredEnd) setEndDate(inferBudgetEndDate(nextStartDate, period));
+  }
 
   async function handleSaveBudget(addAnother = false) {
-    const hasErrors = !selectedCategory || budgetAmount.trim() === "" || Number(budgetAmount) <= 0 || startDate.trim() === "";
+    const nextEffectiveEndDate = effectiveBudgetEndDate(startDate, endDate, period);
+    const hasErrors = !selectedCategory
+      || budgetAmount.trim() === ""
+      || Number(budgetAmount) <= 0
+      || !isValidCalendarDate(startDate)
+      || !isValidCalendarDate(nextEffectiveEndDate)
+      || Boolean(nextEffectiveEndDate && nextEffectiveEndDate < startDate);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors || !selectedCategory) return;
@@ -150,15 +183,18 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
               />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Budget amount is required.</p> : null}
             </div>
-            <SelectInput label="Budget Period" onChange={(value) => setPeriod(value as BudgetPeriod)} options={periods} value={period} />
+            <SelectInput label="Budget Period" onChange={(value) => handlePeriodChange(value as BudgetPeriod)} options={periods} value={period} />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={startDateHasError} label="Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
+              <TextInput error={startDateHasError} label="Start Date" onChange={handleStartDateChange} placeholder="YYYY-MM-DD" type="date" value={startDate} />
               {startDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Start date is required.</p> : null}
             </div>
-            <TextInput label="End Date" onChange={setEndDate} placeholder={period === "Monthly" ? "2026-06-30" : "2026-12-31"} type="date" value={endDate} />
+            <div>
+              <TextInput error={endDateHasError} label="End Date" onChange={setEndDate} placeholder="YYYY-MM-DD" type="date" value={endDate} />
+              {endDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">End date cannot be before the start date.</p> : null}
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -218,10 +254,10 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
             <div className="rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <p className="text-xs font-bold uppercase text-[#45464d]">{period} Limit</p>
               <ResponsiveAmount className="mt-2 font-bold text-[#0b1c30]" maxSizeRem={2.25}>{budgetAmount.trim() === "" ? formatMmkPreview(0) : formatMmkPreview(budgetAmount)}</ResponsiveAmount>
-              <ProgressMeter ariaLabel={`${selectedCategory.name} budget preview usage`} className="mt-5 h-3" percent={0} />
+              <ProgressMeter ariaLabel={`${selectedCategory.name} budget preview usage`} className="mt-5 h-3" percent={previewUsagePercent} />
               <div className="mt-2 flex justify-between text-xs font-semibold text-[#45464d]">
-                <span>MMK 0 spent</span>
-                <span>0%</span>
+                <span>{previewMatchesStoredRange ? `${formatMmkPreview(previewActualAmount)} spent` : "Actual recalculated after save"}</span>
+                <span>{previewMatchesStoredRange ? `${previewUsagePercent}%` : "—"}</span>
               </div>
             </div>
 
@@ -240,7 +276,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">End</dt>
-                <dd className="text-sm font-semibold text-[#0b1c30]">{endDate || "Not set"}</dd>
+                <dd className="text-sm font-semibold text-[#0b1c30]">{effectiveEndDate || "Not set"}</dd>
               </div>
             </dl>
             <p className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-sm font-medium text-[#45464d]">

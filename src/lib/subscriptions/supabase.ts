@@ -4,6 +4,12 @@ import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmk } from "@/lib/currency
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import {
+  annualizedSubscriptionCost,
+  isOngoingSubscriptionStatus,
+  nextSubscriptionBillingDate,
+  subscriptionPaymentIsAfterCutoff,
+} from "@/lib/subscriptions/calculations";
 import type { BillingCycle, SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
 
 export type SubscriptionFormData = {
@@ -72,6 +78,7 @@ type SubscriptionPaymentFallback = {
   billingCurrency: string;
   billingDueDate: string;
   configuredExchangeRate: number;
+  createdAt: string;
   exchangeRate: number;
   id: string;
   paymentDate: string;
@@ -106,11 +113,6 @@ function formatDate(value: string) {
   return formatDisplayDate(value);
 }
 
-function formatDateInput(value: Date) {
-  if (Number.isNaN(value.getTime())) return "";
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
-
 function normalizeCurrency(value: unknown) {
   const currency = typeof value === "string" ? value.trim().toUpperCase() : "";
   return currency || SYSTEM_CURRENCY;
@@ -125,29 +127,6 @@ function dateOnly(value: string) {
 function todayOnly() {
   const today = new Date();
   return new Date(today.getFullYear(), today.getMonth(), today.getDate());
-}
-
-function addMonths(date: Date, monthCount: number) {
-  const next = new Date(date);
-  const day = next.getDate();
-  next.setMonth(next.getMonth() + monthCount);
-  if (next.getDate() !== day) next.setDate(0);
-  return next;
-}
-
-function addBillingCycle(date: Date, cycle: BillingCycle) {
-  const next = new Date(date);
-  if (cycle === "Weekly") {
-    next.setDate(next.getDate() + 7);
-    return next;
-  }
-  if (cycle === "Yearly") {
-    const month = next.getMonth();
-    next.setFullYear(next.getFullYear() + 1);
-    if (next.getMonth() !== month) next.setDate(0);
-    return next;
-  }
-  return addMonths(next, 1);
 }
 
 function daysUntil(value: string) {
@@ -203,12 +182,14 @@ function paymentStatusDetail(status: SubscriptionPaymentStatus, days: number | n
 }
 
 function paymentStatus({
+  billingAnchorDate,
   billingCycle,
   lastPaidBillingDate,
   lastPaidDate,
   nextBillingDate,
   status,
 }: {
+  billingAnchorDate: string;
   billingCycle: BillingCycle;
   lastPaidBillingDate: string;
   lastPaidDate: string;
@@ -216,11 +197,18 @@ function paymentStatus({
   status: SubscriptionStatus;
 }) {
   const nextDate = dateOnly(nextBillingDate);
-  const paidBillingDate = dateOnly(lastPaidBillingDate);
   const days = daysUntil(nextBillingDate);
   const nextBillingDisplay = nextBillingDate ? formatDate(nextBillingDate) : "-";
   const lastPaidDisplay = lastPaidDate ? formatDate(lastPaidDate) : "";
-  const isPaidForCurrentPeriod = Boolean(paidBillingDate && nextDate && paidBillingDate < nextDate && nextDate > todayOnly());
+  const expectedNextBillingDate = lastPaidBillingDate
+    ? nextSubscriptionBillingDate(billingAnchorDate || lastPaidBillingDate, lastPaidBillingDate, billingCycle)
+    : "";
+  const isPaidForCurrentPeriod = Boolean(
+    expectedNextBillingDate
+    && nextDate
+    && expectedNextBillingDate === nextBillingDate
+    && nextDate > todayOnly(),
+  );
 
   let value: SubscriptionPaymentStatus = "Upcoming";
   if (status === "Paused") value = "Paused";
@@ -258,6 +246,7 @@ function paymentFallbackFromPaymentRow(payment: SubscriptionPaymentRow): Subscri
     billingCurrency: metadataString(metadata, "billing_currency"),
     billingDueDate: metadataString(metadata, "billing_due_date"),
     configuredExchangeRate: numericValue(metadata.configured_exchange_rate),
+    createdAt: payment.created_at ?? "",
     exchangeRate: exchangeRate || (billedAmount > 0 ? amount / billedAmount : 0),
     id: payment.id,
     paymentDate,
@@ -278,6 +267,7 @@ function paymentFallbackFromTransaction(transaction: SubscriptionTransactionPaym
     billingCurrency: metadataString(metadata, "subscription_billing_currency"),
     billingDueDate: metadataString(metadata, "subscription_billing_due_date"),
     configuredExchangeRate: numericValue(metadata.subscription_configured_exchange_rate),
+    createdAt: transaction.created_at ?? "",
     exchangeRate: exchangeRate || (billedAmount > 0 ? amount / billedAmount : 0),
     id: transaction.id,
     paymentDate,
@@ -290,10 +280,9 @@ function latestPaymentFallback(payments: SubscriptionPaymentFallback[]) {
   return [...payments].sort((first, second) => second.sortValue.localeCompare(first.sortValue))[0];
 }
 
-function effectiveNextBillingDate(nextBillingDate: string, cycle: BillingCycle, fallbackBillingDueDate: string, hasMetadataPayment: boolean) {
+function effectiveNextBillingDate(nextBillingDate: string, cycle: BillingCycle, billingAnchorDate: string, fallbackBillingDueDate: string, hasMetadataPayment: boolean) {
   if (hasMetadataPayment || !nextBillingDate || !fallbackBillingDueDate || fallbackBillingDueDate < nextBillingDate) return nextBillingDate;
-  const billingDueDate = dateOnly(fallbackBillingDueDate);
-  return billingDueDate ? formatDateInput(addBillingCycle(billingDueDate, cycle)) : nextBillingDate;
+  return nextSubscriptionBillingDate(billingAnchorDate || nextBillingDate, fallbackBillingDueDate, cycle) || nextBillingDate;
 }
 
 function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>, payments: SubscriptionPaymentFallback[] = []): SubscriptionRecordWithValues {
@@ -309,13 +298,20 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
   const reminderDaysBefore = normalizeReminderDays(row.reminder_days_before ?? metadata.reminder_days_before);
   const billingCycle = normalizeCycle(row.billing_cycle ?? metadata.billing_cycle);
   const status = normalizeStatus(row.status ?? metadata.status);
-  const fallbackPayment = latestPaymentFallback(payments);
+  const paymentCutoff = metadataString(metadata, "subscription_payment_cutoff_date");
+  const fallbackPayment = latestPaymentFallback(
+    payments.filter((payment) => subscriptionPaymentIsAfterCutoff(payment, paymentCutoff)),
+  );
+  const billingAnchorDateValue = metadataString(metadata, "billing_anchor_date")
+    || row.next_billing_date
+    || metadataString(metadata, "next_billing_date");
   const metadataLastPaymentDate = metadataString(metadata, "last_payment_date");
   const lastPaidDateValue = metadataLastPaymentDate || fallbackPayment?.paymentDate || "";
   const lastPaidBillingDateValue = metadataString(metadata, "last_paid_billing_date") || fallbackPayment?.billingDueDate || "";
   const nextBillingDateValue = effectiveNextBillingDate(
     row.next_billing_date ?? (typeof metadata.next_billing_date === "string" ? metadata.next_billing_date : ""),
     billingCycle,
+    billingAnchorDateValue,
     fallbackPayment?.billingDueDate ?? "",
     Boolean(metadataLastPaymentDate),
   );
@@ -328,6 +324,7 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     ? numericValue(metadata.last_payment_exchange_rate, fallbackPayment?.exchangeRate || exchangeRate)
     : 0;
   const payment = paymentStatus({
+    billingAnchorDate: billingAnchorDateValue,
     billingCycle,
     lastPaidBillingDate: lastPaidBillingDateValue,
     lastPaidDate: lastPaidDateValue,
@@ -406,14 +403,8 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
     if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
     const paymentRows = paymentsResult.data as SubscriptionPaymentRow[];
-    const paymentTransactionIds = new Set(paymentRows.map((payment) => payment.transaction_id).filter((id): id is string => Boolean(id)));
-    for (const payment of paymentRows) {
-      const items = paymentsBySubscription.get(payment.subscription_id) ?? [];
-      items.push(paymentFallbackFromPaymentRow(payment));
-      paymentsBySubscription.set(payment.subscription_id, items);
-    }
-
     const transactionRows = transactionsResult.data as SubscriptionTransactionPaymentRow[];
+    const transactionsById = new Map(transactionRows.map((transaction) => [transaction.id, transaction]));
     const reversedTransactionIds = new Set(
       transactionRows
         .map((transaction) => {
@@ -423,6 +414,18 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
         })
         .filter(Boolean),
     );
+    const paymentTransactionIds = new Set<string>();
+    for (const payment of paymentRows) {
+      if (payment.transaction_id) {
+        const transaction = transactionsById.get(payment.transaction_id);
+        if (!transaction || !isPostedExpensePayment(transaction, reversedTransactionIds)) continue;
+        paymentTransactionIds.add(payment.transaction_id);
+      }
+      const items = paymentsBySubscription.get(payment.subscription_id) ?? [];
+      items.push(paymentFallbackFromPaymentRow(payment));
+      paymentsBySubscription.set(payment.subscription_id, items);
+    }
+
     for (const transaction of transactionRows.filter((item) => isPostedExpensePayment(item, reversedTransactionIds) && !paymentTransactionIds.has(item.id))) {
       if (!transaction.related_entity_id) continue;
       const items = paymentsBySubscription.get(transaction.related_entity_id) ?? [];
@@ -442,18 +445,20 @@ export async function getSubscription(supabase: SupabaseClient, userId: string, 
 }
 
 export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithValues[]): SummaryMetric[] {
-  const monthly = subscriptions.reduce((sum, subscription) => sum + (subscription.billingCycle === "Yearly" ? subscription.amountValue / 12 : subscription.billingCycle === "Weekly" ? subscription.amountValue * 4 : subscription.amountValue), 0);
+  const ongoing = subscriptions.filter((subscription) => isOngoingSubscriptionStatus(subscription.status));
+  const yearly = ongoing.reduce((sum, subscription) => sum + annualizedSubscriptionCost(subscription.amountValue, subscription.billingCycle), 0);
+  const monthly = yearly / 12;
   return [
     { label: "Monthly Cost", value: formatMmk(monthly), icon: "subscriptions", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
-    { label: "Yearly Estimate", value: formatMmk(monthly * 12), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
-    { label: "Active Subscriptions", value: String(subscriptions.filter((s) => s.status === "Active").length), icon: "subscriptions", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Paid Current Cycle", value: String(subscriptions.filter((s) => s.isPaidForCurrentPeriod).length), icon: "check", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Yearly Estimate", value: formatMmk(yearly), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Ongoing Subscriptions", value: String(ongoing.length), icon: "subscriptions", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Paid Current Cycle", value: String(ongoing.filter((s) => s.isPaidForCurrentPeriod).length), icon: "check", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
   ];
 }
 
 export function getUpcomingSubscriptionBillings(subscriptions: SubscriptionRecordWithValues[]): UpcomingSubscriptionBilling[] {
   return subscriptions
-    .filter((s) => s.nextBillingDateValue)
+    .filter((s) => isOngoingSubscriptionStatus(s.status) && s.nextBillingDateValue)
     .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""))
     .slice(0, 8)
     .map((subscription, index) => {

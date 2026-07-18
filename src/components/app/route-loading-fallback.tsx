@@ -9,11 +9,11 @@ import { FinancialPageSkeleton, type FinancialSkeletonRouteKind } from "@/compon
 function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
   if (pathname === "/dashboard" || pathname === "/") return "dashboard";
   if (pathname === "/subscriptions") return "subscriptions";
-  if (pathname === "/reports") return "report";
+  if (pathname === "/reports" || pathname === "/future-planning") return "report";
   if (pathname === "/settings" || pathname === "/profile") return "settings";
   if (pathname.includes("/add") || pathname.includes("/edit")) return "form";
   if (pathname === "/forgot-password" || pathname === "/login" || pathname === "/register" || pathname === "/update-password") return "detail";
-  if (pathname === "/future-planning" || pathname === "/scenario-budgeting" || pathname === "/documents" || pathname === "/people-payments" || pathname === "/unavailable") return "detail";
+  if (pathname === "/scenario-budgeting" || pathname === "/documents" || pathname === "/people-payments" || pathname === "/unavailable") return "detail";
   return "table";
 }
 

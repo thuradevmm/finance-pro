@@ -66,13 +66,14 @@ function FormCard({ children, title }: { children: ReactNode; title: string }) {
   );
 }
 
-function SelectInput({ label, onChange, options, value }: { label: string; onChange: (value: string) => void; options: string[]; value: string }) {
+function SelectInput({ disabled = false, label, onChange, options, value }: { disabled?: boolean; label: string; onChange: (value: string) => void; options: string[]; value: string }) {
   return (
     <div>
       <FieldLabel>{label}</FieldLabel>
       <div className="relative">
         <select
           className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           value={value}
         >
@@ -204,7 +205,6 @@ export function AddTransactionForm({
   const effectiveTransferAccountAmountType = transferAccountAmountTypeOptions.includes(transferAccountAmountType)
     ? transferAccountAmountType
     : transferAccountAmountTypeOptions[0] ?? "General";
-  const selectedCategory = transactionCategories.find((category) => category.id === categoryId);
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
   const isCreditCardCharge = isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
@@ -218,6 +218,10 @@ export function AddTransactionForm({
   const effectiveRelatedOption = autoLinksCreditCardDebt && !usesExplicitPageLink && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
     ? impactOptions[0] ?? selectedRelatedOption
     : selectedRelatedOption;
+  const linkedBudgetCategoryId = effectiveRelatedOption?.type === "budget" ? effectiveRelatedOption.categoryId ?? "" : "";
+  const effectiveCategoryId = linkedBudgetCategoryId || categoryId;
+  const selectedCategory = transactionCategories.find((category) => category.id === effectiveCategoryId)
+    ?? categories.find((category) => category.id === effectiveCategoryId);
   const debtPayoffSummary = useMemo(() => {
     const payoff = effectiveRelatedOption?.debtPayoff;
     if (!payoff) return null;
@@ -264,21 +268,28 @@ export function AddTransactionForm({
   const dateHasError = showErrors && !transactionDate;
   const accountHasError = showErrors && !accountId;
   const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-  const categoryHasError = showErrors && !isTransfer && !categoryId;
+  const categoryHasError = showErrors && !isTransfer && !effectiveCategoryId;
   const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
   const availableAmountValue = (selectedAvailableBreakdown?.amountValue ?? 0) + editedTransactionBalanceAdjustment(transaction, accountId, effectiveAccountAmountType);
-  const shouldValidateAvailableAmount = !isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
+  const shouldValidateAvailableAmount = postedStatusAffectsBalance(status)
+    && !isCreditCardAccount(selectedAccount)
+    && (selectedType === "Expense" || selectedType === "Transfer");
   const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
 
   function handleTypeChange(type: TransactionType) {
     setSelectedType(type);
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
+    if (type !== "Expense" && selectedRelatedOption?.type === "budget") setRelatedOptionValue("none:");
   }
 
   function handleRelatedOptionChange(label: string) {
     const nextOption = impactOptions.find((option) => option.label === label) ?? impactOptions[0] ?? relatedOptions[0];
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
+    if (nextOption.type === "budget") {
+      setSelectedType("Expense");
+      setCategoryId(nextOption.categoryId ?? "");
+    }
   }
 
   function handleAccountChange(name: string) {
@@ -326,7 +337,7 @@ export function AddTransactionForm({
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !categoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -335,7 +346,7 @@ export function AddTransactionForm({
       accountId,
       accountAmountType: effectiveAccountAmountType,
       amount: amountNumber,
-      categoryId,
+      categoryId: effectiveCategoryId,
       date: transactionDate,
       note,
       relatedEntityId: effectiveRelatedOption?.value ?? "",
@@ -373,7 +384,8 @@ export function AddTransactionForm({
       return;
     }
 
-    showSuccess(transaction ? "Transaction updated successfully." : "Transaction saved successfully.");
+    if (result.warning) showError(result.warning);
+    else showSuccess(transaction ? "Transaction updated successfully." : "Transaction saved successfully.");
     beginLoading();
     router.push("/transactions");
     router.refresh();
@@ -438,7 +450,10 @@ export function AddTransactionForm({
                   value={selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : ""}
                 />
               ) : (
-                <SelectInput label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
+                <div>
+                  <SelectInput disabled={Boolean(linkedBudgetCategoryId)} label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
+                  {linkedBudgetCategoryId ? <p className="mt-1 text-xs font-medium text-[#45464d]">The linked budget sets this category.</p> : null}
+                </div>
               )}
             </div>
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">

@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import type { AccountFormData } from "@/lib/accounts/supabase";
+import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
+import { accountArchivalIntegrityError } from "@/lib/accounts/archive-integrity";
+import { categoryRowSupports } from "@/lib/categories/category-scopes";
+import { getAccounts, type AccountFormData } from "@/lib/accounts/supabase";
+import { accountTypeChangesLedgerMeaning } from "@/lib/accounts/type-integrity";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 
@@ -46,6 +50,125 @@ async function authenticatedClient() {
   return { supabase, user };
 }
 
+function revalidateAccountPaths(extraPaths: string[] = []) {
+  for (const path of [
+    "/accounts",
+    "/assets",
+    "/categories",
+    "/dashboard",
+    "/debts",
+    "/future-planning",
+    "/people-payments",
+    "/reports",
+    "/savings-goals",
+    "/scenario-budgeting",
+    "/subscriptions",
+    "/transactions",
+    ...extraPaths,
+  ]) revalidatePath(path);
+}
+
+async function getAccountUsage(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  accountId: string,
+) {
+  const results = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id")
+      .eq("user_id", userId)
+      .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`)
+      .limit(1),
+    supabase.from("assets").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
+    supabase
+      .from("debts")
+      .select("id")
+      .eq("user_id", userId)
+      .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`)
+      .limit(1),
+    supabase.from("savings_goals").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
+    supabase.from("subscriptions").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
+    supabase.from("scenario_items").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
+    supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
+  ]);
+  const usageError = results.find((result) => result.error)?.error;
+
+  return {
+    error: usageError?.message,
+    isUsed: results.some((result) => (result.data?.length ?? 0) > 0),
+  };
+}
+
+function normalizedStatus(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+async function activeAccountDependents(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  accountId: string,
+) {
+  const [transactionsResult, assetsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id,status,metadata")
+      .eq("user_id", userId)
+      .ilike("status", "scheduled")
+      .is("deleted_at", null)
+      .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`),
+    supabase.from("assets").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
+    supabase
+      .from("debts")
+      .select("id,status,metadata")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`),
+    supabase.from("savings_goals").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
+    supabase.from("subscriptions").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
+    supabase.from("scenario_items").select("id,scenario_id").eq("user_id", userId).eq("account_id", accountId),
+    supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
+  ]);
+  const firstError = [transactionsResult, assetsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult]
+    .find((result) => result.error)?.error;
+  if (firstError) return { dependencies: [] as string[], error: firstError.message };
+
+  const dependencies: string[] = [];
+  const hasScheduledTransaction = (transactionsResult.data ?? []).some((transaction) => {
+    if (normalizedStatus(transaction.status) !== "scheduled") return false;
+    return normalizedStatus(metadataRecord(transaction.metadata).future_status || "active") !== "paused";
+  });
+  if (hasScheduledTransaction) dependencies.push("scheduled transactions");
+  if ((assetsResult.data ?? []).some((asset) => normalizedStatus(asset.status || metadataRecord(asset.metadata).status) === "active")) {
+    dependencies.push("active assets");
+  }
+  if ((debtsResult.data ?? []).some((debt) => !["archived", "cancelled", "canceled", "completed", "paid"].includes(normalizedStatus(debt.status || metadataRecord(debt.metadata).status)))) {
+    dependencies.push("active debts");
+  }
+  if ((goalsResult.data ?? []).some((goal) => !["archived", "completed"].includes(normalizedStatus(goal.status || metadataRecord(goal.metadata).status)))) {
+    dependencies.push("active savings goals");
+  }
+  if ((subscriptionsResult.data ?? []).some((subscription) => ["active", "expiring"].includes(normalizedStatus(subscription.status || metadataRecord(subscription.metadata).status)))) {
+    dependencies.push("active subscriptions");
+  }
+
+  const scenarioIds = Array.from(new Set((scenarioItemsResult.data ?? []).map((item) => item.scenario_id).filter(Boolean)));
+  if (scenarioIds.length > 0) {
+    const { data: scenarios, error: scenariosError } = await supabase
+      .from("financial_scenarios")
+      .select("id,status")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .in("id", scenarioIds);
+    if (scenariosError) return { dependencies: [], error: scenariosError.message };
+    if ((scenarios ?? []).some((scenario) => ["active", "running", "scheduled"].includes(normalizedStatus(scenario.status)))) {
+      dependencies.push("active scenarios");
+    }
+  }
+  if ((settingsResult.data?.length ?? 0) > 0) dependencies.push("the default account setting");
+  return { dependencies, error: "" };
+}
+
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
@@ -58,26 +181,6 @@ function metadataArray(value: unknown) {
 
 function hasManualCreditCardTerms(metadata: Record<string, unknown>) {
   return metadata.manual_credit_card_terms === true || metadata.auto_credit_card_terms === false;
-}
-
-function formatDateInput(value: Date) {
-  if (Number.isNaN(value.getTime())) return "";
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
-}
-
-function daysInMonth(year: number, monthIndex: number) {
-  return new Date(year, monthIndex + 1, 0).getDate();
-}
-
-function dateForDay(year: number, monthIndex: number, day: number) {
-  return new Date(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex)));
-}
-
-function nextMonthlyDateForDay(day: number) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const candidate = dateForDay(today.getFullYear(), today.getMonth(), day);
-  return candidate < today ? dateForDay(today.getFullYear(), today.getMonth() + 1, day) : candidate;
 }
 
 function creditLimitValue(input: AccountFormData) {
@@ -177,6 +280,7 @@ function accountPayload(input: AccountFormData, options: { existingMetadata?: Re
       card_security_code: input.cardSecurityCode.trim(),
       card_type: input.cardType,
       category: input.category,
+      category_id: input.categoryId,
       credit_limit: creditLimit,
       credit_minimum_payment: input.type === "Credit Card" ? input.creditMinimumPayment : null,
       credit_payment_due_day: input.type === "Credit Card" ? input.creditPaymentDueDay : null,
@@ -196,6 +300,7 @@ function accountPayload(input: AccountFormData, options: { existingMetadata?: Re
 }
 
 function validateAccountInput(input: AccountFormData) {
+  if (!input.categoryId) return "Select an account category.";
   if (input.type !== "Credit Card") {
     const amountTypes = activeAmountTypeEntries(input.amountTypes);
     if (amountTypes.length === 0 || amountTypes.length !== input.amountTypes.length) {
@@ -228,6 +333,26 @@ function validateAccountInput(input: AccountFormData) {
   }
 
   return null;
+}
+
+async function validateAccountCategory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  categoryId: string,
+  allowInactive = false,
+) {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,name,is_active,type,metadata")
+    .eq("id", categoryId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return { error: error.message, name: "" };
+  if (!data || (!allowInactive && data.is_active === false) || !categoryRowSupports(data, "Accounts", "Account")) {
+    return { error: "Select an active account category.", name: "" };
+  }
+  return { error: "", name: data.name };
 }
 
 function migratedAmountType(value: unknown, migrations: AmountTypeMigration[]) {
@@ -322,6 +447,7 @@ async function syncCreditCardDebtTerms(
   userId: string,
   accountId: string,
   input: AccountFormData,
+  previousAccountMetadata: Record<string, unknown>,
 ) {
   if (input.type !== "Credit Card") return null;
 
@@ -335,13 +461,20 @@ async function syncCreditCardDebtTerms(
   if (error) return error.message;
   const creditLimit = creditLimitValue(input);
   const minimumPayment = input.creditMinimumPayment ?? 0;
-  const nextPaymentDate = input.creditPaymentDueDay ? formatDateInput(nextMonthlyDateForDay(input.creditPaymentDueDay)) : null;
+  const nextPaymentDate = nextCreditCardPaymentDate({
+    paymentDueDay: input.creditPaymentDueDay,
+    referenceDate: new Date(),
+    statementDay: input.creditStatementDay,
+  }) || null;
+  const billingTermsChanged = Number(previousAccountMetadata.credit_payment_due_day ?? 0) !== Number(input.creditPaymentDueDay ?? 0)
+    || Number(previousAccountMetadata.credit_statement_day ?? 0) !== Number(input.creditStatementDay ?? 0);
 
   for (const debt of data as DebtTermRow[]) {
     const metadata = metadataRecord(debt.metadata);
     const status = String(debt.status ?? metadata.status ?? "").toLowerCase();
-    if (status === "paid" || status === "archived") continue;
+    if (status === "archived") continue;
     const isManualTerms = hasManualCreditCardTerms(metadata);
+    const shouldWriteDueDate = status !== "paid" && billingTermsChanged;
 
     const payload = {
       metadata: {
@@ -355,9 +488,9 @@ async function syncCreditCardDebtTerms(
         lender: input.name.trim() || metadata.lender,
         payment_account_id: accountId,
         ...(isManualTerms ? {} : { duration_months: 1, requires_full_payment: true }),
-        ...(nextPaymentDate ? { next_payment_date: nextPaymentDate } : {}),
+        ...(shouldWriteDueDate && (!isManualTerms || nextPaymentDate) ? { next_payment_date: nextPaymentDate } : {}),
       },
-      ...(nextPaymentDate ? { next_payment_date: nextPaymentDate } : {}),
+      ...(shouldWriteDueDate && (!isManualTerms || nextPaymentDate) ? { next_payment_date: nextPaymentDate } : {}),
       payment_account_id: accountId,
     };
     const updateResult = await supabase.from("debts").update(payload).eq("id", debt.id).eq("user_id", userId);
@@ -372,14 +505,13 @@ export async function createAccount(input: AccountFormData): Promise<ActionResul
   if (!user) return { error: "You must be signed in." };
   const validationError = validateAccountInput(input);
   if (validationError) return { error: validationError };
+  const category = await validateAccountCategory(supabase, user.id, input.categoryId);
+  if (category.error) return { error: category.error };
 
-  const { error } = await supabase.from("accounts").insert({ ...accountPayload(input), user_id: user.id });
+  const { error } = await supabase.from("accounts").insert({ ...accountPayload({ ...input, category: category.name }), user_id: user.id });
   if (error) return { error: error.message };
 
-  revalidatePath("/accounts");
-  revalidatePath("/debts");
-  revalidatePath("/dashboard");
-  revalidatePath("/reports");
+  revalidateAccountPaths();
   return {};
 }
 
@@ -388,10 +520,13 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   if (!user) return { error: "You must be signed in." };
   const validationError = validateAccountInput(input);
   if (validationError) return { error: validationError };
+  const category = await validateAccountCategory(supabase, user.id, input.categoryId, input.status === "Archived");
+  if (category.error) return { error: category.error };
+  const validatedInput = { ...input, category: category.name };
 
   const { data: existingAccount, error: existingError } = await supabase
     .from("accounts")
-    .select("id,metadata")
+    .select("id,is_active,metadata,type")
     .eq("id", accountId)
     .eq("user_id", user.id)
     .is("deleted_at", null)
@@ -399,11 +534,35 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   if (existingError) return { error: existingError.message };
   if (!existingAccount) return { error: "Account not found." };
 
+  if (validatedInput.status === "Archived" && existingAccount.is_active !== false) {
+    let account;
+    try {
+      account = (await getAccounts(supabase, user.id)).find((item) => item.id === accountId);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "Unable to reconcile the account before archiving it." };
+    }
+    if (!account) return { error: "Account not found." };
+    const dependents = await activeAccountDependents(supabase, user.id, accountId);
+    if (dependents.error) return { error: dependents.error };
+    const archiveError = accountArchivalIntegrityError(account, dependents.dependencies);
+    if (archiveError) return { error: archiveError };
+  }
+
+  if (accountTypeChangesLedgerMeaning(existingAccount.type, databaseTypes[validatedInput.type])) {
+    const usage = await getAccountUsage(supabase, user.id, accountId);
+    if (usage.error) return { error: usage.error };
+    if (usage.isUsed) {
+      return {
+        error: "This account has financial history or linked records, so it cannot change between a credit card and a cash account. Create a new account with the correct type and archive this one instead.",
+      };
+    }
+  }
+
   const existingMetadata = metadataRecord(existingAccount.metadata);
-  const amountTypeMigrations = amountTypeMigrationTargets(existingMetadata, input.amountTypes);
+  const amountTypeMigrations = amountTypeMigrationTargets(existingMetadata, validatedInput.amountTypes);
   const { data, error } = await supabase
     .from("accounts")
-    .update(accountPayload(input, { existingMetadata, includeInitialBalance: false }))
+    .update(accountPayload(validatedInput, { existingMetadata, includeInitialBalance: false }))
     .eq("id", accountId)
     .eq("user_id", user.id)
     .select("id")
@@ -412,15 +571,10 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   if (!data) return { error: "Account not found." };
   const migrationError = await migrateRemovedAmountTypeTransactions(supabase, user.id, accountId, amountTypeMigrations);
   if (migrationError) return { error: migrationError };
-  const syncError = await syncCreditCardDebtTerms(supabase, user.id, accountId, input);
+  const syncError = await syncCreditCardDebtTerms(supabase, user.id, accountId, validatedInput, existingMetadata);
   if (syncError) return { error: syncError };
 
-  revalidatePath("/accounts");
-  revalidatePath("/debts");
-  revalidatePath("/dashboard");
-  revalidatePath("/reports");
-  revalidatePath("/transactions");
-  revalidatePath(`/accounts/${accountId}/edit`);
+  revalidateAccountPaths([`/accounts/${accountId}/edit`]);
   return {};
 }
 
@@ -428,28 +582,9 @@ export async function deleteAccount(accountId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
 
-  const usageResults = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("id")
-      .eq("user_id", user.id)
-      .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`)
-      .limit(1),
-    supabase.from("assets").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
-    supabase
-      .from("debts")
-      .select("id")
-      .eq("user_id", user.id)
-      .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`)
-      .limit(1),
-    supabase.from("savings_goals").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
-    supabase.from("subscriptions").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
-    supabase.from("scenario_items").select("id").eq("user_id", user.id).eq("account_id", accountId).limit(1),
-    supabase.from("user_settings").select("user_id").eq("user_id", user.id).eq("default_account_id", accountId).limit(1),
-  ]);
-  const usageError = usageResults.find((result) => result.error)?.error;
-  if (usageError) return { error: usageError.message };
-  if (usageResults.some((result) => (result.data?.length ?? 0) > 0)) {
+  const usage = await getAccountUsage(supabase, user.id, accountId);
+  if (usage.error) return { error: usage.error };
+  if (usage.isUsed) {
     return { error: "This account has financial history or linked records and cannot be deleted. Change its status to Archived instead." };
   }
 
@@ -469,9 +604,6 @@ export async function deleteAccount(accountId: string): Promise<ActionResult> {
   }
   if (!data) return { error: "Account not found." };
 
-  revalidatePath("/accounts");
-  revalidatePath("/transactions");
-  revalidatePath("/dashboard");
-  revalidatePath("/reports");
+  revalidateAccountPaths();
   return {};
 }

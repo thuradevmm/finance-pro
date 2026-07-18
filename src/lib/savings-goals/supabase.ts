@@ -5,15 +5,24 @@ import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { roundCurrencyValue } from "@/lib/ledger";
+import {
+  calculateLinkedSavingsAmounts,
+  resolveStoredSavingsAmount,
+  type SavingsGoalEntryInput,
+} from "@/lib/savings-goals/calculations";
 import type { SavingsGoal, SavingsGoalStatus, SummaryMetric } from "@/types/finance";
 
 export type SavingsGoalRecord = SavingsGoal & {
   accountId: string;
+  cashReserveAmountValue: number;
   categoryId: string;
   createdAtValue: string;
   description: string;
+  linkedSavedAmountValue: number;
   monthlyContributionValue: number;
   savedAmountValue: number;
+  storedSavedAmountValue: number;
   targetAmountValue: number;
   targetDateValue: string;
 };
@@ -36,6 +45,7 @@ type SavingsGoalRow = {
   current_amount?: number | string | null;
   description?: string | null;
   id: string;
+  initial_saved_amount?: number | string | null;
   metadata?: unknown;
   monthly_contribution?: number | string | null;
   name: string;
@@ -46,9 +56,14 @@ type SavingsGoalRow = {
 };
 
 type LinkedTransactionRow = {
+  account_id: string | null;
   amount: number | string | null;
+  id: string;
+  metadata: unknown;
   related_entity_id: string | null;
   status: string | null;
+  transfer_account_id: string | null;
+  type: string | null;
 };
 
 const fallbackAppearance: Pick<SavingsGoal, "bg" | "icon" | "tone"> = {
@@ -79,7 +94,9 @@ function formatDate(value: string) {
 
 function deriveStatus(rowStatus: string | null | undefined, progressPercent: number, targetDate: string): SavingsGoalStatus {
   const normalizedStatus = rowStatus?.toLowerCase();
-  if (normalizedStatus === "completed" || progressPercent >= 100) return "Completed";
+  // Progress is authoritative. A linked contribution can complete a goal and
+  // a later reversal can reopen it even when the stored status is stale.
+  if (progressPercent >= 100) return "Completed";
   if (normalizedStatus === "behind") return "Behind";
   if (targetDate) {
     const targetTime = new Date(`${targetDate}T23:59:59`).getTime();
@@ -93,6 +110,7 @@ function mapGoal(
   accountsById: Map<string, AccountRecord>,
   categoriesById: Map<string, CategoryRecord>,
   linkedSavingsByGoalId: Map<string, number>,
+  reserveSavingsByGoalId: Map<string, number>,
 ): SavingsGoalRecord {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
@@ -100,13 +118,24 @@ function mapGoal(
   const account = accountId ? accountsById.get(accountId) : undefined;
   const category = categoryId ? categoriesById.get(categoryId) : undefined;
   const targetAmountValue = numericValue(row.target_amount) || numericValue(metadata.target_amount);
-  const savedAmountValue = (
-    numericValue(row.current_amount)
-    || numericValue(row.saved_amount)
-    || numericValue(metadata.current_amount)
-    || numericValue(metadata.saved_amount)
-  ) + (linkedSavingsByGoalId.get(row.id) ?? 0);
-  const monthlyContributionValue = numericValue(row.monthly_contribution) || numericValue(metadata.monthly_contribution);
+  const storedSavedAmountValue = resolveStoredSavingsAmount({
+    currentAmount: row.current_amount,
+    initialSavedAmount: row.initial_saved_amount,
+    metadataCurrentAmount: metadata.current_amount,
+    metadataSavedAmount: metadata.saved_amount,
+    savedAmount: row.saved_amount,
+  });
+  const linkedSavedAmountValue = linkedSavingsByGoalId.get(row.id) ?? 0;
+  const savedAmountValue = Math.max(0, roundCurrencyValue(storedSavedAmountValue + linkedSavedAmountValue));
+  const cashReserveAmountValue = Math.min(
+    savedAmountValue,
+    Math.max(0, roundCurrencyValue(storedSavedAmountValue + (reserveSavingsByGoalId.get(row.id) ?? 0))),
+  );
+  const monthlyContributionValue = row.monthly_contribution !== null
+    && row.monthly_contribution !== undefined
+    && Number.isFinite(Number(row.monthly_contribution))
+    ? numericValue(row.monthly_contribution)
+    : numericValue(metadata.monthly_contribution);
   const remainingAmountValue = Math.max(targetAmountValue - savedAmountValue, 0);
   const progressPercent = targetAmountValue > 0 ? Math.min(Math.round((savedAmountValue / targetAmountValue) * 100), 100) : 0;
   const targetDateValue = row.target_date ?? (typeof metadata.target_date === "string" ? metadata.target_date : "");
@@ -121,10 +150,12 @@ function mapGoal(
     ...appearance,
     account: account?.name ?? (typeof metadata.account_name === "string" ? metadata.account_name : "No account selected"),
     accountId,
+    cashReserveAmountValue,
     categoryId,
     createdAtValue: row.created_at ?? "",
     description: row.description ?? (typeof metadata.description === "string" ? metadata.description : ""),
     id: row.id,
+    linkedSavedAmountValue,
     monthlyContribution: formatMmk(monthlyContributionValue),
     monthlyContributionValue,
     name: row.name,
@@ -132,6 +163,7 @@ function mapGoal(
     remainingAmount: formatMmk(remainingAmountValue),
     savedAmount: formatMmk(savedAmountValue),
     savedAmountValue,
+    storedSavedAmountValue,
     status: deriveStatus(row.status, progressPercent, targetDateValue),
     targetAmount: formatMmk(targetAmountValue),
     targetAmountValue,
@@ -157,33 +189,44 @@ export async function getSavingsGoals(
 
   if (options.limit) goalsQuery = goalsQuery.limit(options.limit);
 
-  const [goalsResult, transactionsResult] = await Promise.all([
+  const [goalsResult, entriesResult, transactionsResult] = await Promise.all([
     goalsQuery,
     supabase
+      .from("savings_goal_entries")
+      .select("savings_goal_id,transaction_id,amount,type")
+      .eq("user_id", userId),
+    supabase
       .from("transactions")
-      .select("related_entity_id,amount,status")
+      .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,metadata")
       .eq("user_id", userId)
       .eq("related_entity_type", "savings_goal")
       .is("deleted_at", null),
   ]);
 
   if (goalsResult.error) throw new Error(goalsResult.error.message);
+  if (entriesResult.error) throw new Error(entriesResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
-  const linkedSavingsByGoalId = new Map<string, number>();
-  for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
-    if (!transaction.related_entity_id) continue;
-    if (String(transaction.status ?? "cleared").toLowerCase() === "scheduled") continue;
-    linkedSavingsByGoalId.set(
-      transaction.related_entity_id,
-      (linkedSavingsByGoalId.get(transaction.related_entity_id) ?? 0) + Math.abs(numericValue(transaction.amount)),
-    );
-  }
+  const goalAccountIdByGoalId = new Map((goalsResult.data as SavingsGoalRow[]).map((goal) => {
+    const metadata = metadataRecord(goal.metadata);
+    return [goal.id, goal.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "")];
+  }));
+  const linkedAmounts = calculateLinkedSavingsAmounts(
+    entriesResult.data as SavingsGoalEntryInput[],
+    transactionsResult.data as LinkedTransactionRow[],
+    goalAccountIdByGoalId,
+  );
 
   return (goalsResult.data as SavingsGoalRow[])
-    .map((goal) => mapGoal(goal, accountsById, categoriesById, linkedSavingsByGoalId))
+    .map((goal) => mapGoal(
+      goal,
+      accountsById,
+      categoriesById,
+      linkedAmounts.progressByGoalId,
+      linkedAmounts.reserveByGoalId,
+    ))
     .sort((first, second) => dateTimeSortValue(first.targetDateTimeValue ?? "") - dateTimeSortValue(second.targetDateTimeValue ?? ""));
 }
 
@@ -201,7 +244,7 @@ export async function getSavingsGoal(
 export function getSavingsGoalSummaries(goals: SavingsGoalRecord[]): SummaryMetric[] {
   const totalTarget = goals.reduce((total, goal) => total + goal.targetAmountValue, 0);
   const totalSaved = goals.reduce((total, goal) => total + goal.savedAmountValue, 0);
-  const remaining = Math.max(totalTarget - totalSaved, 0);
+  const remaining = goals.reduce((total, goal) => total + Math.max(goal.targetAmountValue - goal.savedAmountValue, 0), 0);
 
   return [
     { label: "Total Target", value: formatMmk(totalTarget), icon: "target", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },

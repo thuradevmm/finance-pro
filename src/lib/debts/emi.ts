@@ -1,4 +1,6 @@
-import { roundCurrencyValue } from "@/lib/ledger";
+function roundCurrencyValue(value: number) {
+  return Math.round((value + Math.sign(value) * Number.EPSILON) * 100) / 100;
+}
 
 export type DebtInterestRatePeriod = "Monthly" | "Yearly";
 
@@ -203,10 +205,7 @@ export function calculateEmiPayment(
 }
 
 function dueDateForMonth(startDate: string, month: number) {
-  const dueDate = addMonthsPreservingDay(startDate, month);
-  if (!dueDate) return null;
-  dueDate.setDate(dueDate.getDate() - 1);
-  return dueDate;
+  return addMonthsPreservingDay(startDate, month);
 }
 
 function paymentInterestAmount(

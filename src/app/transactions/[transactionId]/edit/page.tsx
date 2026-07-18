@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddTransactionForm } from "@/features/transactions/add-transaction-form";
 import { getAccounts } from "@/lib/accounts/supabase";
+import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { getAssets } from "@/lib/assets/supabase";
 import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
@@ -23,11 +24,12 @@ function relatedOptions(
   assets: Awaited<ReturnType<typeof getAssets>>,
   transaction?: TransactionRecord,
 ): TransactionRelatedOption[] {
+  const preserves = (type: TransactionRelatedOption["type"], id: string) => transaction?.relatedEntityType === type && transaction.relatedEntityId === id;
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...budgets.map((budget) => ({ label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
-    ...savingsGoals.map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
-    ...debts.map((debt) => ({
+    ...budgets.filter((budget) => budget.planStatus === "Active" || preserves("budget", budget.id)).map((budget) => ({ categoryId: budget.categoryId, label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed" || preserves("savings_goal", goal.id)).map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...debts.filter((debt) => debt.status !== "Paid" || preserves("debt", debt.id)).map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
         accountName: accounts.find((account) => account.id === debt.creditCardAccountId)?.name ?? debt.lender,
@@ -47,7 +49,7 @@ function relatedOptions(
       type: "debt" as const,
       value: debt.id,
     })),
-    ...subscriptions.map((subscription) => ({
+    ...subscriptions.filter((subscription) => subscription.status !== "Paused" || preserves("subscription", subscription.id)).map((subscription) => ({
       label: `Subscription: ${subscription.name}`,
       subscriptionPayment: {
         amount: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id
@@ -70,7 +72,7 @@ function relatedOptions(
       type: "subscription" as const,
       value: subscription.id,
     })),
-    ...assets.map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
+    ...assets.filter((asset) => asset.status === "Active" || preserves("asset", asset.id)).map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
   ];
 }
 
@@ -79,17 +81,24 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   if (!user) notFound();
-  const accounts = await getAccounts(supabase, user.id);
+  const allAccounts = await getAccounts(supabase, user.id);
   const categories = await getCategories();
   const [budgets, savingsGoals, debts, subscriptions, assets] = await Promise.all([
     getBudgets(supabase, user.id),
-    getSavingsGoals(supabase, user.id, accounts, categories),
+      getSavingsGoals(supabase, user.id, allAccounts, categories),
     getDebts(supabase, user.id, categories),
-    getSubscriptions(supabase, user.id, accounts, categories),
+      getSubscriptions(supabase, user.id, allAccounts, categories),
     getAssets(supabase, user.id, categories),
   ]);
-  const transaction = await getTransaction(supabase, user.id, transactionId, accounts, categories);
+  const transaction = await getTransaction(supabase, user.id, transactionId, allAccounts, categories);
   if (!transaction) notFound();
+  const preservedAccountIds = new Set([
+    transaction.accountId,
+    transaction.transferAccountId,
+    transaction.transferFromAccountId,
+    transaction.transferToAccountId,
+  ].filter(Boolean));
+  const accounts = allAccounts.filter((account) => accountStatusContributesToCurrentTotals(account.status) || preservedAccountIds.has(account.id));
 
   return (
     <AppShell

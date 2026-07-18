@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { currentBudgetRecords, effectiveBudgetEndDate } from "@/lib/budgets/calculations";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
-import { deriveCreditCardDebtMetadata, isCreditCardPayment } from "@/lib/ledger";
+import { deriveCreditCardDebtMetadata, economicTransactionDelta, roundCurrencyValue } from "@/lib/ledger";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus, CategoryScope, CategoryType, SummaryMetric } from "@/types/finance";
 
 export type BudgetRecord = BudgetCategory & {
+  actualValue: number;
   alertPercentage: number;
   amountValue: number;
   categoryId: string;
@@ -80,6 +82,12 @@ function numericValue(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function numericValueOrNull(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
@@ -107,10 +115,6 @@ function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStat
   if (usagePercent > 100) return "Over Budget";
   if (usagePercent >= alertPercentage) return "Near Limit";
   return "Under Budget";
-}
-
-function postedStatusAffectsBudget(value: unknown) {
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(String(value ?? "cleared").toLowerCase());
 }
 
 export async function getBudgets(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}): Promise<BudgetRecord[]> {
@@ -146,24 +150,25 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
     const itemMetadata = metadataRecord(item.metadata);
     const planMetadata = metadataRecord(plan.metadata);
     const amountValue = numericValue(item.planned_amount) || numericValue(itemMetadata.planned_amount);
-    const actualValue = transactions
+    const period: BudgetPeriod = plan.period_type.toLowerCase() === "yearly" ? "Yearly" : "Monthly";
+    const endDate = effectiveBudgetEndDate(plan.start_date, plan.end_date, period);
+    const actualValue = Math.max(0, roundCurrencyValue(transactions
       .filter((transaction) => transaction.category_id === item.category_id
-        && transaction.type.toLowerCase() === "expense"
-        && !isCreditCardPayment(metadataRecord(transaction.metadata))
-        && postedStatusAffectsBudget(transaction.status)
         && transaction.transaction_date >= plan.start_date
-        && (!plan.end_date || transaction.transaction_date <= plan.end_date))
-      .reduce((total, transaction) => total + Math.abs(numericValue(transaction.amount)), 0);
+        && transaction.transaction_date <= endDate)
+      .reduce((total, transaction) => total + economicTransactionDelta(transaction).expenseDelta, 0)));
     const remainingValue = amountValue - actualValue;
     const usagePercent = amountValue > 0 ? Math.round((actualValue / amountValue) * 100) : 0;
-    const alertPercentage = numericValue(item.alert_percentage) || numericValue(itemMetadata.alert_percentage) || 80;
+    const alertPercentage = numericValueOrNull(item.alert_percentage)
+      ?? numericValueOrNull(itemMetadata.alert_percentage)
+      ?? 80;
     const appearance = getCategoryTypeStyle(categoryTypeForBudget(category));
-    const period: BudgetPeriod = plan.period_type.toLowerCase() === "yearly" ? "Yearly" : "Monthly";
     const planStatus: BudgetRecord["planStatus"] = plan.status.toLowerCase() === "paused" ? "Paused" : "Active";
 
     return [{
       ...appearance,
       actual: formatMmk(actualValue),
+      actualValue,
       alertPercentage,
       amountValue,
       bg: appearance.bg,
@@ -171,7 +176,7 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
       category: category.name,
       categoryId: category.id,
       description: plan.description ?? item.note ?? (typeof planMetadata.description === "string" ? planMetadata.description : ""),
-      endDate: plan.end_date ?? "",
+      endDate,
       icon: appearance.icon,
       id: item.id,
       itemId: item.id,
@@ -193,10 +198,10 @@ export async function getBudget(supabase: SupabaseClient, userId: string, budget
   return budgets.find((budget) => budget.id === budgetItemId) ?? null;
 }
 
-export function getBudgetSummaries(budgets: BudgetRecord[]): SummaryMetric[] {
-  const active = budgets.filter((budget) => budget.planStatus === "Active");
+export function getBudgetSummaries(budgets: BudgetRecord[], referenceDate = new Date()): SummaryMetric[] {
+  const active = currentBudgetRecords(budgets, referenceDate);
   const totalBudget = active.reduce((total, budget) => total + budget.amountValue, 0);
-  const totalActual = active.reduce((total, budget) => total + numericValue(budget.actual.replace(/[^0-9.-]/g, "")), 0);
+  const totalActual = active.reduce((total, budget) => total + budget.actualValue, 0);
   return [
     { label: "Total Budget", value: formatMmk(totalBudget), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
     { label: "Actual Spending", value: formatMmk(totalActual), icon: "receipt", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },

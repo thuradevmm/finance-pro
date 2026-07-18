@@ -30,6 +30,26 @@ export function formatBillingDay(day: number | null) {
   return day == null ? "Not set" : `Day ${day}`;
 }
 
+function roundCardValue(value: number) {
+  const sign = Math.sign(value);
+  return sign * Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Converts the signed card ledger (charges minus credits/payments) into the
+ * four values shown throughout the Accounts UI. Keeping this derivation pure
+ * and shared prevents form previews from disagreeing with saved card details.
+ */
+export function calculateCreditCardPosition(signedLedgerBalance: number, configuredLimit: number) {
+  const limit = roundCardValue(Math.max(Number.isFinite(configuredLimit) ? configuredLimit : 0, 0));
+  const signedBalance = roundCardValue(Number.isFinite(signedLedgerBalance) ? signedLedgerBalance : 0);
+  const outstanding = roundCardValue(Math.max(signedBalance, 0));
+  const cardCredit = roundCardValue(Math.max(-signedBalance, 0));
+  const available = roundCardValue(Math.min(Math.max(limit - outstanding, 0), limit));
+
+  return { available, cardCredit, limit, outstanding };
+}
+
 type CreditCardLookupValue = {
   available: number;
   cardCredit: number;
@@ -40,10 +60,6 @@ type CreditCardLookupValue = {
   payments: number;
   transactions: number;
 };
-
-function roundLookupValue(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
-}
 
 export function summarizeCreditCardLookup(cards: CreditCardLookupValue[]) {
   const totals = cards.reduce((summary, card) => ({
@@ -67,14 +83,14 @@ export function summarizeCreditCardLookup(cards: CreditCardLookupValue[]) {
   });
 
   return {
-    available: roundLookupValue(totals.available),
-    cardCredit: roundLookupValue(totals.cardCredit),
-    charges: roundLookupValue(totals.charges),
-    limit: roundLookupValue(totals.limit),
-    minimumPayment: roundLookupValue(totals.minimumPayment),
-    netPosition: roundLookupValue(totals.cardCredit - totals.outstanding),
-    outstanding: roundLookupValue(totals.outstanding),
-    payments: roundLookupValue(totals.payments),
+    available: roundCardValue(totals.available),
+    cardCredit: roundCardValue(totals.cardCredit),
+    charges: roundCardValue(totals.charges),
+    limit: roundCardValue(totals.limit),
+    minimumPayment: roundCardValue(totals.minimumPayment),
+    netPosition: roundCardValue(totals.cardCredit - totals.outstanding),
+    outstanding: roundCardValue(totals.outstanding),
+    payments: roundCardValue(totals.payments),
     transactions: totals.transactions,
   };
 }

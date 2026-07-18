@@ -14,11 +14,14 @@ import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
+import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
+import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { buildEmiSchedule } from "@/lib/debts/emi";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
+import { isCreditCardDebtType } from "@/lib/debts/validation";
 import type { DebtStatus } from "@/types/finance";
 
 function parseAmount(value: string) {
@@ -32,19 +35,28 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const [name, setName] = useState(debt?.name ?? "");
   const [lender, setLender] = useState(debt?.lender ?? "");
   const [totalAmount, setTotalAmount] = useState(debt ? String(debt.totalAmountValue) : "");
-  const [repaidAmount, setRepaidAmount] = useState(debt ? String(debt.repaidAmountValue) : "");
+  const [repaidAmount, setRepaidAmount] = useState(debt ? String(debt.grossRepaidAmountValue) : "");
   const [interestRate, setInterestRate] = useState(debt ? String(debt.interestRateValue) : "");
   const [interestRatePeriod, setInterestRatePeriod] = useState<DebtInterestRatePeriod>(debt?.interestRatePeriod ?? "Yearly");
   const [startDate, setStartDate] = useState(debt?.startDate ?? "2026-06-01");
   const [durationMonths, setDurationMonths] = useState(debt?.durationMonths ? String(debt.durationMonths) : "12");
   const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts", "Debt"), [categories]);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? debtCategories[0]?.id ?? "");
-  const selectedCategory = debtCategories.find((category) => category.id === selectedCategoryId) ?? debtCategories[0];
-  const debtCategoryOptions = debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Debt"];
+  const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? (!debt ? debtCategories[0]?.id ?? "" : ""));
+  const selectedCategory = debtCategories.find((category) => category.id === selectedCategoryId)
+    ?? (!debt ? debtCategories[0] : undefined);
+  const debtCategoryOptions = debt && !selectedCategory
+    ? ["Uncategorized Debt", ...debtCategories.map((category) => category.name)]
+    : debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Debt"];
   const [status, setStatus] = useState<DebtStatus>(debt?.status ?? "Active");
-  const activeAccounts = useMemo(() => accounts.filter((account) => account.status === "Active"), [accounts]);
-  const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? activeAccounts[0]?.id ?? "");
-  const selectedPaymentAccount = activeAccounts.find((account) => account.id === paymentAccountId);
+  const availableAccounts = useMemo(() => accounts.filter((account) => (
+    accountStatusContributesToCurrentTotals(account.status) || account.id === debt?.paymentAccountId
+  )), [accounts, debt?.paymentAccountId]);
+  const semanticIsCreditCard = debt?.isCreditCardDebt ?? isCreditCardDebtType(selectedCategory?.name);
+  const paymentAccounts = semanticIsCreditCard
+    ? availableAccounts.filter((account) => account.type === "Credit Card")
+    : availableAccounts;
+  const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? paymentAccounts[0]?.id ?? "");
+  const selectedPaymentAccount = paymentAccounts.find((account) => account.id === paymentAccountId);
   const [notes, setNotes] = useState(debt?.notes ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
@@ -55,9 +67,10 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const durationValue = Number(durationMonths);
   const normalizedDurationMonths = Number.isFinite(durationValue) ? Math.trunc(durationValue) : 0;
   const durationHasError = showErrors && (durationMonths.trim() === "" || normalizedDurationMonths <= 0);
-  const categoryHasError = showErrors && debtCategories.length > 0 && !selectedCategory;
+  const categoryHasError = showErrors && !debt && !selectedCategory;
   const total = parseAmount(totalAmount);
   const repaid = parseAmount(repaidAmount);
+  const paymentAccountHasError = showErrors && semanticIsCreditCard && !selectedPaymentAccount;
   const parsedInterestRateValue = interestRate.trim() ? Number(interestRate) : 0;
   const parsedInterestRate = Number.isFinite(parsedInterestRateValue) ? parsedInterestRateValue : 0;
   const repaymentSchedule = buildEmiSchedule({
@@ -68,16 +81,29 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
     repaidAmount: repaid,
     startDate,
   });
-  const progressPercent = total > 0 ? Math.min(Math.round((repaymentSchedule.principalPaid / total) * 100), 100) : 0;
-  const remaining = repaymentSchedule.remainingPrincipal;
-  const nextPaymentDate = repaymentSchedule.nextPaymentDate;
-  const payoffDate = repaymentSchedule.payoffDate;
-  const monthlyPaymentValue = repaymentSchedule.monthlyPayment;
-  const totalRepaymentValue = repaymentSchedule.totalRepayment;
-  const totalInterestValue = repaymentSchedule.totalInterest;
+  const creditCardRemaining = Math.max(total - repaid, 0);
+  const creditCardAppliedRepayment = Math.min(Math.max(repaid, 0), Math.max(total, 0));
+  const creditCardDueDate = creditCardRemaining > 0 && selectedPaymentAccount
+    ? nextCreditCardPaymentDate({
+      paymentDueDay: selectedPaymentAccount.creditPaymentDueDay,
+      referenceDate: startDate,
+      statementDay: selectedPaymentAccount.creditStatementDay,
+    })
+    : "";
+  const creditCardMinimumPayment = creditCardRemaining > 0
+    ? Math.min(selectedPaymentAccount?.creditMinimumPaymentValue || creditCardRemaining, creditCardRemaining)
+    : 0;
+  const progressBasis = semanticIsCreditCard ? creditCardAppliedRepayment : repaymentSchedule.principalPaid;
+  const progressPercent = total > 0 ? Math.min(Math.round((progressBasis / total) * 100), 100) : 0;
+  const remaining = semanticIsCreditCard ? creditCardRemaining : repaymentSchedule.remainingPrincipal;
+  const nextPaymentDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.nextPaymentDate;
+  const payoffDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.payoffDate;
+  const monthlyPaymentValue = semanticIsCreditCard ? creditCardMinimumPayment : repaymentSchedule.monthlyPayment;
+  const totalRepaymentValue = semanticIsCreditCard ? total : repaymentSchedule.totalRepayment;
+  const totalInterestValue = semanticIsCreditCard ? 0 : repaymentSchedule.totalInterest;
 
   async function handleSaveDebt(addAnother = false) {
-    const hasErrors = name.trim() === "" || lender.trim() === "" || totalAmount.trim() === "" || durationMonths.trim() === "" || normalizedDurationMonths <= 0 || (debtCategories.length > 0 && !selectedCategory);
+    const hasErrors = name.trim() === "" || lender.trim() === "" || !Number.isFinite(total) || total <= 0 || !Number.isFinite(repaid) || repaid < 0 || parsedInterestRate < 0 || durationMonths.trim() === "" || normalizedDurationMonths <= 0 || (!debt && !selectedCategory) || (semanticIsCreditCard && !selectedPaymentAccount);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -86,6 +112,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       durationMonths: normalizedDurationMonths,
       interestRate: parsedInterestRate,
       interestRatePeriod,
+      isCreditCardDebt: semanticIsCreditCard,
       lender,
       monthlyPayment: monthlyPaymentValue,
       name,
@@ -97,7 +124,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       startDate,
       status,
       totalAmount: Number(totalAmount),
-      type: selectedCategory?.name ?? debt?.type ?? "Debt",
+      type: semanticIsCreditCard ? "Credit Card" : debt?.type ?? selectedCategory?.name ?? "Debt",
     };
     setIsSaving(true);
     const result = debt ? await updateDebt(debt.id, input) : await createDebt(input);
@@ -144,27 +171,27 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               <TextInput error={totalHasError} label="Total Amount" onChange={setTotalAmount} placeholder="350000" type="number" value={totalAmount} />
               {totalHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Total amount is required.</p> : null}
             </div>
-            <TextInput label="Repaid Amount" onChange={setRepaidAmount} placeholder="0" type="number" value={repaidAmount} />
+            <TextInput label={semanticIsCreditCard ? "Payments / Credits" : "Payments Made (Including Interest)"} onChange={setRepaidAmount} placeholder="0" type="number" value={repaidAmount} />
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
-              <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated Monthly Payment</span>
+              <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Configured Minimum Payment" : "Calculated Monthly Payment"}</span>
               <ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(monthlyPaymentValue)}</ResponsiveAmount>
-              <span className="mt-1 block text-xs font-semibold text-[#45464d]">{normalizedDurationMonths > 0 ? `${normalizedDurationMonths} months` : "Set a valid duration"}</span>
+              <span className="mt-1 block text-xs font-semibold text-[#45464d]">{semanticIsCreditCard ? "From the linked card account" : normalizedDurationMonths > 0 ? `${normalizedDurationMonths} months` : "Set a valid duration"}</span>
             </div>
-            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+            {!semanticIsCreditCard ? <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <TextInput label="Interest Rate" onChange={setInterestRate} placeholder="5.85" type="number" value={interestRate} />
               <SelectInput label="Rate Type" onChange={(value) => setInterestRatePeriod(value as DebtInterestRatePeriod)} options={["Yearly", "Monthly"]} value={interestRatePeriod} />
-            </div>
+            </div> : null}
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>
             <TextInput label="Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
-            <div>
+            {!semanticIsCreditCard ? <div>
               <TextInput error={durationHasError} label="Duration (Months)" onChange={setDurationMonths} placeholder="24" type="number" value={durationMonths} />
               {durationHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Duration must be greater than 0 months.</p> : null}
-            </div>
+            </div> : null}
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -173,8 +200,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               <DateInput label="Next Payment Date" readOnly showIcon={false} tone="muted" value={nextPaymentDate} />
             </div>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
-              <span className="block text-xs font-bold uppercase text-[#45464d]">Payoff Date</span>
-              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{payoffDate || "Set start date and duration"}</span>
+              <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Payment Due Date" : "Payoff Date"}</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{payoffDate || (semanticIsCreditCard ? "Configure statement and due days on the card account" : "Set start date and duration")}</span>
             </div>
           </div>
         </FormCard>
@@ -183,12 +210,21 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <SelectInput label="Status" onChange={(value) => setStatus(value as DebtStatus)} options={["Active", "Overdue", "Paid"]} value={status} />
             <div>
-              <SelectInput label="Debt Category" onChange={(name) => setSelectedCategoryId(debtCategories.find((category) => category.name === name)?.id ?? "")} options={debtCategoryOptions} value={selectedCategory?.name ?? "Uncategorized Debt"} />
+              <SelectInput label="Debt Category" onChange={(name) => {
+                const nextCategory = debtCategories.find((category) => category.name === name);
+                setSelectedCategoryId(nextCategory?.id ?? "");
+                if (isCreditCardDebtType(nextCategory?.name) && accounts.find((account) => account.id === paymentAccountId)?.type !== "Credit Card") {
+                  setPaymentAccountId(availableAccounts.find((account) => account.type === "Credit Card")?.id ?? "");
+                }
+              }} options={debtCategoryOptions} value={selectedCategory?.name ?? "Uncategorized Debt"} />
               {categoryHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Debt category is required.</p> : null}
             </div>
           </div>
           <div className="mt-5">
-            <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(activeAccounts, name)?.id ?? "")} options={activeAccounts.length > 0 ? getAccountOptionLabels(activeAccounts) : ["No accounts"]} value={selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, activeAccounts) : "No accounts"} />
+            <div>
+              <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, paymentAccounts) : "No accounts"} />
+              {paymentAccountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Select a credit card account for this credit card debt.</p> : null}
+            </div>
             {selectedPaymentAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedPaymentAccount)}</p> : null}
           </div>
           <div className="mt-5">
@@ -243,8 +279,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
 
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
-                <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Repaid</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#047857]" maxSizeRem={1.125}>{repaidAmount ? formatMmkPreview(repaidAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
+                <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Applied Payment" : "Principal Repaid"}</dt>
+                <dd><ResponsiveAmount className="font-semibold text-[#047857]" maxSizeRem={1.125}>{formatMmkPreview(progressBasis)}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Remaining</dt>
@@ -254,35 +290,35 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
 
             <div className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
               <div className="flex items-center justify-between gap-4">
-                <span className="text-xs font-bold uppercase text-[#45464d]">Monthly Payment</span>
+                <span className="text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Minimum Payment" : "Monthly Payment"}</span>
                 <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(monthlyPaymentValue)}</ResponsiveAmount>
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Start</span>
                 <span className="text-sm font-semibold text-[#0b1c30]">{startDate || "Not set"}</span>
               </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
+              {!semanticIsCreditCard ? <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Interest</span>
                 <span className="text-sm font-semibold text-[#0b1c30]">{interestRate || "0"}% {interestRatePeriod.toLowerCase()}</span>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
+              </div> : null}
+              {!semanticIsCreditCard ? <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">First Principal</span>
                 <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(repaymentSchedule.firstPrincipalAmount)}</ResponsiveAmount>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
+              </div> : null}
+              {!semanticIsCreditCard ? <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">First Interest</span>
                 <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(repaymentSchedule.firstInterestAmount)}</ResponsiveAmount>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
+              </div> : null}
+              {!semanticIsCreditCard ? <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Total Interest</span>
                 <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(totalInterestValue)}</ResponsiveAmount>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
+              </div> : null}
+              {!semanticIsCreditCard ? <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Total Repayment</span>
                 <ResponsiveAmount className="text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(totalRepaymentValue)}</ResponsiveAmount>
-              </div>
+              </div> : null}
               <div className="mt-4 flex items-center justify-between gap-4">
-                <span className="text-xs font-bold uppercase text-[#45464d]">Payoff</span>
+                <span className="text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Payment Due" : "Payoff"}</span>
                 <span className="text-sm font-semibold text-[#0b1c30]">{payoffDate || "Not set"}</span>
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
@@ -295,7 +331,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               </div>
               <div className="mt-4 flex items-center justify-between gap-4">
                 <span className="text-xs font-bold uppercase text-[#45464d]">Account</span>
-                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, activeAccounts) : "No account"}</span>
+                <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{selectedPaymentAccount ? getAccountOptionLabel(selectedPaymentAccount, paymentAccounts) : "No account"}</span>
               </div>
             </div>
             <p className="mt-5 rounded-lg border border-[#c6c6cd]/40 bg-white p-4 text-sm font-medium text-[#45464d]">

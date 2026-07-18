@@ -4,10 +4,27 @@ import test from "node:test";
 import {
   buildAccountLedgerActivities,
   deriveCreditCardDebtMetadata,
+  economicTransactionDelta,
   ledgerRelevantMetadata,
+  linkedExpenseContributionDelta,
+  roundCurrencyValue,
   summarizeFinancialPosition,
   summarizeLedgerTransactions,
 } from "../src/lib/ledger.ts";
+
+test("currency rounding is sign-symmetric and economic reversals cancel exactly", () => {
+  assert.equal(roundCurrencyValue(1.005), 1.01);
+  assert.equal(roundCurrencyValue(-1.005), -1.01);
+  assert.deepEqual(economicTransactionDelta({ amount: 1.005, status: "cleared", type: "expense" }), { expenseDelta: 1.01, incomeDelta: 0 });
+  assert.deepEqual(economicTransactionDelta({ amount: 1.005, metadata: { reversed_transaction_id: "source", reversed_transaction_type: "expense" }, status: "cleared", type: "income" }), { expenseDelta: -1.01, incomeDelta: 0 });
+});
+
+test("linked contributions count one posted debit and ignore its pair and cancelled rows", () => {
+  assert.equal(linkedExpenseContributionDelta({ amount: 200, metadata: { transfer_direction: "debit" }, status: "cleared", type: "transfer" }), 200);
+  assert.equal(linkedExpenseContributionDelta({ amount: 200, metadata: { transfer_direction: "credit" }, status: "cleared", type: "transfer" }), 0);
+  assert.equal(linkedExpenseContributionDelta({ amount: 200, metadata: { transfer_direction: "debit" }, status: "scheduled", type: "transfer" }), 0);
+  assert.equal(linkedExpenseContributionDelta({ amount: 200, metadata: { reversed_transaction_id: "source", reversed_transaction_type: "transfer", transfer_direction: "debit" }, status: "cleared", type: "transfer" }), -200);
+});
 
 const accounts = [
   { id: "bank", type: "bank_account" },

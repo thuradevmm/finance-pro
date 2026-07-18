@@ -13,6 +13,7 @@ import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
+import { isValidCalendarDate } from "@/lib/date-validation";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -20,6 +21,15 @@ import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
+}
+
+function defaultTargetDate() {
+  const today = new Date();
+  const target = new Date(today);
+  const month = target.getMonth();
+  target.setFullYear(target.getFullYear() + 1);
+  if (target.getMonth() !== month) target.setDate(0);
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
 }
 
 const fallbackStyle = {
@@ -44,7 +54,7 @@ export function AddSavingsGoalForm({
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const accountOptions = useMemo(
-    () => accounts.filter((account) => account.status === "Active" && account.type !== "Credit Card"),
+    () => accounts.filter((account) => account.status !== "Archived" && account.type !== "Credit Card"),
     [accounts],
   );
   const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals", "Savings Goal"), [categories]);
@@ -52,19 +62,25 @@ export function AddSavingsGoalForm({
   const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.targetAmountValue) : "");
-  const [savedAmount, setSavedAmount] = useState(goal ? String(goal.savedAmountValue) : "");
-  const [targetDate, setTargetDate] = useState(goal?.targetDateValue ?? "2026-12-31");
+  const [savedAmount, setSavedAmount] = useState(goal ? String(goal.storedSavedAmountValue) : "");
+  const [targetDate, setTargetDate] = useState(goal?.targetDateValue ?? defaultTargetDate());
   const [monthlyContribution, setMonthlyContribution] = useState(goal ? String(goal.monthlyContributionValue) : "");
   const [description, setDescription] = useState(goal?.description ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
-  const targetHasError = showErrors && targetAmount.trim() === "";
-  const dateHasError = showErrors && targetDate.trim() === "";
+  const savedIsInvalid = savedAmount.trim() !== "" && (!Number.isFinite(parseAmount(savedAmount)) || parseAmount(savedAmount) < 0);
+  const contributionIsInvalid = monthlyContribution.trim() !== "" && (!Number.isFinite(parseAmount(monthlyContribution)) || parseAmount(monthlyContribution) < 0);
+  const targetHasError = showErrors && (targetAmount.trim() === "" || !Number.isFinite(parseAmount(targetAmount)) || parseAmount(targetAmount) <= 0);
+  const savedHasError = showErrors && savedIsInvalid;
+  const contributionHasError = showErrors && contributionIsInvalid;
+  const dateHasError = showErrors && !isValidCalendarDate(targetDate);
   const target = parseAmount(targetAmount);
-  const saved = parseAmount(savedAmount);
-  const progressPercent = target > 0 ? Math.round((saved / target) * 100) : 0;
+  const storedSaved = Number.isFinite(parseAmount(savedAmount)) ? parseAmount(savedAmount) : 0;
+  const linkedSaved = goal?.linkedSavedAmountValue ?? 0;
+  const saved = Math.max(0, storedSaved + linkedSaved);
+  const progressPercent = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
   const effectiveStyleId = selectedStyleId || goalStyleCategories[0]?.id || "";
   const effectiveAccountId = accountId || accountOptions[0]?.id || "";
   const selectedStyle = goalStyleCategories.find((category) => category.id === effectiveStyleId) ?? goalStyleCategories[0] ?? fallbackStyle;
@@ -72,7 +88,13 @@ export function AddSavingsGoalForm({
   const selectedAccountName = selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "";
 
   async function handleSaveGoal(addAnother = false) {
-    const hasErrors = name.trim() === "" || targetAmount.trim() === "" || targetDate.trim() === "";
+    const hasErrors = name.trim() === ""
+      || targetAmount.trim() === ""
+      || !Number.isFinite(target)
+      || target <= 0
+      || savedIsInvalid
+      || contributionIsInvalid
+      || !isValidCalendarDate(targetDate);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -145,15 +167,22 @@ export function AddSavingsGoalForm({
               />
               {targetHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target amount is required.</p> : null}
             </div>
-            <TextInput label="Already Saved" onChange={setSavedAmount} placeholder="0" type="number" value={savedAmount} />
+            <div>
+              <TextInput error={savedHasError} label="Already Saved (Manual)" onChange={setSavedAmount} placeholder="0" type="number" value={savedAmount} />
+              {savedHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Already saved amount cannot be negative.</p> : null}
+              {goal && linkedSaved !== 0 ? <p className="mt-1 text-xs font-semibold text-[#45464d]">Linked activity {linkedSaved > 0 ? "adds" : "subtracts"} {formatMmkPreview(Math.abs(linkedSaved))}; it is preserved separately when you edit.</p> : null}
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="2026-12-31" type="date" value={targetDate} />
+              <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="YYYY-MM-DD" type="date" value={targetDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
             </div>
-            <TextInput label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="number" value={monthlyContribution} />
+            <div>
+              <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="number" value={monthlyContribution} />
+              {contributionHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly contribution cannot be negative.</p> : null}
+            </div>
           </div>
         </FormCard>
 
@@ -241,7 +270,7 @@ export function AddSavingsGoalForm({
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
-                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{savedAmount ? formatMmkPreview(savedAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
+                <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(saved)}</ResponsiveAmount></dd>
               </div>
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>

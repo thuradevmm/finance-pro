@@ -136,11 +136,11 @@ function AccountCard({
 
       <dl className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4">
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Payments" : "Inflow"}</dt>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Credits / Payments" : "Inflow"}</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.monthlyInflow}</ResponsiveAmount></dd>
         </div>
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Charges" : "Outflow"}</dt>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Debits / Charges" : "Outflow"}</dt>
           <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.monthlyOutflow}</ResponsiveAmount></dd>
         </div>
         <div>
@@ -271,14 +271,14 @@ function CreditCardCard({
         </section>
 
         <section className="mt-5 border-t border-[#c6c6cd]/40 pt-4">
-          <h3 className="text-xs font-bold uppercase text-[#76777d]">Activity</h3>
+          <h3 className="text-xs font-bold uppercase text-[#76777d]">Activity (all time)</h3>
           <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <dt className="text-xs font-medium text-[#76777d]">Charges</dt>
+              <dt className="text-xs font-medium text-[#76777d]">Debits / Charges</dt>
               <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.8125}>{account.monthlyOutflow}</ResponsiveAmount></dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-[#76777d]">Payments</dt>
+              <dt className="text-xs font-medium text-[#76777d]">Credits / Payments</dt>
               <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.8125}>{account.monthlyInflow}</ResponsiveAmount></dd>
             </div>
             <div>
@@ -431,13 +431,13 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
             <dd><ResponsiveAmount className={`mt-1 font-bold ${position.net < 0 ? "text-[#b42318]" : "text-[#0058be]"}`} maxSizeRem={1}>{formatMmk(position.net)}</ResponsiveAmount></dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs font-medium text-[#45464d]">With no account filters, Net Position matches the all-time transaction Net Amount.</p>
+        <p className="mt-3 text-xs font-medium text-[#45464d]">Net Position reconciles posted all-time transaction activity plus any stored manual credit-card opening balance.</p>
       </section>
       {creditAccounts.length > 0 ? (
         <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
           <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Card Details (MPU / Visa)</h2>
-            <p className="mt-1 text-xs font-medium text-[#45464d]">Each card has its own identity, credit position, billing terms, and activity. Limits remain separate from the financial-position total.</p>
+            <p className="mt-1 text-xs font-medium text-[#45464d]">Each card has its own identity, credit position, billing terms, and posted all-time activity. Limits remain separate from the financial-position total.</p>
           </div>
           <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
             <table className="w-full min-w-[2520px] border-collapse text-left">
@@ -459,8 +459,8 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Net Position</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Charges</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Payments</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Debits / Charges</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credits / Payments</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transactions</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Last Updated</th>
                 </tr>
@@ -538,7 +538,7 @@ function CreditCardsTable({
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-3">
         <h2 className="text-sm font-bold uppercase text-[#45464d]">Credit Cards (MPU / Visa)</h2>
-        <p className="mt-1 text-xs font-medium text-[#45464d]">Card identity, current credit position, billing terms, and activity are kept separate from cash-account balances.</p>
+        <p className="mt-1 text-xs font-medium text-[#45464d]">Card identity, current credit position, billing terms, and posted all-time activity are kept separate from cash-account balances.</p>
       </div>
       <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[1900px] border-collapse text-left">
@@ -557,8 +557,8 @@ function CreditCardsTable({
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Charges</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Payments</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Debits / Charges</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Credits / Payments</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transactions</th>
               <th className="w-56 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
@@ -1040,9 +1040,9 @@ export default function AccountsPage() {
                   <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
                   <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
                 </DetailModalSection>
-                <DetailModalSection title="Activity">
-                  <DetailModalField label="Payments" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
-                  <DetailModalField label="Charges" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+                <DetailModalSection title="Activity (all time)">
+                  <DetailModalField label="Credits / payments" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
+                  <DetailModalField label="Debits / charges" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
                   <DetailModalField label="Transactions" value={viewedAccount.transactionCount} />
                 </DetailModalSection>
               </>

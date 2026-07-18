@@ -2,10 +2,9 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
-import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { BudgetsPageContent } from "@/features/budgets/budgets-page-content";
-import { getBudgets, getBudgetSummaries } from "@/lib/budgets/supabase";
+import { getBudgets } from "@/lib/budgets/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,7 +12,6 @@ export default async function BudgetsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   const budgets = user ? await getBudgets(supabase, user.id, { limit: 200 }) : [];
-  const summaries = getBudgetSummaries(budgets);
 
   return (
     <AppShell
@@ -39,7 +37,6 @@ export default async function BudgetsPage() {
         title="Budgets"
       />
 
-      <SummaryCards summaries={summaries} />
       <BudgetsPageContent budgets={budgets} />
     </AppShell>
   );

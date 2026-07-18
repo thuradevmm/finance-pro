@@ -2,6 +2,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddTransactionForm, type TransactionFormInitialValues } from "@/features/transactions/add-transaction-form";
 import { getAccounts } from "@/lib/accounts/supabase";
+import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { getAssets } from "@/lib/assets/supabase";
 import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
@@ -22,9 +23,9 @@ function relatedOptions(
 ): TransactionRelatedOption[] {
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...budgets.map((budget) => ({ label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
-    ...savingsGoals.map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
-    ...debts.map((debt) => ({
+    ...budgets.filter((budget) => budget.planStatus === "Active").map((budget) => ({ categoryId: budget.categoryId, label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...debts.filter((debt) => debt.status !== "Paid").map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
         accountName: accounts.find((account) => account.id === debt.creditCardAccountId)?.name ?? debt.lender,
@@ -44,7 +45,7 @@ function relatedOptions(
       type: "debt" as const,
       value: debt.id,
     })),
-    ...subscriptions.map((subscription) => ({
+    ...subscriptions.filter((subscription) => subscription.status !== "Paused").map((subscription) => ({
       label: `Subscription: ${subscription.name}`,
       subscriptionPayment: {
         amount: subscription.amountValue,
@@ -57,7 +58,7 @@ function relatedOptions(
       type: "subscription" as const,
       value: subscription.id,
     })),
-    ...assets.map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
+    ...assets.filter((asset) => asset.status === "Active").map((asset) => ({ label: `Asset: ${asset.name}`, type: "asset" as const, value: asset.id })),
   ];
 }
 
@@ -74,7 +75,8 @@ export default async function AddTransactionPage({
   const requestedSubscriptionId = searchParamValue(resolvedSearchParams.subscription);
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const accounts = user ? await getAccounts(supabase, user.id) : [];
+  const allAccounts = user ? await getAccounts(supabase, user.id) : [];
+  const accounts = allAccounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
   const categories = user ? await getCategories() : [];
   const [budgets, savingsGoals, debts, subscriptions, assets] = user
     ? await Promise.all([

@@ -5,13 +5,15 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { deleteBudget } from "@/app/budgets/actions";
+import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { ProgressMeter } from "@/components/ui/progress-meter";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
+import { budgetOverlapsSelection, currentBudgetRecords } from "@/lib/budgets/calculations";
 import { formatMmk } from "@/lib/currency";
-import type { BudgetRecord } from "@/lib/budgets/supabase";
+import { getBudgetSummaries, type BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
@@ -33,27 +35,37 @@ function formatCurrency(value: number) {
 
 function BudgetPeriodControls({
   activePeriod,
+  onNavigate,
   onPeriodChange,
+  selectedDate,
 }: {
   activePeriod: BudgetPeriod;
+  onNavigate: (direction: -1 | 1) => void;
   onPeriodChange: (period: BudgetPeriod) => void;
+  selectedDate: Date;
 }) {
+  const selectedLabel = activePeriod === "Monthly"
+    ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(selectedDate)
+    : `Year ${selectedDate.getFullYear()}`;
+
   return (
     <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex w-full items-center rounded-lg border border-[#c6c6cd] bg-white p-1 shadow-sm sm:w-fit">
         <button
           aria-label="Previous period"
           className="grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+          onClick={() => onNavigate(-1)}
           type="button"
         >
           <Icon className="size-4" name="chevronLeft" />
         </button>
         <span className="min-w-0 flex-1 px-3 text-center text-sm font-semibold text-[#0b1c30] sm:min-w-32">
-          {activePeriod === "Monthly" ? "June 2026" : "Year 2026"}
+          {selectedLabel}
         </span>
         <button
           aria-label="Next period"
           className="grid size-11 shrink-0 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+          onClick={() => onNavigate(1)}
           type="button"
         >
           <Icon className="size-4" name="chevronRight" />
@@ -81,10 +93,13 @@ function BudgetPeriodControls({
   );
 }
 
-function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
+function OverallBudgetUsage({ budgets }: { budgets: BudgetRecord[] }) {
   const totalBudget = budgets.reduce((sum, budget) => sum + parseCurrency(budget.budget), 0);
   const totalActual = budgets.reduce((sum, budget) => sum + parseCurrency(budget.actual), 0);
   const usagePercent = totalBudget > 0 ? Math.round((totalActual / totalBudget) * 100) : 0;
+  const alertPercent = totalBudget > 0
+    ? Math.round(budgets.reduce((sum, budget) => sum + budget.amountValue * budget.alertPercentage, 0) / totalBudget)
+    : 0;
 
   return (
     <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
@@ -103,12 +118,12 @@ function OverallBudgetUsage({ budgets }: { budgets: BudgetCategory[] }) {
         ariaLabel="Overall budget usage"
         className="h-4"
         colorClassName={usagePercent > 100 ? "bg-[#ba1a1a]" : "bg-[#0058be]"}
-        markerPercent={80}
+        markerPercent={alertPercent}
         percent={usagePercent}
       />
       <div className="mt-2 flex min-w-0 justify-between gap-2 text-xs font-semibold uppercase text-[#45464d]">
         <span>{formatMmk(0)}</span>
-        <span className="shrink-0">Target 80%</span>
+        <span className="shrink-0">Alert {alertPercent}%</span>
         <span className="amount-value min-w-0 overflow-hidden text-right">{formatCurrency(totalBudget)}</span>
       </div>
     </section>
@@ -129,11 +144,11 @@ function UsageMeter({ budget }: { budget: BudgetCategory }) {
   );
 }
 
-function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]; onDelete: (id: string) => void }) {
+function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; onDelete: (id: string) => void }) {
   const [sortKey, setSortKey] = useState<BudgetSortKey>("category");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const sortedBudgets = useMemo(() => {
-    function value(budget: BudgetCategory) {
+    function value(budget: BudgetRecord) {
       if (sortKey === "category" || sortKey === "status") return String(budget[sortKey]).toLowerCase();
       if (sortKey === "usage") return budget.usagePercent;
       return parseCurrency(budget[sortKey]);
@@ -183,6 +198,7 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetCategory[]
                       <Icon className="size-4" name={budget.icon} />
                     </span>
                     <span className="font-semibold text-[#0b1c30]">{budget.category}</span>
+                    {budget.planStatus === "Paused" ? <span className="rounded bg-[#f3f4f6] px-2 py-1 text-[10px] font-bold uppercase text-[#45464d]">Paused</span> : null}
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 font-medium text-[#0b1c30]">{budget.budget}</td>
@@ -218,19 +234,41 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
   const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
-  const filteredBudgets = useMemo(
+  const periodBudgets = useMemo(
     () => {
-      const normalizedSearch = search.trim().toLowerCase();
       return visibleBudgets.filter((budget) => {
-        const searchable = `${budget.category} ${budget.period} ${budget.budget} ${budget.actual} ${budget.remaining} ${budget.status}`.toLowerCase();
-        return budget.period === activePeriod && (normalizedSearch === "" || searchable.includes(normalizedSearch));
+        return budget.period === activePeriod
+          && budgetOverlapsSelection(budget, selectedDate);
       });
     },
-    [activePeriod, search, visibleBudgets],
+    [activePeriod, selectedDate, visibleBudgets],
   );
+  const filteredBudgets = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return periodBudgets.filter((budget) => {
+      const searchable = `${budget.category} ${budget.period} ${budget.budget} ${budget.actual} ${budget.remaining} ${budget.status}`.toLowerCase();
+      return normalizedSearch === "" || searchable.includes(normalizedSearch);
+    });
+  }, [periodBudgets, search]);
+  const activeBudgets = useMemo(
+    () => currentBudgetRecords(visibleBudgets, selectedDate, activePeriod),
+    [activePeriod, selectedDate, visibleBudgets],
+  );
+  const summaries = useMemo(() => getBudgetSummaries(activeBudgets, selectedDate), [activeBudgets, selectedDate]);
+
+  function navigatePeriod(direction: -1 | 1) {
+    setSelectedDate((current) => {
+      const next = new Date(current);
+      next.setDate(1);
+      if (activePeriod === "Monthly") next.setMonth(next.getMonth() + direction);
+      else next.setFullYear(next.getFullYear() + direction);
+      return next;
+    });
+  }
 
   async function handleDelete(id: string) {
     setIsPending(true);
@@ -246,9 +284,10 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
 
   return (
     <>
-      <BudgetPeriodControls activePeriod={activePeriod} onPeriodChange={setActivePeriod} />
+      <BudgetPeriodControls activePeriod={activePeriod} onNavigate={navigatePeriod} onPeriodChange={setActivePeriod} selectedDate={selectedDate} />
+      <SummaryCards summaries={summaries} />
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating budgets…</p> : null}
-      <OverallBudgetUsage budgets={filteredBudgets} />
+      <OverallBudgetUsage budgets={activeBudgets} />
       {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="savings" />

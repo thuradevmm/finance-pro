@@ -12,6 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
+import { calculateCreditCardPosition } from "@/lib/accounts/card-display";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -207,11 +208,11 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts"), [categories]);
   const matchedCategories = accountCategories.filter((category) => categoryMatchesAccountType(category, selectedType));
   const scopedCategories = matchedCategories.length > 0 ? matchedCategories : accountCategories;
-  const baseCategoryOptions = scopedCategories.map((category) => category.name);
-  const accountCategoryOptions = account?.category && !baseCategoryOptions.includes(account.category)
-    ? [account.category, ...baseCategoryOptions]
-    : baseCategoryOptions;
-  const [selectedCategory, setSelectedCategory] = useState(account?.category ?? accountCategoryOptions[0] ?? "");
+  const accountCategoryOptions = scopedCategories.map((category) => category.name);
+  const initialCategory = scopedCategories.find((category) => category.id === account?.categoryId)
+    ?? scopedCategories.find((category) => category.name === account?.category)
+    ?? scopedCategories[0];
+  const [selectedCategoryId, setSelectedCategoryId] = useState(initialCategory?.id ?? "");
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState(account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
   const [creditLimit, setCreditLimit] = useState(account?.creditLimitValue ? String(account.creditLimitValue) : account?.monthlyBudgetLimit == null ? "" : String(account.monthlyBudgetLimit));
   const [creditStatementDay, setCreditStatementDay] = useState(account?.creditStatementDay == null ? "" : String(account.creditStatementDay));
@@ -237,9 +238,14 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const creditPaymentDueDayHasError = showErrors && isCreditCard && creditPaymentDueDay.trim() !== "" && optionalDayInput(creditPaymentDueDay) == null;
   const creditMinimumPaymentValue = optionalNumberInput(creditMinimumPayment);
   const creditMinimumPaymentHasError = showErrors && isCreditCard && creditMinimumPayment.trim() !== "" && (creditMinimumPaymentValue == null || creditMinimumPaymentValue < 0);
-  const effectiveSelectedCategory = accountCategoryOptions.includes(selectedCategory) ? selectedCategory : accountCategoryOptions[0] ?? "";
+  const effectiveSelectedCategory = scopedCategories.find((category) => category.id === selectedCategoryId) ?? scopedCategories[0];
   const creditLimitPreview = creditLimit.trim() === "" ? account?.creditLimitValue ?? 0 : Number(creditLimit);
-  const transactionTotal = isCreditCard ? (Number.isFinite(creditLimitPreview) ? creditLimitPreview : 0) - (account?.creditUsedValue ?? 0) : account?.balanceValue ?? 0;
+  const transactionTotal = isCreditCard
+    ? calculateCreditCardPosition(
+      (account?.creditUsedValue ?? 0) - (account?.creditBalanceValue ?? 0),
+      Number.isFinite(creditLimitPreview) ? creditLimitPreview : 0,
+    ).available
+    : account?.balanceValue ?? 0;
 
   function updateAmountType(id: string, value: string) {
     setAmountTypes((items) => items.map((item) => (item.id === id ? { ...item, type: value } : item)));
@@ -291,7 +297,8 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
       cardSecurityCode,
       cardExpiryCode,
       cardType,
-      category: effectiveSelectedCategory,
+      category: effectiveSelectedCategory?.name ?? "",
+      categoryId: effectiveSelectedCategory?.id ?? "",
       creditLimit: parsedCreditLimit,
       creditMinimumPayment: isCreditCard ? creditMinimumPaymentValue : null,
       creditPaymentDueDay: isCreditCard ? optionalDayInput(creditPaymentDueDay) : null,
@@ -476,7 +483,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
           <FormCard title="Account Settings">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Status" onChange={(value) => setStatus(value as AccountStatus)} options={statuses} value={status} />
-              <SelectInput label="Account Category" onChange={setSelectedCategory} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory || "No account categories"} />
+              <SelectInput label="Account Category" onChange={(name) => setSelectedCategoryId(scopedCategories.find((category) => category.name === name)?.id ?? "")} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory?.name || "No account categories"} />
             </div>
 
             {!isCreditCard ? (
@@ -591,7 +598,7 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-xs font-bold uppercase text-[#45464d]">Category</span>
-              <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveSelectedCategory}</span>
+              <span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveSelectedCategory?.name ?? "Not set"}</span>
             </div>
           </div>
         </div>
