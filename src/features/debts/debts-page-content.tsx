@@ -12,6 +12,7 @@ import { compareSortValues, SortHeader, type SortDirection } from "@/components/
 import { useToast } from "@/components/ui/toast-provider";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
+import { getDebtListEmptyState, getDebtVisibilityToggleState, type DebtListEmptyState } from "@/lib/debts/visibility";
 import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 
 const statusStyles: Record<DebtStatus, string> = {
@@ -90,17 +91,22 @@ function buildCalendarEntries(payments: UpcomingDebtPayment[]) {
 
 function DebtsTable({
   debts,
+  emptyState,
+  hasDebts,
   onDelete,
   onToggleActiveOnly,
   showActiveOnly,
 }: {
   debts: DebtRecordWithValues[];
+  emptyState: DebtListEmptyState;
+  hasDebts: boolean;
   onDelete: (id: string) => void | Promise<void>;
   onToggleActiveOnly: () => void;
   showActiveOnly: boolean;
 }) {
   const [sortKey, setSortKey] = useState<DebtSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const visibilityToggle = getDebtVisibilityToggleState(showActiveOnly);
   const sortedDebts = useMemo(() => {
     function value(debt: DebtRecordWithValues) {
       if (sortKey === "name") return `${debt.name} ${debt.lender}`.toLowerCase();
@@ -128,21 +134,24 @@ function DebtsTable({
           <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
           <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue debts" : "Showing paid debts too"}</p>
         </div>
-        <button
-          aria-pressed={showActiveOnly}
-          aria-label={showActiveOnly ? "Show all liabilities" : "Show active liabilities only"}
-          className={showActiveOnly
-            ? "grid size-11 shrink-0 place-items-center rounded-full bg-[#eff6ff] text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
-            : "grid size-11 shrink-0 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"}
-          onClick={onToggleActiveOnly}
-          title={showActiveOnly ? "Show all liabilities" : "Show active liabilities only"}
-          type="button"
-        >
-          <Icon className="size-4" name="category" />
-        </button>
+        {hasDebts ? (
+          <button
+            aria-label={visibilityToggle.ariaLabel}
+            aria-pressed={visibilityToggle.isPressed}
+            className={showActiveOnly
+              ? "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-[#eff6ff] px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+              : "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"}
+            onClick={onToggleActiveOnly}
+            title={visibilityToggle.label}
+            type="button"
+          >
+            <Icon className="size-4" name="category" />
+            <span className="hidden sm:inline">{visibilityToggle.label}</span>
+          </button>
+        ) : null}
       </div>
 
-      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      {sortedDebts.length > 0 ? <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[1120px] border-collapse text-left">
           <thead>
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
@@ -192,7 +201,13 @@ function DebtsTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </div> : (
+        <div className="p-6 text-center sm:p-10">
+          <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
+          <h3 className="mt-3 text-lg font-semibold text-[#0b1c30]">{emptyState.title}</h3>
+          <p className="mt-1 text-sm text-[#45464d]">{emptyState.description}</p>
+        </div>
+      )}
     </section>
   );
 }
@@ -305,6 +320,11 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
       return statusMatches && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [search, showActiveOnly, visibleDebts]);
+  const emptyState = getDebtListEmptyState({
+    hasAnyDebt: visibleDebts.length > 0,
+    search,
+    showActiveOnly,
+  });
   const calendarEntries = useMemo(() => buildCalendarEntries(payments), [payments]);
 
   async function handleDelete(debtId: string) {
@@ -323,20 +343,14 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
     <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="min-w-0 xl:col-span-9">
         {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
-        {filteredDebts.length > 0 ? (
-          <DebtsTable
-            debts={filteredDebts}
-            onDelete={handleDelete}
-            onToggleActiveOnly={() => setShowActiveOnly((value) => !value)}
-            showActiveOnly={showActiveOnly}
-          />
-        ) : (
-          <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
-            <Icon className="mx-auto size-8 text-[#76777d]" name="document" />
-            <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No debts yet</h2>
-            <p className="mt-1 text-sm text-[#45464d]">Add a debt to track repayment progress.</p>
-          </section>
-        )}
+        <DebtsTable
+          debts={filteredDebts}
+          emptyState={emptyState}
+          hasDebts={visibleDebts.length > 0}
+          onDelete={handleDelete}
+          onToggleActiveOnly={() => setShowActiveOnly((value) => !value)}
+          showActiveOnly={showActiveOnly}
+        />
       </div>
       <div className="min-w-0 xl:col-span-3">
         <UpcomingPayments onViewCalendar={() => setIsCalendarOpen(true)} payments={payments} />

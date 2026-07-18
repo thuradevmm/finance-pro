@@ -70,6 +70,18 @@ type DebtCardTerms = {
   statementDay?: number | null;
 };
 
+function revalidateDebtViews(debtId?: string) {
+  for (const path of [
+    "/debts",
+    "/categories",
+    "/dashboard",
+    "/reports",
+    "/future-planning",
+    "/scenario-budgeting",
+  ]) revalidatePath(path);
+  if (debtId) revalidatePath(`/debts/${debtId}/edit`);
+}
+
 async function authenticatedClient() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
@@ -413,8 +425,7 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const { error } = await supabase.from("debts").insert({ ...debtPayload, user_id: user.id });
     if (!error) {
-      revalidatePath("/debts");
-      revalidatePath("/future-planning");
+      revalidateDebtViews();
       return {};
     }
 
@@ -532,9 +543,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   );
   if (error) return { error: error.message };
   if (!data) return { error: "Debt not found." };
-  revalidatePath("/debts");
-  revalidatePath("/future-planning");
-  revalidatePath(`/debts/${debtId}/edit`);
+  revalidateDebtViews(debtId);
   return {};
 }
 
@@ -582,7 +591,6 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
   const { data, error } = await archiveDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };
   if (!data) return { error: "Debt not found." };
-  revalidatePath("/debts");
-  revalidatePath("/future-planning");
+  revalidateDebtViews();
   return {};
 }

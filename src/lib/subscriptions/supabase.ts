@@ -8,6 +8,7 @@ import {
   annualizedSubscriptionCost,
   isOngoingSubscriptionStatus,
   nextSubscriptionBillingDate,
+  normalizeSubscriptionStatus,
   subscriptionPaymentIsAfterCutoff,
 } from "@/lib/subscriptions/calculations";
 import type { BillingCycle, SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
@@ -100,13 +101,6 @@ function normalizeCycle(value: unknown): BillingCycle {
   if (cycle === "weekly") return "Weekly";
   if (cycle === "yearly" || cycle === "annual") return "Yearly";
   return "Monthly";
-}
-
-function normalizeStatus(value: unknown): SubscriptionStatus {
-  const status = String(value ?? "").toLowerCase();
-  if (status === "paused") return "Paused";
-  if (status === "expiring") return "Expiring";
-  return "Active";
 }
 
 function formatDate(value: string) {
@@ -297,7 +291,7 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
   const reminderEnabled = normalizeReminderEnabled(row.reminder_enabled, metadata.reminder_enabled);
   const reminderDaysBefore = normalizeReminderDays(row.reminder_days_before ?? metadata.reminder_days_before);
   const billingCycle = normalizeCycle(row.billing_cycle ?? metadata.billing_cycle);
-  const status = normalizeStatus(row.status ?? metadata.status);
+  const status: SubscriptionStatus = normalizeSubscriptionStatus(row.status ?? metadata.status);
   const paymentCutoff = metadataString(metadata, "subscription_payment_cutoff_date");
   const fallbackPayment = latestPaymentFallback(
     payments.filter((payment) => subscriptionPaymentIsAfterCutoff(payment, paymentCutoff)),

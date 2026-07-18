@@ -18,6 +18,7 @@ import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import type { TransactionType } from "@/types/finance";
 
@@ -262,7 +263,7 @@ export function AddTransactionForm({
   const isCreditCardDebtPayment = selectedType === "Expense"
     && Boolean(effectiveRelatedOption?.creditCardDebt)
     && selectedAccount?.id !== effectiveRelatedOption?.creditCardDebt?.accountId;
-  const hasSecondaryCreditCardDebtImpact = isCreditCardCharge && Boolean(effectiveRelatedOption && effectiveRelatedOption.type !== "none" && effectiveRelatedOption.type !== "debt");
+  const hasSecondaryCreditCardDebtImpact = hasAdditionalAutomaticCreditCardDebtImpact(isCreditCardCharge, effectiveRelatedOption);
   const amountNumber = Number(amount);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;

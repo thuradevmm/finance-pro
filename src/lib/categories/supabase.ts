@@ -1,10 +1,15 @@
 import { formatMmk } from "@/lib/currency";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
+import {
+  buildCategoryActivity,
+  pageCategoryActivityRows,
+  pageCategoryRollupLabels,
+  transactionCategoryActivityRows,
+  type CategoryActivity,
+} from "@/lib/categories/rollups";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
-import { deriveCreditCardDebtMetadata, economicTransactionDelta } from "@/lib/ledger";
-import { buildDebtTransactionLedgers } from "@/lib/debts/transactions";
-import { monthlySubscriptionCost } from "@/lib/subscriptions/calculations";
+import { deriveCreditCardDebtMetadata } from "@/lib/ledger";
 import type { CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
 
 export type CategoryRecord = FinancialCategory & {
@@ -64,21 +69,10 @@ type CategoryDebtRow = {
   id: string;
   metadata: unknown;
   payment_account_id: string | null;
+  repaid_amount: number | string | null;
   start_date: string | null;
   total_amount: number | string | null;
   type: string | null;
-};
-
-type CategoryAmountRow = {
-  amount: number | string | null;
-  category_id: string | null;
-  date: string | null;
-};
-
-type CategoryActivity = {
-  monthlyAverage: number;
-  total: number;
-  transactionCount: number;
 };
 
 function metadataRecord(metadata: unknown) {
@@ -109,75 +103,6 @@ function normalizeCategoryType(rowType: string, scopes: CategoryScope[], metadat
   return "Expense";
 }
 
-function numericValue(value: unknown) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
-
-function accountOpeningValue(account: CategoryAccountRow) {
-  const metadata = metadataRecord(account.metadata);
-  if (!Array.isArray(metadata.amount_types)) return numericValue(account.initial_balance);
-  const amountTypeTotal = metadata.amount_types.reduce((total, item) => {
-    const record = metadataRecord(item);
-    const value = ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"]
-      .map((key) => record[key])
-      .find((candidate) => candidate !== null && candidate !== undefined && Number.isFinite(Number(candidate)));
-    return total + numericValue(value);
-  }, 0);
-  return amountTypeTotal;
-}
-
-function monthKey(value: string) {
-  return value.slice(0, 7);
-}
-
-function buildCategoryActivity(rows: CategoryAmountRow[]) {
-  const monthlyTotalsByCategory = new Map<string, Map<string, number>>();
-  const transactionCounts = new Map<string, number>();
-
-  for (const row of rows) {
-    if (!row.category_id || !row.date) continue;
-
-    const categoryMonths = monthlyTotalsByCategory.get(row.category_id) ?? new Map<string, number>();
-    const month = monthKey(row.date);
-    categoryMonths.set(month, (categoryMonths.get(month) ?? 0) + numericValue(row.amount));
-    monthlyTotalsByCategory.set(row.category_id, categoryMonths);
-    transactionCounts.set(row.category_id, (transactionCounts.get(row.category_id) ?? 0) + 1);
-  }
-
-  const activityByCategory = new Map<string, CategoryActivity>();
-  for (const [categoryId, monthlyTotals] of monthlyTotalsByCategory) {
-    const total = Array.from(monthlyTotals.values()).reduce((sum, value) => sum + value, 0);
-    const monthOrdinals = [...monthlyTotals.keys()].map((month) => {
-      const [year, monthNumber] = month.split("-").map(Number);
-      return (year * 12) + monthNumber - 1;
-    });
-    const monthSpan = monthOrdinals.length === 0 ? 0 : Math.max(...monthOrdinals) - Math.min(...monthOrdinals) + 1;
-    activityByCategory.set(categoryId, {
-      // Missing months inside the observed span count as zero so the label is
-      // a true calendar-month average rather than an active-month average.
-      monthlyAverage: monthSpan === 0 ? 0 : total / monthSpan,
-      total,
-      transactionCount: transactionCounts.get(categoryId) ?? 0,
-    });
-  }
-
-  return activityByCategory;
-}
-
-function transactionActivityRows(transactions: CategoryTransactionRow[]): CategoryAmountRow[] {
-  return transactions.flatMap((transaction) => {
-    const { expenseDelta, incomeDelta } = economicTransactionDelta(transaction);
-    const amount = expenseDelta + incomeDelta;
-    if (amount === 0) return [];
-    return [{
-      amount,
-      category_id: transaction.category_id,
-      date: transaction.transaction_date,
-    }];
-  });
-}
-
 function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
   const scopes = Array.isArray(metadata.scopes)
@@ -189,13 +114,9 @@ function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRec
   const activityValue = isTransactionCategory ? activity?.monthlyAverage ?? 0 : activity?.total ?? 0;
   const transactionCount = activity?.transactionCount ?? 0;
   const labels: Record<CategoryType, { activity: string; count: string }> = {
-    Account: { activity: "Opening Value", count: "Accounts" },
-    Asset: { activity: "Purchase Value", count: "Assets" },
-    Debt: { activity: "Debt Amount", count: "Debts" },
+    ...pageCategoryRollupLabels,
     Expense: { activity: "Monthly Avg", count: "Transactions" },
     Income: { activity: "Monthly Avg", count: "Transactions" },
-    "Savings Goal": { activity: "Target Value", count: "Goals" },
-    Subscription: { activity: "Monthly Cost", count: "Subscriptions" },
   };
 
   return {
@@ -240,22 +161,22 @@ export async function getCategories(options: { limit?: number } = {}) {
       .is("deleted_at", null),
     supabase
       .from("assets")
-      .select("category_id,purchase_amount,purchase_date,created_at")
+      .select("id,category_id,purchase_amount,purchase_date,created_at,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
       .from("debts")
-      .select("id,category_id,total_amount,start_date,created_at,payment_account_id,type,metadata")
+      .select("id,category_id,total_amount,repaid_amount,start_date,created_at,payment_account_id,type,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
       .from("savings_goals")
-      .select("category_id,target_amount,target_date,created_at")
+      .select("category_id,target_amount,target_date,created_at,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
       .from("subscriptions")
-      .select("category_id,amount,billing_cycle,next_billing_date,created_at,status")
+      .select("category_id,amount,billing_cycle,next_billing_date,created_at,status,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
@@ -281,30 +202,17 @@ export async function getCategories(options: { limit?: number } = {}) {
     ...transaction,
     metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
   }));
-  const debtLedgers = buildDebtTransactionLedgers(transactionRows, debtRows);
   const activityRows = [
-    ...transactionActivityRows(transactionRows),
-    ...accountRows.flatMap((account) => {
-      const metadata = metadataRecord(account.metadata);
-      const categoryId = typeof metadata.category_id === "string" && metadata.category_id
-        ? metadata.category_id
-        : typeof metadata.category === "string" ? categoryIdByName.get(metadata.category.trim().toLowerCase()) ?? null : null;
-      return categoryId ? [{ amount: accountOpeningValue(account), category_id: categoryId, date: account.created_at }] : [];
+    ...transactionCategoryActivityRows(transactionRows),
+    ...pageCategoryActivityRows({
+      accounts: accountRows,
+      assets: assetsResult.data,
+      categoryIdByName,
+      debts: debtRows,
+      savingsGoals: savingsGoalsResult.data,
+      subscriptions: subscriptionsResult.data,
+      transactions: transactionRows,
     }),
-    ...(assetsResult.data as Array<{ category_id: string | null; created_at: string | null; purchase_amount: number | string | null; purchase_date: string | null }>).map((asset) => ({ amount: asset.purchase_amount, category_id: asset.category_id, date: asset.purchase_date ?? asset.created_at })),
-    ...debtRows.map((debt) => ({
-      amount: numericValue(debt.total_amount) + (debtLedgers.get(debt.id)?.charges ?? 0),
-      category_id: debt.category_id,
-      date: debt.start_date ?? debt.created_at,
-    })),
-    ...(savingsGoalsResult.data as Array<{ category_id: string | null; created_at: string | null; target_amount: number | string | null; target_date: string | null }>).map((goal) => ({ amount: goal.target_amount, category_id: goal.category_id, date: goal.target_date ?? goal.created_at })),
-    ...(subscriptionsResult.data as Array<{ amount: number | string | null; billing_cycle: string | null; category_id: string | null; created_at: string | null; next_billing_date: string | null; status: string | null }>)
-      .filter((subscription) => String(subscription.status ?? "active").toLowerCase() !== "paused")
-      .map((subscription) => ({
-        amount: monthlySubscriptionCost(numericValue(subscription.amount), subscription.billing_cycle ?? "monthly"),
-        category_id: subscription.category_id,
-        date: subscription.next_billing_date ?? subscription.created_at,
-      })),
   ];
   const activityByCategory = buildCategoryActivity(activityRows);
   return categoryRows.map((category) => mapCategory(category, activityByCategory.get(category.id)));

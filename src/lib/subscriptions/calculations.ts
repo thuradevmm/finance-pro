@@ -90,3 +90,10 @@ export function isOngoingSubscriptionStatus(status: unknown) {
   const normalized = String(status ?? "active").trim().toLowerCase();
   return normalized === "active" || normalized === "expiring";
 }
+
+export function normalizeSubscriptionStatus(status: unknown) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "paused") return "Paused" as const;
+  if (normalized === "expiring") return "Expiring" as const;
+  return "Active" as const;
+}
