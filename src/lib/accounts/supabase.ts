@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
+import { accountAmountTypeValues, reconcileAccountAmountTypeDeltas } from "@/lib/accounts/amount-types";
 import { calculateCreditCardPosition, maskCardNumber } from "@/lib/accounts/card-display";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { formatMmk } from "@/lib/currency";
@@ -11,7 +12,6 @@ import {
   deriveCreditCardDebtMetadata,
   metadataRecord,
   normalizeAccountType,
-  normalizeAmountType,
   numericValue,
   roundCurrencyValue,
   type LedgerAccountActivity,
@@ -191,78 +191,6 @@ function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
   };
 }
 
-function amountTypeKey(value: unknown) {
-  return normalizeAmountType(value).toLowerCase();
-}
-
-function storedAmountValue(record: Record<string, unknown>) {
-  for (const key of ["amountValue", "amount_value", "amount", "balanceValue", "balance_value", "balance", "initialBalance", "initial_balance"]) {
-    const value = optionalNumericValue(record[key]);
-    if (value != null) return value;
-  }
-  return null;
-}
-
-function legacySplitAmountValues(metadata: Record<string, unknown>) {
-  const values = new Map<string, { amountValue: number; type: string }>();
-  const operationAmount = optionalNumericValue(metadata.operation_amount);
-  const savingAmount = optionalNumericValue(metadata.saving_amount);
-
-  if (operationAmount != null) values.set(amountTypeKey("Operation"), { amountValue: operationAmount, type: "Operation" });
-  if (savingAmount != null) values.set(amountTypeKey("Saving"), { amountValue: savingAmount, type: "Saving" });
-
-  return values;
-}
-
-function normalizeAmountTypeValues(metadata: Record<string, unknown>) {
-  const legacySplitValues = legacySplitAmountValues(metadata);
-  if (Array.isArray(metadata.amount_types)) {
-    const amountTypes = metadata.amount_types
-      .map((item) => metadataRecord(item))
-      .map((item) => {
-        const storedAmount = storedAmountValue(item);
-        const legacyAmount = legacySplitValues.get(amountTypeKey(item.type))?.amountValue;
-        return {
-          amountValue: legacyAmount != null && (storedAmount == null || storedAmount === 0) ? legacyAmount : storedAmount ?? 0,
-          type: normalizeAmountType(item.type),
-        };
-      })
-      .filter((item) => item.type.trim() !== "");
-
-    if (amountTypes.length > 0) return amountTypes;
-  }
-
-  if (legacySplitValues.size > 0) return Array.from(legacySplitValues.values());
-
-  return [
-    {
-      amountValue: 0,
-      type: "Operation",
-    },
-  ];
-}
-
-function transactionBalanceBreakdowns(amountTypeValues: { type: string }[]) {
-  const breakdowns = new Map(amountTypeValues.map((item) => [item.type, 0]));
-  return breakdowns;
-}
-
-function displayAmountTypeBreakdowns(
-  amountTypeValues: { type: string }[],
-  deltas: Map<string, number>,
-) {
-  const breakdowns = transactionBalanceBreakdowns(amountTypeValues);
-  const fallbackAmountType = amountTypeValues[0]?.type ?? "General";
-  const activeAmountTypeByKey = new Map(amountTypeValues.map((item) => [amountTypeKey(item.type), item.type]));
-
-  for (const [amountType, delta] of deltas) {
-    const displayAmountType = activeAmountTypeByKey.get(amountTypeKey(amountType)) ?? fallbackAmountType;
-    breakdowns.set(displayAmountType, roundCurrencyValue((breakdowns.get(displayAmountType) ?? 0) + delta));
-  }
-
-  return breakdowns;
-}
-
 function emptyActivity(): LedgerAccountActivity {
   return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
 }
@@ -282,10 +210,10 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   const phoneNumber = typeof metadata.phone_number === "string" ? metadata.phone_number : "";
   const legacyAccountNumber = typeof metadata.account_number === "string" ? metadata.account_number : "";
   const accountIdentifier = bankBookAccountNumber || mobileBankingAccountNumber || legacyAccountNumber;
-  const amountTypeValues = normalizeAmountTypeValues(metadata);
+  const amountTypeValues = accountAmountTypeValues(metadata);
   const displayAmountTypes = isCreditCard
     ? new Map(amountTypeValues.map((item) => [item.type, 0]))
-    : displayAmountTypeBreakdowns(amountTypeValues, activity.deltas);
+    : reconcileAccountAmountTypeDeltas(amountTypeValues, activity.deltas);
   const storedMonthlyBudgetLimit = optionalNumericValue(metadata.monthly_budget_limit);
   const storedCreditLimit = optionalNumericValue(metadata.credit_limit);
   const configuredCreditLimit = storedCreditLimit ?? storedMonthlyBudgetLimit ?? 0;

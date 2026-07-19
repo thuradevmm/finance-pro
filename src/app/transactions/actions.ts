@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 
 import { buildCreditCardDueBuckets, nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
+import { accountAvailableAmountForType } from "@/lib/accounts/amount-types";
 import { effectiveBudgetEndDate } from "@/lib/budgets/calculations";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
@@ -641,7 +642,11 @@ async function validateAvailableAmount(input: TransactionFormData, userId: strin
       : null;
   }
 
-  const availableAmount = accountActivity?.deltas.get(amountType) ?? 0;
+  const availableAmount = accountAvailableAmountForType(
+    account.metadata,
+    accountActivity?.deltas ?? new Map(),
+    amountType,
+  );
 
   return input.amount > availableAmount
     ? `Insufficient ${amountType} available amount. Available amount is ${formatMmk(availableAmount)}.`

@@ -73,7 +73,7 @@ function ToastItem({ message, onDismiss }: { message: ToastMessage; onDismiss: (
       <span className={`grid size-6 place-items-center justify-self-center rounded-full ${isError ? "bg-[#fff1f0]" : "bg-[#ecfdf5]"}`}>
         <Icon className="size-4" name={isError ? "close" : "check"} />
       </span>
-      <p className="min-w-0 break-words text-center leading-5 [overflow-wrap:anywhere]">{message.message}</p>
+      <p className="min-w-0 break-words text-left leading-5 [overflow-wrap:anywhere]">{message.message}</p>
       <button
         aria-label="Dismiss message"
         className="grid size-11 place-items-center justify-self-center rounded-md text-[#45464d] transition hover:bg-[#f8f9ff] hover:text-[#0b1c30] focus:outline-none focus:ring-2 focus:ring-[#2170e4] focus:ring-offset-2"
