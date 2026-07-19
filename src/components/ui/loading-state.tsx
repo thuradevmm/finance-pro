@@ -67,15 +67,15 @@ function HeaderSkeleton({ action = true }: { action?: boolean }) {
 
 function SummarySkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {Array.from({ length: count }, (_, index) => (
-        <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm" key={index}>
-          <div className="flex items-start justify-between gap-4">
+        <div className="rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 shadow-sm" key={index}>
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <SkeletonBlock className="h-3 w-28" />
-              <SkeletonBlock className="mt-3 h-7 w-36" />
+              <SkeletonBlock className="mt-2 h-7 w-36" />
             </div>
-            <SkeletonBlock className="size-10 rounded-md" />
+            <SkeletonBlock className="size-9 rounded-md" />
           </div>
         </div>
       ))}

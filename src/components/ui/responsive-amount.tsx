@@ -1,20 +1,23 @@
-import { Children, type CSSProperties, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export function ResponsiveAmount({
   children,
   className = "",
-  maxSizeRem = 3,
-  minSizeRem = 0.75,
+  maxSizeRem = 2,
+  minSizeRem = 1,
 }: {
   children: ReactNode;
   className?: string;
   maxSizeRem?: number;
   minSizeRem?: number;
 }) {
-  const displayText = Children.toArray(children).join("");
-  const compactLength = displayText.replace(/\s/g, "").length;
-  const fontSize = Math.max(minSizeRem, Math.min(maxSizeRem, (maxSizeRem * 13) / Math.max(compactLength, 13)));
-  const style = { fontSize: `${fontSize}rem`, lineHeight: 1.15 } satisfies CSSProperties;
+  const displayText = String(children ?? "");
+  const readableMinSizeRem = Math.max(1, minSizeRem);
+  const readableMaxSizeRem = Math.max(readableMinSizeRem, maxSizeRem);
+  const style = {
+    fontSize: `clamp(${readableMinSizeRem}rem, calc(${readableMinSizeRem}rem + 0.65vw), ${readableMaxSizeRem}rem)`,
+    lineHeight: 1.2,
+  } satisfies CSSProperties;
 
   return (
     <span className={`amount-value block max-w-full ${className}`} style={style} title={displayText}>

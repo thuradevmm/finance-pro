@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 .amount-value {
+  font-size: 1rem;
+  line-height: 1.25;
   max-width: 100%;
   min-width: 0;
   overflow: visible;
@@ -43,6 +45,8 @@ canvas {
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
 }
 
 input[type="number"]::-webkit-inner-spin-button,
