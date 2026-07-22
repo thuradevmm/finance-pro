@@ -12,6 +12,7 @@ test("standard debt progress counts posted repayments and cancels reversals", ()
   const debt = { id: "loan", type: "Personal Loan" };
   const transactions = [
     { id: "payment", amount: 300, related_entity_id: "loan", related_entity_type: "debt", status: "cleared", transaction_date: "2026-07-01", type: "expense" },
+    { id: "pending", amount: 100, related_entity_id: "loan", related_entity_type: "debt", status: "pending", transaction_date: "2026-07-02", type: "expense" },
     { id: "scheduled", amount: 200, related_entity_id: "loan", related_entity_type: "debt", status: "scheduled", transaction_date: "2026-07-02", type: "expense" },
     { id: "reversal", amount: 300, metadata: { reversed_transaction_id: "payment" }, related_entity_id: "loan", related_entity_type: "debt", status: "cleared", transaction_date: "2026-07-03", type: "income" },
   ];

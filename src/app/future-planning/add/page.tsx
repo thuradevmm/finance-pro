@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { FutureTransactionForm } from "@/features/future-planning/future-transaction-form";
 import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
+import { getFuturePlanLinkOptions } from "@/lib/future-planning/link-options";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,6 +17,9 @@ export default async function AddFutureTransactionPage() {
   const [accounts, categories] = user
     ? await Promise.all([getAccounts(supabase, user.id), getCategories()])
     : [[], []];
+  const linkOptions = user
+    ? await getFuturePlanLinkOptions(supabase, user.id, accounts, categories)
+    : [];
 
   return (
     <AppShell
@@ -25,7 +29,7 @@ export default async function AddFutureTransactionPage() {
       topSearchPlaceholder="Search plans..."
     >
       <PageHeader description="Schedule expected income or expenses. Repeating plans create independent occurrences you can adjust later." title="Add Planned Transaction" />
-      <FutureTransactionForm accounts={accounts} categories={categories} defaultDate={localDateValue(new Date())} />
+      <FutureTransactionForm accounts={accounts} categories={categories} defaultDate={localDateValue(new Date())} linkOptions={linkOptions} />
     </AppShell>
   );
 }

@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607180005",
+  "sealedThrough": "202607220003",
   "migrations": [
     {
       "version": "202606180001",
@@ -121,6 +121,21 @@
       "version": "202607180005",
       "file": "202607180005_legacy_debt_numeric_backfill.sql",
       "sha256": "308350c5655267bd3ace42c083985b499b872076dd2225cceb27677ba230d07b"
+    },
+    {
+      "version": "202607220001",
+      "file": "202607220001_account_category_lifecycle.sql",
+      "sha256": "893c9b1fa6411375b4e07e77dc85b912d53772e1c00501d457abe02270aa3f1d"
+    },
+    {
+      "version": "202607220002",
+      "file": "202607220002_transaction_status_semantics.sql",
+      "sha256": "7bb7b088d5164d16dbe4564365596e241d0730e678421ddb8d53c14b09102dfa"
+    },
+    {
+      "version": "202607220003",
+      "file": "202607220003_salary_period_and_manual_future_planning.sql",
+      "sha256": "cc441b8ef88b2454bb63ae0fe201fecf78a0827cd5c163ddd1386ee286f2ecb1"
     }
   ],
   "historyRepairs": [

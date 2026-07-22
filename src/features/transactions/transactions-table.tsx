@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { deleteTransaction, reverseTransaction } from "@/app/transactions/actions";
+import { deleteTransaction, markTransactionCleared, reverseTransaction } from "@/app/transactions/actions";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
-import { CategoryBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
+import { CategoryBadge, TransactionStatusBadge, TransactionTypeBadge } from "@/features/transactions/transaction-badges";
 import { amountClass } from "@/features/transactions/transaction-styles";
 import { dateTimeSortValue } from "@/lib/date-format";
+import { normalizeTransactionStatus, transactionStatusCanBeReversed, transactionStatusLabel } from "@/lib/transactions/status";
 import type { Transaction } from "@/types/finance";
 
 type TransactionsTableProps = {
@@ -21,7 +23,7 @@ type TransactionsTableProps = {
 
 const rowsPerPageOptions = [10, 25, 50, 100];
 
-type SortKey = "account" | "amount" | "amountType" | "category" | "date" | "note" | "type";
+type SortKey = "account" | "amount" | "amountType" | "category" | "date" | "note" | "status" | "type";
 
 function AttachmentIcon({ attachment }: { attachment?: Transaction["attachment"] }) {
   if (!attachment) {
@@ -129,6 +131,7 @@ function transactionIsImmutable(transaction: Transaction) {
 }
 
 export function TransactionsTable({ transactions, totalResults }: TransactionsTableProps) {
+  const router = useRouter();
   const { showError, showSuccess } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -141,6 +144,8 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
   const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [reversingTransactionId, setReversingTransactionId] = useState("");
+  const [clearingTransactionId, setClearingTransactionId] = useState("");
+  const [clearedTransactionIds, setClearedTransactionIds] = useState<string[]>([]);
   const visibleTransactions = useMemo(
     () => transactions.filter((transaction) => !deletedTransactionIds.includes(transaction.id)),
     [deletedTransactionIds, transactions],
@@ -199,8 +204,25 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
     }
 
     if (action === "reverse") {
+      if (!transactionStatusCanBeReversed(transaction.status)) {
+        showError("Only cleared transactions can be reversed.");
+        return;
+      }
       void confirmReverseTransaction(transaction);
     }
+  }
+
+  async function confirmMarkCleared(transaction: Transaction) {
+    setClearingTransactionId(transaction.id);
+    const result = await markTransactionCleared(transaction.id);
+    setClearingTransactionId("");
+    if (result.error) {
+      showError(result.error);
+      return;
+    }
+    setClearedTransactionIds((ids) => Array.from(new Set([...ids, ...(result.transactionIds ?? [transaction.id])])));
+    showSuccess("Transaction marked as cleared. Finalized totals are now updated.");
+    router.refresh();
   }
 
   function handleSort(key: SortKey) {
@@ -339,7 +361,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
         </div>
       </div>
       <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
-        <table className="w-full min-w-[1120px] border-collapse text-left">
+        <table className="w-full min-w-[1220px] border-collapse text-left">
           <thead>
             <tr className="border-b border-[#c6c6cd]/60 bg-[#f8f9ff]">
               <th className="w-12 px-4 py-3 text-center">
@@ -354,6 +376,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               </th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("date")} sortDirection={sortKey === "date" ? sortDirection : undefined}>Date</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("type")} sortDirection={sortKey === "type" ? sortDirection : undefined}>Type</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="w-40 px-4 py-3"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Category</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("account")} sortDirection={sortKey === "account" ? sortDirection : undefined}>Account</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("amountType")} sortDirection={sortKey === "amountType" ? sortDirection : undefined}>Amount Type</SortHeader></th>
@@ -389,6 +412,9 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   <td className="px-4 py-4">
                     <TransactionTypeBadge transferDirection={transaction.transferDirection} type={transaction.type} />
                   </td>
+                  <td className="whitespace-nowrap px-4 py-4">
+                    <TransactionStatusBadge status={clearedTransactionIds.includes(transaction.id) ? "cleared" : transaction.status} />
+                  </td>
                   <td className="w-40 px-4 py-4 align-middle">
                     <div className="flex max-w-36 items-center">
                       <CategoryBadge category={transaction.category} />
@@ -412,6 +438,18 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                   </td>
                   <td className="w-52 px-4 py-4 text-right">
                     <div className="flex min-w-48 justify-end gap-1">
+                      {normalizeTransactionStatus(transaction.status) === "pending" && !clearedTransactionIds.includes(transaction.id) ? (
+                        <button
+                          aria-label={`Mark ${transaction.id} as cleared`}
+                          className="grid size-11 place-items-center rounded-full border border-transparent text-[#047857] transition hover:border-[#bbf7d0] hover:bg-[#ecfdf5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#047857]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={clearingTransactionId === transaction.id || transactionIsImmutable(transaction)}
+                          onClick={() => void confirmMarkCleared(transaction)}
+                          title="Mark transaction as cleared"
+                          type="button"
+                        >
+                          <Icon className="size-4" name="check" />
+                        </button>
+                      ) : null}
                       {transactionActions.map((item) => (
                         item.action === "edit" && !transactionIsImmutable(transaction) ? (
                           <Link
@@ -427,7 +465,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                           <button
                             aria-label={`${item.label} for ${transaction.id}`}
                             className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 disabled:cursor-not-allowed disabled:opacity-40 ${item.tone}`}
-                            disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
+                            disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (!transactionStatusCanBeReversed(transaction.status) || reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
                             key={item.action}
                             onClick={() => handleAction(item.action, transaction)}
                             title={transactionIsImmutable(transaction) && item.action !== "view" ? "Reconciled reversal history is immutable" : item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
@@ -443,7 +481,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               ))
             ) : (
               <tr>
-                <td className="px-4 py-12 text-center text-sm font-medium text-[#45464d]" colSpan={11}>
+                <td className="px-4 py-12 text-center text-sm font-medium text-[#45464d]" colSpan={12}>
                   No transactions match the current filters.
                 </td>
               </tr>
@@ -478,12 +516,25 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
               </div>
               <div className="mt-4 flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 <TransactionTypeBadge transferDirection={transaction.transferDirection} type={transaction.type} />
+                <TransactionStatusBadge status={clearedTransactionIds.includes(transaction.id) ? "cleared" : transaction.status} />
                 <CategoryBadge category={transaction.category} />
                 <MetadataChip>{accountMovementLabel(transaction)}</MetadataChip>
                 <MetadataChip>{amountTypeMovementLabel(transaction)}</MetadataChip>
                 {transaction.isReversal ? <MetadataChip>Reversal</MetadataChip> : transaction.isReversed ? <MetadataChip>Reversed</MetadataChip> : null}
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-end gap-1 border-t border-[#c6c6cd]/40 pt-3">
+                {normalizeTransactionStatus(transaction.status) === "pending" && !clearedTransactionIds.includes(transaction.id) ? (
+                  <button
+                    aria-label={`Mark ${transaction.id} as cleared`}
+                    className="grid size-11 place-items-center rounded-full border border-transparent text-[#047857] transition hover:border-[#bbf7d0] hover:bg-[#ecfdf5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#047857]/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={clearingTransactionId === transaction.id || transactionIsImmutable(transaction)}
+                    onClick={() => void confirmMarkCleared(transaction)}
+                    title="Mark transaction as cleared"
+                    type="button"
+                  >
+                    <Icon className="size-4" name="check" />
+                  </button>
+                ) : null}
                 {transactionActions.map((item) => (
                   item.action === "edit" && !transactionIsImmutable(transaction) ? (
                     <Link
@@ -499,7 +550,7 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
                     <button
                       aria-label={`${item.label} for ${transaction.id}`}
                       className={`grid size-11 place-items-center rounded-full border border-transparent transition hover:border-[#c6c6cd] hover:bg-[#eff4ff] focus-visible:border-[#0058be] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0058be]/20 disabled:cursor-not-allowed disabled:opacity-40 ${item.tone}`}
-                      disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
+                      disabled={(item.action !== "view" && transactionIsImmutable(transaction)) || (item.action === "reverse" && (!transactionStatusCanBeReversed(transaction.status) || reversingTransactionId === transaction.id || reversedTransactionIds.includes(transaction.id)))}
                       key={item.action}
                       onClick={() => handleAction(item.action, transaction)}
                       title={transactionIsImmutable(transaction) && item.action !== "view" ? "Reconciled reversal history is immutable" : item.action === "reverse" && reversedTransactionIds.includes(transaction.id) ? "Reversal created" : item.label}
@@ -623,12 +674,14 @@ export function TransactionsTable({ transactions, totalResults }: TransactionsTa
             <div className="flex min-w-0 flex-col items-stretch gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <TransactionTypeBadge transferDirection={viewedTransaction.transferDirection} type={viewedTransaction.type} />
+                <TransactionStatusBadge status={clearedTransactionIds.includes(viewedTransaction.id) ? "cleared" : viewedTransaction.status} />
                 <CategoryBadge category={viewedTransaction.category} />
               </div>
               <p className={`amount-value text-left text-lg font-bold sm:text-right ${amountClass(viewedTransaction.type, viewedTransaction.transferDirection)}`}>{viewedTransaction.amount}</p>
             </div>
             <DetailModalSection title="Transaction information">
               <DetailModalField label="Date" value={viewedTransaction.date} />
+              <DetailModalField label="Status" value={clearedTransactionIds.includes(viewedTransaction.id) ? "Cleared" : transactionStatusLabel(viewedTransaction.status)} />
               <DetailModalField label="Account" value={viewedTransaction.account} />
               <DetailModalField label="Amount type" value={viewedTransaction.accountAmountType} />
               {viewedTransaction.transferDirection ? <DetailModalField label="Transfer side" value={viewedTransaction.transferDirection} /> : null}

@@ -6,12 +6,18 @@ import { getBudgets, type BudgetRecord } from "@/lib/budgets/supabase";
 import { getCategories, type CategoryRecord } from "@/lib/categories/supabase";
 import { getDebts, getUpcomingDebtPayments } from "@/lib/debts/supabase";
 import { calculateOpeningCashPosition } from "@/lib/future-planning/opening-position";
+import { normalizePlanningYears, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
 import type { ForecastItem, HistoricalActualItem } from "@/lib/future-planning/projection";
 import type { FutureTransactionRecord } from "@/lib/future-planning/records";
 import { economicTransactionDelta } from "@/lib/ledger";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
 import { getSubscriptions } from "@/lib/subscriptions/supabase";
+import {
+  isMissingDatabaseObject,
+  jsonSettingsSection,
+} from "@/lib/supabase/schema-compat";
 import { getTransaction, getTransactions, type TransactionRecord } from "@/lib/transactions/supabase";
+import { transactionStatusIsFinalized } from "@/lib/transactions/status";
 
 export type FuturePlanningSourceCounts = {
   debtPayments: number;
@@ -31,6 +37,18 @@ export type FuturePlanningData = {
   sourceCounts: FuturePlanningSourceCounts;
 };
 
+export type ManualFuturePlanningData = {
+  categories: CategoryRecord[];
+  columns: FuturePlanningColumn[];
+  plannedTransactions: FutureTransactionRecord[];
+  selectedYears: number[];
+};
+
+function planningColumnDirection(value: string): FuturePlanningColumnDirection {
+  if (value === "income" || value === "neutral" || value === "saving") return value;
+  return "expense";
+}
+
 function clampedDate(value: string, today: string) {
   return value && value > today ? value : today;
 }
@@ -44,10 +62,6 @@ function addAnchoredMonths(value: string, monthCount: number) {
   const target = new Date(year, month - 1 + monthCount, 1);
   target.setDate(Math.min(day, monthDayCount(target.getFullYear(), target.getMonth())));
   return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
-}
-
-function isPostedStatus(status: string) {
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status.trim().toLowerCase());
 }
 
 function asFutureTransaction(transaction: TransactionRecord): FutureTransactionRecord | null {
@@ -66,6 +80,9 @@ function asFutureTransaction(transaction: TransactionRecord): FutureTransactionR
     note: transaction.note,
     recurrence: transaction.futurePlan?.recurrence ?? "Once",
     relatedEntityId: transaction.relatedEntityId,
+    relatedEntityLabel: typeof transaction.ledgerMetadata.future_link_label === "string"
+      ? transaction.ledgerMetadata.future_link_label
+      : "",
     relatedEntityType: transaction.relatedEntityType,
     status: transaction.futurePlan?.status ?? "Active",
     title: transaction.title,
@@ -226,7 +243,7 @@ export async function getFuturePlanningData(
   }));
 
   const historicalActuals: HistoricalActualItem[] = transactions.flatMap((transaction) => {
-    if (!isPostedStatus(transaction.status) || transaction.type === "Transfer") return [];
+    if (!transactionStatusIsFinalized(transaction.status) || transaction.type === "Transfer") return [];
     if (["savings_goal", "subscription"].includes(transaction.relatedEntityType)) return [];
     if (transaction.relatedEntityType === "debt" && transaction.creditCardDebtImpact !== "charge") return [];
     const delta = economicTransactionDelta({
@@ -278,6 +295,74 @@ export async function getFuturePlanningData(
       savingsGoals: savingsGoals.filter((goal) => goal.status !== "Completed" && goal.monthlyContributionValue > 0).length,
       subscriptions: subscriptions.filter((subscription) => subscription.status !== "Paused" && Boolean(subscription.nextBillingDateValue)).length,
     },
+  };
+}
+
+export async function getManualFuturePlanningData(
+  supabase: SupabaseClient,
+  userId: string,
+  today: string,
+): Promise<ManualFuturePlanningData> {
+  const [accounts, categories, settingsResult, columnsResult, userSettingsResult] = await Promise.all([
+    getAccounts(supabase, userId),
+    getCategories(),
+    supabase
+      .from("future_planning_settings")
+      .select("selected_years")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("future_planning_columns")
+      .select("id,name,direction,category_id,related_entity_type,sort_order")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("user_settings")
+      .select("settings")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+  const settingsTableMissing = isMissingDatabaseObject(settingsResult.error, ["future_planning_settings"]);
+  if (settingsResult.error && !settingsTableMissing) throw new Error(settingsResult.error.message);
+  const columnsTableMissing = isMissingDatabaseObject(columnsResult.error, ["future_planning_columns"]);
+  if (columnsResult.error && !columnsTableMissing) throw new Error(columnsResult.error.message);
+
+  const transactions = await getTransactions(supabase, userId, accounts, categories);
+  const plannedTransactions = transactions
+    .flatMap((transaction) => {
+      const plan = asFutureTransaction(transaction);
+      return plan ? [plan] : [];
+    })
+    .sort((first, second) => first.dateValue.localeCompare(second.dateValue));
+  const currentYear = Number(today.slice(0, 4));
+  const fallbackSettings = jsonSettingsSection(userSettingsResult.data?.settings, "future_planning");
+  const directYears = normalizePlanningYears(settingsResult.data?.selected_years ?? []);
+  if (userSettingsResult.error && directYears.length === 0) throw new Error(userSettingsResult.error.message);
+  const fallbackYears = normalizePlanningYears(
+    Array.isArray(fallbackSettings.selected_years) ? fallbackSettings.selected_years : [],
+  );
+  const savedYears = directYears.length > 0 ? directYears : fallbackYears;
+  const selectedYears = savedYears.length > 0
+    ? savedYears
+    : normalizePlanningYears([
+      currentYear,
+      ...plannedTransactions.map((plan) => Number(plan.dateValue.slice(0, 4))),
+    ], currentYear);
+
+  return {
+    categories,
+    columns: (columnsTableMissing ? [] : columnsResult.data ?? []).map((column) => ({
+      categoryId: column.category_id ?? "",
+      direction: planningColumnDirection(column.direction),
+      id: column.id,
+      name: column.name,
+      relatedEntityType: column.related_entity_type ?? "",
+      sortOrder: column.sort_order,
+    })),
+    plannedTransactions,
+    selectedYears,
   };
 }
 

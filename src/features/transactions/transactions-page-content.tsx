@@ -18,7 +18,8 @@ type TransactionFiltersState = {
   dateFrom: string;
   dateTo: string;
   fromAccount: string;
-  relatedAccount: string;
+  search: string;
+  status: string;
   toAccount: string;
   type: string;
 };
@@ -29,6 +30,9 @@ type TransactionsPageContentProps = {
   initialCategoryFilter?: string;
   initialDateFrom: string;
   initialDateTo: string;
+  initialSearchFilter?: string;
+  initialStatusFilter?: string;
+  initialTypeFilter?: string;
   transactions: TransactionRecord[];
 };
 
@@ -47,6 +51,9 @@ function getInitialFilters(
   initialCategoryFilter?: string,
   initialDateFrom = "",
   initialDateTo = "",
+  initialSearchFilter = "",
+  initialStatusFilter = "",
+  initialTypeFilter = "",
 ): TransactionFiltersState {
   const accountFilter =
     initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
@@ -57,12 +64,15 @@ function getInitialFilters(
     account: accountFilter,
     amount: filterOptions.amount[0],
     category: categoryFilter,
-    dateFrom: initialDateFrom,
-    dateTo: initialDateTo,
+    dateFrom: toDateInputValue(initialDateFrom),
+    dateTo: toDateInputValue(initialDateTo),
     fromAccount: filterOptions.account[0],
-    relatedAccount: accountFilter,
+    search: initialSearchFilter,
+    status: initialStatusFilter
+      ? filterOptions.status.find((option) => option.toLowerCase() === initialStatusFilter.toLowerCase()) ?? filterOptions.status[0]
+      : filterOptions.status[0],
     toAccount: filterOptions.account[0],
-    type: filterOptions.type[0],
+    type: initialTypeFilter && filterOptions.type.includes(initialTypeFilter) ? initialTypeFilter : filterOptions.type[0],
   };
 }
 
@@ -117,10 +127,13 @@ function filterTransactions(transactions: TransactionRecord[], filters: Transact
   }
 
   return transactions.filter((transaction) => {
+    const normalizedSearch = filters.search.trim().toLowerCase();
+    const searchable = `${transaction.title} ${transaction.note} ${transaction.type} ${transaction.category} ${transaction.account} ${transaction.transferAccount ?? ""} ${transaction.amount} ${transaction.status}`.toLowerCase();
     const matchesAccount = matchesAffectedAccount(transaction, filters.account);
     const matchesCategory = filters.category === "Category" || transaction.category === filters.category;
     const matchesFromAccount = filters.fromAccount === "Account" || (transaction.type === "Transfer" && transaction.transferFromAccount === filters.fromAccount);
-    const matchesRelatedAccount = matchesAffectedAccount(transaction, filters.relatedAccount);
+    const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
+    const matchesStatus = filters.status === "Status" || transaction.status === filters.status.toLowerCase();
     const matchesToAccount = filters.toAccount === "Account" || (transaction.type === "Transfer" && transaction.transferToAccount === filters.toAccount);
     const matchesType = filters.type === "Type" || transaction.type === filters.type;
 
@@ -128,7 +141,8 @@ function filterTransactions(transactions: TransactionRecord[], filters: Transact
       matchesAccount &&
       matchesCategory &&
       matchesFromAccount &&
-      matchesRelatedAccount &&
+      matchesSearch &&
+      matchesStatus &&
       matchesToAccount &&
       matchesType &&
       matchesDateFilter(transaction, filters.dateFrom, filters.dateTo) &&
@@ -143,6 +157,9 @@ export function TransactionsPageContent({
   initialCategoryFilter,
   initialDateFrom,
   initialDateTo,
+  initialSearchFilter,
+  initialStatusFilter,
+  initialTypeFilter,
   transactions,
 }: TransactionsPageContentProps) {
   const effectiveFilterOptions = useMemo(() => ({
@@ -152,20 +169,20 @@ export function TransactionsPageContent({
       : filterOptions.category,
   }), [filterOptions, initialCategoryFilter]);
   const initialFilters = useMemo(
-    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo),
-    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo],
+    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialSearchFilter, initialStatusFilter, initialTypeFilter),
+    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialSearchFilter, initialStatusFilter, initialTypeFilter],
   );
   const [filters, setFilters] = useState<TransactionFiltersState>(initialFilters);
+  const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
   const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
   const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
-  const tableKey = useMemo(() => JSON.stringify(filters), [filters]);
 
-  function updateFilter(key: keyof TransactionFiltersState, value: string) {
+  function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     const normalizedValue = key === "dateFrom" || key === "dateTo" ? toDateInputValue(value) : value;
 
-    setFilters((currentFilters) => {
+    setDraftFilters((currentFilters) => {
       const nextFilters = { ...currentFilters, [key]: normalizedValue };
       if (key === "dateFrom" && normalizedValue && nextFilters.dateTo && normalizedValue > nextFilters.dateTo) {
         nextFilters.dateTo = normalizedValue;
@@ -174,7 +191,6 @@ export function TransactionsPageContent({
         nextFilters.dateFrom = normalizedValue;
       }
       if (key === "type") {
-        setActiveTab(normalizedValue === "Type" ? "All" : (normalizedValue as TransactionTab));
         if (normalizedValue !== "Transfer") {
           nextFilters.fromAccount = effectiveFilterOptions.account[0];
           nextFilters.toAccount = effectiveFilterOptions.account[0];
@@ -192,15 +208,53 @@ export function TransactionsPageContent({
     const nextType = nextTab === "All" ? "Type" : nextTab;
 
     setActiveTab(nextTab);
-    setFilters((currentFilters) => ({
-      ...currentFilters,
-      account: nextType === "Transfer" ? effectiveFilterOptions.account[0] : currentFilters.account,
-      fromAccount: nextType === "Transfer"
-        ? currentFilters.account === effectiveFilterOptions.account[0] ? currentFilters.fromAccount : currentFilters.account
-        : effectiveFilterOptions.account[0],
-      toAccount: nextType === "Transfer" ? currentFilters.toAccount : effectiveFilterOptions.account[0],
-      type: nextType,
-    }));
+    function withType(currentFilters: TransactionFiltersState) {
+      return {
+        ...currentFilters,
+        account: nextType === "Transfer" ? effectiveFilterOptions.account[0] : currentFilters.account,
+        fromAccount: nextType === "Transfer"
+          ? currentFilters.account === effectiveFilterOptions.account[0] ? currentFilters.fromAccount : currentFilters.account
+          : effectiveFilterOptions.account[0],
+        toAccount: nextType === "Transfer" ? currentFilters.toAccount : effectiveFilterOptions.account[0],
+        type: nextType,
+      };
+    }
+    const nextFilters = withType(filters);
+    setFilters(nextFilters);
+    setDraftFilters((current) => withType(current));
+    replaceFilterUrl(nextFilters);
+  }
+
+  function replaceFilterUrl(nextFilters: TransactionFiltersState) {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const values: Array<[string, string, string]> = [
+      ["account", nextFilters.account, effectiveFilterOptions.account[0]],
+      ["category", nextFilters.category, effectiveFilterOptions.category[0]],
+      ["dateFrom", nextFilters.dateFrom, ""],
+      ["dateTo", nextFilters.dateTo, ""],
+      ["q", nextFilters.search.trim(), ""],
+      ["status", nextFilters.status, effectiveFilterOptions.status[0]],
+      ["type", nextFilters.type, effectiveFilterOptions.type[0]],
+    ];
+    for (const [key, value, defaultValue] of values) {
+      if (!value || value === defaultValue) url.searchParams.delete(key);
+      else url.searchParams.set(key, value);
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  function applyFilters() {
+    setFilters(draftFilters);
+    setActiveTab(draftFilters.type === "Type" ? "All" : draftFilters.type as TransactionTab);
+    replaceFilterUrl(draftFilters);
+  }
+
+  function resetFilters() {
+    setDraftFilters(initialFilters);
+    setFilters(initialFilters);
+    setActiveTab(initialFilters.type === "Type" ? "All" : initialFilters.type as TransactionTab);
+    replaceFilterUrl(initialFilters);
   }
 
   return (
@@ -209,10 +263,12 @@ export function TransactionsPageContent({
       <SummaryCards summaries={filteredSummaries} />
       <TransactionsFilters
         filterOptions={effectiveFilterOptions}
-        filters={filters}
-        onFilterChange={updateFilter}
+        filters={draftFilters}
+        onFilterChange={updateDraftFilter}
+        onReset={resetFilters}
+        onSearch={applyFilters}
       />
-      <TransactionsTable key={tableKey} totalResults={filteredTransactions.length} transactions={filteredTransactions} />
+      <TransactionsTable totalResults={filteredTransactions.length} transactions={filteredTransactions} />
     </>
   );
 }

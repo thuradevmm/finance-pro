@@ -30,6 +30,7 @@ import {
   transactionMutationIntegrityError,
   transactionReversalIntegrityError,
 } from "@/lib/transactions/integrity";
+import { normalizeTransactionStatus, transactionStatusIsFinalized, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
 import { validateTransactionInput } from "@/lib/transactions/validation";
 import {
   subscriptionBillingOccurrence,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/subscriptions/calculations";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string; transactionIds?: string[]; warning?: string };
 
@@ -67,7 +69,7 @@ type TransactionRow = {
   type: string | null;
 };
 
-type MutationTransaction = Pick<TransactionRow, "account_id" | "id" | "metadata" | "related_entity_id" | "related_entity_type" | "status" | "transfer_account_id" | "type">;
+type MutationTransaction = Pick<TransactionRow, "account_id" | "category_id" | "id" | "metadata" | "related_entity_id" | "related_entity_type" | "status" | "transfer_account_id" | "type">;
 
 type DebtRow = {
   id: string;
@@ -128,6 +130,7 @@ type CreditCardDebtResolution = {
 };
 
 type CategoryRow = {
+  category_type?: string | null;
   id: string;
   is_active: boolean | null;
   metadata: unknown;
@@ -247,11 +250,6 @@ function numericValue(value: unknown, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function postedStatusAffectsBalance(value: unknown) {
-  const status = String(value ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
-}
-
 function optionalNumericValue(value: unknown) {
   if (value == null || value === "") return null;
   const number = Number(value);
@@ -339,6 +337,7 @@ async function validateAndResolveTransactionReferences(
   userId: string,
   input: TransactionFormData,
   allowedArchivedAccountIds: string[] = [],
+  allowedExistingCategoryId = "",
   allowedExistingRelated?: { id: string; transactionIds?: string[]; type: string },
 ): Promise<{ error?: string; input: TransactionFormData }> {
   const preservesExistingRelated = allowedExistingRelated?.id === input.relatedEntityId
@@ -365,15 +364,24 @@ async function validateAndResolveTransactionReferences(
   }
 
   if (input.type !== "Transfer") {
-    const { data: category, error: categoryError } = await supabase
+    let { data: category, error: categoryError } = await supabase
       .from("categories")
-      .select("id,is_active,type,metadata")
+      .select("id,is_active,type,category_type,metadata")
       .eq("id", input.categoryId)
       .eq("user_id", userId)
       .is("deleted_at", null)
       .maybeSingle();
+    if (categoryError && isMissingDatabaseObject(categoryError, ["category_type"])) {
+      ({ data: category, error: categoryError } = await supabase
+        .from("categories")
+        .select("id,is_active,type,metadata")
+        .eq("id", input.categoryId)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .maybeSingle());
+    }
     if (categoryError) return { error: categoryError.message, input };
-    if (!category || category.is_active === false) return { error: "Select an active category that belongs to your account.", input };
+    if (!category || (category.is_active === false && category.id !== allowedExistingCategoryId)) return { error: "Select an active category that belongs to your account.", input };
     if (!categoryRowSupports(category, "Transactions", input.type)) {
       return { error: `${input.type} transactions require an active ${input.type} category from the Transactions page.`, input };
     }
@@ -586,7 +594,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
 
 async function validateAvailableAmount(input: TransactionFormData, userId: string, ignoredTransactionIds: string[] = []) {
   if (input.type !== "Expense" && input.type !== "Transfer") return null;
-  if (!postedStatusAffectsBalance(input.status)) return null;
+  if (!transactionStatusReservesWorkingBalance(input.status)) return null;
 
   const { supabase } = await authenticatedClient();
   const amountType = normalizeAmountType(input.accountAmountType);
@@ -726,7 +734,7 @@ function creditCardImpactForInput(input: TransactionFormData, creditCardAccountI
 function isDebtCategory(row: CategoryRow) {
   if (row.is_active === false) return false;
   const metadata = metadataRecord(row.metadata);
-  const categoryType = String(metadata.category_type ?? "").trim().toLowerCase();
+  const categoryType = String(row.category_type ?? metadata.category_type ?? "").trim().toLowerCase();
   if (categoryType === "debt" || categoryType === "debts") return true;
   return metadataArray(metadata.scopes).some((scope) => String(scope).toLowerCase() === "debts");
 }
@@ -739,12 +747,25 @@ async function findOrCreateCreditCardDebtCategoryId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
 ) {
-  const { data, error } = await supabase
+  const enrichedResult = await supabase
     .from("categories")
-    .select("id,name,is_active,metadata")
+    .select("id,name,is_active,category_type,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
+  let data = enrichedResult.data as CategoryRow[] | null;
+  let error = enrichedResult.error;
+
+  if (error && isMissingDatabaseObject(error, ["category_type"])) {
+    const legacyResult = await supabase
+      .from("categories")
+      .select("id,name,is_active,metadata")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+    data = legacyResult.data as CategoryRow[] | null;
+    error = legacyResult.error;
+  }
 
   if (error) return null;
 
@@ -755,25 +776,36 @@ async function findOrCreateCreditCardDebtCategoryId(
 
   const style = getCategoryTypeStyle("Debt");
   for (const name of ["Credit Card Debt", "Credit Card Liability", "Debt"]) {
-    const { data: createdCategory, error: createError } = await supabase
+    const categoryPayload = {
+      color: style.color,
+      icon: style.icon,
+      is_active: true,
+      is_default: false,
+      metadata: {
+        category_type: "Debt",
+        description: "Automatically created for credit card debt tracking.",
+        scopes: ["Debts", "Reports"],
+        system_created: true,
+      },
+      name,
+      type: "expense",
+      user_id: userId,
+    };
+    let { data: createdCategory, error: createError } = await supabase
       .from("categories")
       .insert({
-        color: style.color,
-        icon: style.icon,
-        is_active: true,
-        is_default: false,
-        metadata: {
-          category_type: "Debt",
-          description: "Automatically created for credit card debt tracking.",
-          scopes: ["Debts", "Reports"],
-          system_created: true,
-        },
-        name,
-        type: "expense",
-        user_id: userId,
+        ...categoryPayload,
+        category_type: "debt",
       })
       .select("id")
       .maybeSingle();
+    if (createError && isMissingDatabaseObject(createError, ["category_type"])) {
+      ({ data: createdCategory, error: createError } = await supabase
+        .from("categories")
+        .insert(categoryPayload)
+        .select("id")
+        .maybeSingle());
+    }
 
     if (!createError && createdCategory?.id) return createdCategory.id as string;
     if (createError?.code !== "23505") break;
@@ -1482,7 +1514,7 @@ async function hasPostedReversalForTransactionIds(
 async function fetchTransactionForMutation(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transactionId: string) {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id,account_id,transfer_account_id,metadata,related_entity_id,related_entity_type,status,type")
+    .select("id,account_id,transfer_account_id,category_id,metadata,related_entity_id,related_entity_type,status,type")
     .eq("id", transactionId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -1633,13 +1665,13 @@ async function subscriptionPaymentMetadataForInput(
 
 function isReversalTransaction(transaction: Pick<TransactionRow, "metadata" | "status">) {
   const metadata = metadataRecord(transaction.metadata);
-  return postedStatusAffectsBalance(transaction.status) && typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id;
+  return transactionStatusIsFinalized(transaction.status) && typeof metadata.reversed_transaction_id === "string" && metadata.reversed_transaction_id;
 }
 
 function isPostedSubscriptionExpense(transaction: TransactionRow, reversedTransactionIds: Set<string>) {
   return (
     String(transaction.type ?? "").toLowerCase() === "expense" &&
-    postedStatusAffectsBalance(transaction.status) &&
+    transactionStatusIsFinalized(transaction.status) &&
     !reversedTransactionIds.has(transaction.id)
   );
 }
@@ -1985,6 +2017,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
     user.id,
     input,
     allowedArchivedAccountIds,
+    existingTransaction.category_id ?? "",
     existingTransaction.related_entity_id && existingTransaction.related_entity_type
       ? {
         id: existingTransaction.related_entity_id,
@@ -2066,6 +2099,46 @@ export async function updateTransaction(transactionId: string, input: Transactio
   ]);
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
   return { warning: reconciliationWarning(debtReconciliationError, subscriptionReconciliationError) };
+}
+
+export async function markTransactionCleared(transactionId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+
+  try {
+    const transaction = await fetchTransactionForMutation(supabase, user.id, transactionId);
+    if (!transaction) return { error: "Transaction not found." };
+    const status = normalizeTransactionStatus(transaction.status);
+    if (status === "cleared") return { transactionIds: [transactionId] };
+    if (status !== "pending") {
+      return { error: "Only pending transactions can be marked as cleared. Complete a scheduled transaction through Edit so available funds and references are validated." };
+    }
+
+    const transactionIds = await getLinkedTransactionIds(supabase, user.id, transaction);
+    const integrityError = transactionMutationIntegrityError(
+      transaction,
+      await hasPostedReversalForTransactionIds(supabase, user.id, transactionIds),
+    );
+    if (integrityError) return { error: integrityError };
+    const debtIds = await getDebtIdsForTransactionIds(supabase, user.id, transactionIds);
+    const subscriptionIds = await getSubscriptionIdsForTransactionIds(supabase, user.id, transactionIds);
+    const { error } = await supabase
+      .from("transactions")
+      .update({ status: "cleared" })
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .in("id", transactionIds);
+    if (error) return { error: transactionMutationError(error.message) };
+
+    const [debtReconciliationError, subscriptionReconciliationError] = await Promise.all([
+      reconcileDebtIds(supabase, user.id, debtIds),
+      reconcileSubscriptionIds(supabase, user.id, subscriptionIds),
+    ]);
+    revalidateTransactionLinkedPaths();
+    return { transactionIds, warning: reconciliationWarning(debtReconciliationError, subscriptionReconciliationError) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Unable to clear transaction." };
+  }
 }
 
 export async function deleteTransaction(transactionId: string): Promise<ActionResult> {

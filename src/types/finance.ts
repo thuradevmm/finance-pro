@@ -1,6 +1,7 @@
 import type { IconName } from "@/components/ui/icon";
 
 export type TransactionType = "Income" | "Expense" | "Transfer";
+export type TransactionStatus = "cancelled" | "cleared" | "failed" | "pending" | "scheduled" | "unknown" | "void";
 
 export type TransactionCategoryName = string;
 
@@ -19,6 +20,9 @@ export type FinancialCategory = {
   tone: string;
   bg: string;
   marker: string;
+  mergedIntoCategoryId: string;
+  mergedIntoCategoryName: string;
+  reportingRole: "" | "salary";
   scopes: CategoryScope[];
   status: "Active" | "Hidden";
 };
@@ -41,7 +45,7 @@ export type BudgetCategory = {
   bg: string;
 };
 
-export type SavingsGoalStatus = "On Track" | "Behind" | "Completed";
+export type SavingsGoalStatus = "In Progress" | "Behind" | "Completed";
 
 export type SavingsGoal = {
   id: string;
@@ -189,6 +193,7 @@ export type Transaction = {
   amount: string;
   amountValue?: number;
   note: string;
+  status: TransactionStatus;
   attachment?: "receipt" | "document";
   linkedAssetId?: string;
   linkedBudgetId?: string;
@@ -252,4 +257,5 @@ export type TransactionFilterOptions = {
   account: string[];
   type: string[];
   amount: string[];
+  status: string[];
 };

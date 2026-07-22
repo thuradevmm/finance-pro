@@ -1,3 +1,5 @@
+import { transactionStatusCanBeReversed, transactionStatusIsFinalized } from "./status.ts";
+
 export type TransactionIntegrityInput = {
   id?: string | null;
   metadata?: unknown;
@@ -10,11 +12,6 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
-function transactionStatusAffectsBalance(value: unknown) {
-  const status = String(value ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
-}
-
 export function transactionReversalSourceId(transaction: TransactionIntegrityInput) {
   const value = metadataRecord(transaction.metadata).reversed_transaction_id;
   return typeof value === "string" ? value : "";
@@ -23,7 +20,7 @@ export function transactionReversalSourceId(transaction: TransactionIntegrityInp
 export function postedReversalSourceIds(transactions: TransactionIntegrityInput[]) {
   return new Set(
     transactions.flatMap((transaction) => {
-      if (!transactionStatusAffectsBalance(transaction.status)) return [];
+      if (!transactionStatusIsFinalized(transaction.status)) return [];
       const sourceId = transactionReversalSourceId(transaction);
       return sourceId ? [sourceId] : [];
     }),
@@ -49,8 +46,8 @@ export function transactionReversalIntegrityError(
 ) {
   const mutationError = transactionMutationIntegrityError(transaction, hasPostedReversal);
   if (mutationError) return mutationError;
-  if (!transactionStatusAffectsBalance(transaction.status)) {
-    return "Only posted transactions can be reversed. Edit or delete this scheduled/cancelled transaction instead.";
+  if (!transactionStatusCanBeReversed(transaction.status)) {
+    return "Only cleared transactions can be reversed. Mark a pending transaction as cleared first, or edit/delete a non-finalized transaction.";
   }
   return "";
 }

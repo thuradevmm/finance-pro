@@ -7,6 +7,7 @@ import { type FormEvent, useState } from "react";
 import { AuthField } from "@/components/auth/auth-field";
 import { useInteractionLoading } from "@/components/app/interaction-loading-provider";
 import { LoadingButton } from "@/components/ui/loading-state";
+import { safeLocalRedirectPath } from "@/lib/auth/redirect-path";
 import { createClient } from "@/lib/supabase/client";
 import { setSessionPersistence } from "@/lib/auth/session-timeout";
 
@@ -49,9 +50,7 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
     }
 
     const requestedPath = new URLSearchParams(window.location.search).get("next");
-    const destination = requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
-      ? requestedPath
-      : "/dashboard";
+    const destination = safeLocalRedirectPath(requestedPath);
 
     setSessionPersistence(rememberMe);
     setIsSubmitting(false);

@@ -4,17 +4,21 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { deleteAccount as deleteAccountAction } from "@/app/accounts/actions";
+import {
+  archiveAccount as archiveAccountAction,
+  deleteAccount as deleteAccountAction,
+  restoreAccount as restoreAccountAction,
+} from "@/app/accounts/actions";
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { Icon } from "@/components/ui/icon";
-import { RecordActions } from "@/components/ui/record-actions";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
+import { AccountRecordActions } from "@/features/accounts/account-record-actions";
 import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
 import { formatMmk, parseCurrency } from "@/lib/currency";
@@ -38,6 +42,53 @@ const accountSortOptions: { label: string; value: AccountSortKey }[] = [
   { label: "Status", value: "status" },
   { label: "Balance / Credit", value: "balance" },
 ];
+
+type AccountFilterValues = {
+  accountCategory: string;
+  accountStatus: string;
+  accountType: string;
+  q: string;
+  view: AccountViewMode;
+};
+
+function AccountFilters({
+  categoryOptions,
+  initialValues,
+  onSearch,
+  typeOptions,
+}: {
+  categoryOptions: string[];
+  initialValues: AccountFilterValues;
+  onSearch: (values: AccountFilterValues) => void;
+  typeOptions: string[];
+}) {
+  const [draft, setDraft] = useState(initialValues);
+
+  return (
+    <form
+      className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(15rem,1.4fr)_repeat(4,minmax(9rem,1fr))_auto]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSearch(draft);
+      }}
+    >
+      <TextInput label="Search Accounts" onChange={(value) => setDraft((current) => ({ ...current, q: value }))} placeholder="Name, category, type, number..." value={draft.q} />
+      <SelectInput label="View Mode" onChange={(value) => setDraft((current) => ({ ...current, view: value as AccountViewMode }))} options={["Lookup", "List", "Card"]} value={draft.view} />
+      <SelectInput label="Category" onChange={(value) => setDraft((current) => ({ ...current, accountCategory: value }))} options={categoryOptions} value={draft.accountCategory} />
+      <SelectInput label="Type" onChange={(value) => setDraft((current) => ({ ...current, accountType: value }))} options={typeOptions} value={draft.accountType} />
+      <SelectInput label="Status" onChange={(value) => setDraft((current) => ({ ...current, accountStatus: value }))} options={["All statuses", "Active", "Needs Review", "Archived"]} value={draft.accountStatus} />
+      <div className="flex items-end gap-2">
+        <button
+          className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
+          type="submit"
+        >
+          <Icon className="size-4" name="search" />
+          Search
+        </button>
+      </div>
+    </form>
+  );
+}
 
 function decimalScaleFromNumber(value: number) {
   if (!Number.isFinite(value)) return 0;
@@ -101,13 +152,17 @@ function creditCardNetwork(account: Pick<AccountRecord, "cardType">) {
 function AccountCard({
   account,
   accounts,
+  onArchive,
   onDelete,
+  onRestore,
   onView,
   returnTo,
 }: {
   account: AccountRecord;
   accounts: AccountRecord[];
+  onArchive: (account: AccountRecord) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onRestore: (account: AccountRecord) => Promise<boolean>;
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
@@ -178,7 +233,7 @@ function AccountCard({
         >
           <Icon className="size-4" name="eye" />
         </button>
-        <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+        <AccountRecordActions account={account} editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} onArchive={onArchive} onDelete={onDelete} onRestore={onRestore} />
         <Link
           aria-label={`View transactions for ${account.name}`}
           className="grid size-11 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
@@ -195,13 +250,17 @@ function AccountCard({
 function CreditCardCard({
   account,
   accounts,
+  onArchive,
   onDelete,
+  onRestore,
   onView,
   returnTo,
 }: {
   account: AccountRecord;
   accounts: AccountRecord[];
+  onArchive: (account: AccountRecord) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onRestore: (account: AccountRecord) => Promise<boolean>;
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
@@ -307,7 +366,7 @@ function CreditCardCard({
             >
               <Icon className="size-4" name="eye" />
             </button>
-            <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+            <AccountRecordActions account={account} editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} onArchive={onArchive} onDelete={onDelete} onRestore={onRestore} />
             <Link
               aria-label={`View transactions for ${account.name}`}
               className="grid size-11 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
@@ -650,13 +709,17 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
 function CreditCardsTable({
   accounts,
   items,
+  onArchive,
   onDelete,
+  onRestore,
   onView,
   returnTo,
 }: {
   accounts: AccountRecord[];
   items: AccountRecord[];
+  onArchive: (account: AccountRecord) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onRestore: (account: AccountRecord) => Promise<boolean>;
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
@@ -672,7 +735,9 @@ function CreditCardsTable({
             account={account}
             accounts={accounts}
             key={`credit-card-mobile-${account.id}`}
+            onArchive={onArchive}
             onDelete={onDelete}
+            onRestore={onRestore}
             onView={onView}
             returnTo={returnTo}
           />
@@ -741,7 +806,7 @@ function CreditCardsTable({
                     >
                       <Icon className="size-4" name="eye" />
                     </button>
-                    <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+                    <AccountRecordActions account={account} editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} onArchive={onArchive} onDelete={onDelete} onRestore={onRestore} />
                     <Link
                       aria-label={`View transactions for ${account.name}`}
                       className="grid size-11 place-items-center rounded-full text-[#0058be] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
@@ -764,13 +829,17 @@ function CreditCardsTable({
 function AccountsTable({
   accounts,
   items,
+  onArchive,
   onDelete,
+  onRestore,
   onView,
   returnTo,
 }: {
   accounts: AccountRecord[];
   items: AccountRecord[];
+  onArchive: (account: AccountRecord) => Promise<boolean>;
   onDelete: (id: string) => void;
+  onRestore: (account: AccountRecord) => Promise<boolean>;
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
@@ -832,7 +901,9 @@ function AccountsTable({
             account={account}
             accounts={accounts}
             key={`account-mobile-${account.id}`}
+            onArchive={onArchive}
             onDelete={onDelete}
+            onRestore={onRestore}
             onView={onView}
             returnTo={returnTo}
           />
@@ -882,7 +953,7 @@ function AccountsTable({
                     >
                       <Icon className="size-4" name="eye" />
                     </button>
-                    <RecordActions editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} itemId={account.id} itemLabel={account.name} onDelete={onDelete} />
+                    <AccountRecordActions account={account} editHref={`/accounts/${account.id}/edit?returnTo=${encodeURIComponent(returnTo)}`} onArchive={onArchive} onDelete={onDelete} onRestore={onRestore} />
                     <Link
                       aria-label={`View transactions for ${account.name}`}
                       className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
@@ -913,7 +984,7 @@ export default function AccountsPage() {
   const [isPending, setIsPending] = useState(false);
   const search = searchParams.get("q") ?? "";
   const viewParam = searchParams.get("view");
-  const viewMode: AccountViewMode = viewParam === "Card" || viewParam === "Lookup" ? viewParam : "List";
+  const viewMode: AccountViewMode = viewParam === "Card" || viewParam === "List" ? viewParam : "Lookup";
   const categoryFilter = searchParams.get("accountCategory") ?? "All categories";
   const typeFilter = searchParams.get("accountType") ?? "All types";
   const statusFilter = searchParams.get("accountStatus") ?? "All statuses";
@@ -922,7 +993,13 @@ export default function AccountsPage() {
   const addAccountHref = `/accounts/add?returnTo=${encodeURIComponent(returnTo)}`;
   const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(visibleAccounts.map((account) => account.category || "Uncategorized")))], [visibleAccounts]);
   const typeOptions = useMemo(() => ["All types", ...Array.from(new Set(visibleAccounts.map((account) => account.type)))], [visibleAccounts]);
-  const statusOptions = ["All statuses", "Active", "Needs Review", "Archived"];
+  const appliedFilters: AccountFilterValues = {
+    accountCategory: categoryFilter,
+    accountStatus: statusFilter,
+    accountType: typeFilter,
+    q: search,
+    view: viewMode,
+  };
   const filteredAccounts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
 
@@ -963,13 +1040,18 @@ export default function AccountsPage() {
   const filteredNonCardAccounts = filteredAccounts.filter((account) => !isCreditCardAccount(account));
   const accountSummaries = getAccountSummaries(visibleAccounts);
 
-  function updateAccountParam(key: string, value: string, defaultValue: string) {
+  function applyAccountFilters(values: AccountFilterValues) {
     const params = new URLSearchParams(searchParams.toString());
-    const normalizedValue = value.trim();
-    if (normalizedValue === "" || value === defaultValue) {
-      params.delete(key);
-    } else {
-      params.set(key, value);
+    const entries: Array<[keyof AccountFilterValues, string, string]> = [
+      ["q", values.q.trim(), ""],
+      ["view", values.view, "Lookup"],
+      ["accountCategory", values.accountCategory, "All categories"],
+      ["accountType", values.accountType, "All types"],
+      ["accountStatus", values.accountStatus, "All statuses"],
+    ];
+    for (const [key, value, defaultValue] of entries) {
+      if (!value || value === defaultValue) params.delete(key);
+      else params.set(key, value);
     }
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -1036,6 +1118,38 @@ export default function AccountsPage() {
     showSuccess("Account deleted successfully.");
   }
 
+  async function archiveAccount(account: AccountRecord) {
+    setError("");
+    setIsPending(true);
+    const result = await archiveAccountAction(account.id);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleAccounts((items) => items.map((item) => item.id === account.id ? { ...item, status: "Archived" } : item));
+    setViewedAccount((item) => item?.id === account.id ? { ...item, status: "Archived" } : item);
+    showSuccess(account.type === "Credit Card" && account.cardType.toLowerCase() === "mpu"
+      ? "MPU card account retired. Its transaction history remains available."
+      : "Account archived. Its transaction history remains available.");
+    return true;
+  }
+
+  async function restoreAccount(account: AccountRecord) {
+    setError("");
+    setIsPending(true);
+    const result = await restoreAccountAction(account.id);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleAccounts((items) => items.map((item) => item.id === account.id ? { ...item, status: "Active" } : item));
+    setViewedAccount((item) => item?.id === account.id ? { ...item, status: "Active" } : item);
+    showSuccess("Account restored and available for new activity.");
+    return true;
+  }
+
   return (
     <AppShell
       activeNavLabel="Accounts"
@@ -1088,13 +1202,7 @@ export default function AccountsPage() {
 
       {!isLoading && visibleAccounts.length > 0 ? (
         <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <TextInput label="Search Accounts" onChange={(value) => updateAccountParam("q", value, "")} placeholder="Name, category, type, number..." value={search} />
-            <SelectInput label="View Mode" onChange={(value) => updateAccountParam("view", value, "List")} options={["List", "Card", "Lookup"]} value={viewMode} />
-            <SelectInput label="Category" onChange={(value) => updateAccountParam("accountCategory", value, "All categories")} options={categoryOptions} value={categoryFilter} />
-            <SelectInput label="Type" onChange={(value) => updateAccountParam("accountType", value, "All types")} options={typeOptions} value={typeFilter} />
-            <SelectInput label="Status" onChange={(value) => updateAccountParam("accountStatus", value, "All statuses")} options={statusOptions} value={statusFilter} />
-          </div>
+          <AccountFilters categoryOptions={categoryOptions} initialValues={appliedFilters} key={currentQuery} onSearch={applyAccountFilters} typeOptions={typeOptions} />
         </section>
       ) : null}
 
@@ -1118,7 +1226,7 @@ export default function AccountsPage() {
               </div>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                 {filteredNonCardAccounts.map((account) => (
-                  <AccountCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
+                  <AccountCard account={account} accounts={visibleAccounts} key={account.id} onArchive={archiveAccount} onDelete={deleteAccount} onRestore={restoreAccount} onView={setViewedAccount} returnTo={returnTo} />
                 ))}
               </div>
             </section>
@@ -1132,7 +1240,7 @@ export default function AccountsPage() {
               </div>
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                 {filteredCreditCards.map((account) => (
-                  <CreditCardCard account={account} accounts={visibleAccounts} key={account.id} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} />
+                  <CreditCardCard account={account} accounts={visibleAccounts} key={account.id} onArchive={archiveAccount} onDelete={deleteAccount} onRestore={restoreAccount} onView={setViewedAccount} returnTo={returnTo} />
                 ))}
               </div>
             </section>
@@ -1142,8 +1250,8 @@ export default function AccountsPage() {
 
       {!isLoading && filteredAccounts.length > 0 && viewMode === "List" ? (
         <div className="space-y-6">
-          {filteredNonCardAccounts.length > 0 ? <AccountsTable accounts={visibleAccounts} items={filteredNonCardAccounts} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
-          {filteredCreditCards.length > 0 ? <CreditCardsTable accounts={visibleAccounts} items={filteredCreditCards} onDelete={deleteAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+          {filteredNonCardAccounts.length > 0 ? <AccountsTable accounts={visibleAccounts} items={filteredNonCardAccounts} onArchive={archiveAccount} onDelete={deleteAccount} onRestore={restoreAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
+          {filteredCreditCards.length > 0 ? <CreditCardsTable accounts={visibleAccounts} items={filteredCreditCards} onArchive={archiveAccount} onDelete={deleteAccount} onRestore={restoreAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
         </div>
       ) : null}
       {!isLoading && filteredAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}

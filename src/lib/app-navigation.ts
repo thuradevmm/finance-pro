@@ -9,6 +9,7 @@ export type NavItem = {
 export const navGroups: NavItem[][] = [
   [
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
+    { label: "Salary Periods", icon: "trendingUp", href: "/salary-periods" },
     { label: "Transactions", icon: "receipt", href: "/transactions" },
     { label: "Accounts", icon: "account", href: "/accounts" },
     { label: "Categories", icon: "category", href: "/categories" },

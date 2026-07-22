@@ -10,6 +10,7 @@ import { roundCurrencyValue } from "@/lib/ledger";
 import type { SubscriptionFormData } from "@/lib/subscriptions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 
@@ -75,15 +76,20 @@ async function validateSubscriptionLinks(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   input: SubscriptionFormData,
+  allowedExistingCategoryId = "",
 ) {
-  const [accountResult, categoryResult] = await Promise.all([
-    supabase.from("accounts").select("id,is_active,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
-    supabase.from("categories").select("id,is_active,type,metadata").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
-  ]);
+  const accountPromise = supabase.from("accounts").select("id,is_active,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  let categoryResult = await supabase.from("categories").select("id,is_active,type,category_type,metadata").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  if (categoryResult.error && isMissingDatabaseObject(categoryResult.error, ["category_type"])) {
+    categoryResult = await supabase.from("categories").select("id,is_active,type,metadata").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  }
+  const accountResult = await accountPromise;
   const error = accountResult.error ?? categoryResult.error;
   if (error) return error.message;
   if (!accountResult.data || !accountStatusContributesToCurrentTotals(storedAccountStatus(accountResult.data))) return "Select an available payment account.";
-  if (!categoryResult.data || categoryResult.data.is_active === false || !categoryRowSupports(categoryResult.data, "Subscriptions", "Subscription")) {
+  if (!categoryResult.data
+    || (categoryResult.data.is_active === false && categoryResult.data.id !== allowedExistingCategoryId)
+    || !categoryRowSupports(categoryResult.data, "Subscriptions", "Subscription")) {
     return "Select an active subscription category.";
   }
   return "";
@@ -232,7 +238,16 @@ export async function updateSubscription(subscriptionId: string, input: Subscrip
   if (!user) return { error: "You must be signed in." };
   const validationError = validateSubscriptionInput(input);
   if (validationError) return { error: validationError };
-  const linkError = await validateSubscriptionLinks(supabase, user.id, input);
+  const { data: existingSubscription, error: existingError } = await supabase
+    .from("subscriptions")
+    .select("id,category_id")
+    .eq("id", subscriptionId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (existingError) return { error: existingError.message };
+  if (!existingSubscription) return { error: "Subscription not found." };
+  const linkError = await validateSubscriptionLinks(supabase, user.id, input, existingSubscription.category_id ?? "");
   if (linkError) return { error: linkError };
   const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, await paymentAwarePayload(supabase, subscriptionId, user.id, input));
   if (result.error) return result;

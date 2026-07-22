@@ -26,6 +26,15 @@ test("linked contributions count one posted debit and ignore its pair and cancel
   assert.equal(linkedExpenseContributionDelta({ amount: 200, metadata: { reversed_transaction_id: "source", reversed_transaction_type: "transfer", transfer_direction: "debit" }, status: "cleared", type: "transfer" }), -200);
 });
 
+test("pending rows reserve working balance without becoming finalized actuals", () => {
+  const pending = { account_id: "bank", amount: 250, status: "pending", type: "expense" };
+  const activity = buildAccountLedgerActivities([pending], [{ id: "bank", type: "bank_account" }]);
+
+  assert.equal(activity.get("bank")?.deltas.get("General"), -250);
+  assert.deepEqual(economicTransactionDelta(pending), { expenseDelta: 0, incomeDelta: 0 });
+  assert.equal(linkedExpenseContributionDelta(pending), 0);
+});
+
 const accounts = [
   { id: "bank", type: "bank_account" },
   { id: "card", type: "credit_card" },
@@ -144,11 +153,12 @@ test("reversing a purchase subtracts spending and reversing a payment is not inc
   ]), { expenses: 0, income: 0, net: 0 });
 });
 
-test("client summary metadata preserves payments and reversals", () => {
+test("client summary metadata preserves payments, reversals, and future link labels", () => {
   assert.deepEqual(ledgerRelevantMetadata({
     credit_card_account_id: "card",
     credit_card_debt_impact: "repayment",
     credit_card_payment: true,
+    future_link_label: "Subscription · Cloud storage",
     internal_display_only: "discarded",
     reversed_credit_card_payment: true,
     reversed_transaction_id: "payment",
@@ -158,6 +168,7 @@ test("client summary metadata preserves payments and reversals", () => {
     credit_card_account_id: "card",
     credit_card_debt_impact: "repayment",
     credit_card_payment: true,
+    future_link_label: "Subscription · Cloud storage",
     reversed_credit_card_payment: true,
     reversed_transaction_id: "payment",
     reversed_transaction_type: "expense",

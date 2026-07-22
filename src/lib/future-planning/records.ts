@@ -2,6 +2,15 @@ import type { AccountAmountType, TransactionType } from "@/types/finance";
 
 export type FutureRecurrence = "Monthly" | "Once" | "Weekly" | "Yearly";
 export type FuturePlanStatus = "Active" | "Paused";
+export type FuturePlanRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
+
+export type FuturePlanLinkOption = {
+  amount: number;
+  categoryId: string;
+  id: string;
+  label: string;
+  type: Exclude<FuturePlanRelatedEntityType, "none">;
+};
 
 export type FutureTransactionFormData = {
   accountAmountType: AccountAmountType;
@@ -11,6 +20,9 @@ export type FutureTransactionFormData = {
   endDate: string;
   note: string;
   recurrence: FutureRecurrence;
+  relatedEntityId: string;
+  relatedEntityLabel: string;
+  relatedEntityType: FuturePlanRelatedEntityType;
   startDate: string;
   status: FuturePlanStatus;
   title: string;
@@ -31,7 +43,8 @@ export type FutureTransactionRecord = {
   note: string;
   recurrence: FutureRecurrence;
   relatedEntityId: string;
-  relatedEntityType: string;
+  relatedEntityLabel: string;
+  relatedEntityType: FuturePlanRelatedEntityType;
   status: FuturePlanStatus;
   title: string;
   type: Exclude<TransactionType, "Transfer">;

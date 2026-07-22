@@ -11,7 +11,7 @@ function normalizedCategoryType(value: unknown) {
 }
 
 export function categoryRowSupports(
-  row: { metadata?: unknown; type?: unknown },
+  row: { category_type?: unknown; metadata?: unknown; type?: unknown },
   scope: CategoryScope,
   type: CategoryType,
 ) {
@@ -21,7 +21,7 @@ export function categoryRowSupports(
     : [];
   const expectedScope = scope.toLowerCase();
   const expectedType = type.toLowerCase();
-  const rowType = normalizedCategoryType(metadata.category_type ?? row.type);
+  const rowType = normalizedCategoryType(row.category_type ?? metadata.category_type ?? row.type);
   return scopes.includes(expectedScope) && rowType === expectedType;
 }
 

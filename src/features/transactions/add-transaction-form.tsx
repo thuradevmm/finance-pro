@@ -20,6 +20,7 @@ import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOption
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
+import { normalizeTransactionStatus, transactionStatusLabel, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
 import type { TransactionType } from "@/types/finance";
 
 type TransactionTypeOption = {
@@ -116,11 +117,6 @@ function accountAmountTypeOptionsFor(account: AccountRecord | undefined) {
   return account.balanceBreakdowns.map((breakdown) => breakdown.type);
 }
 
-function postedStatusAffectsBalance(status: string | undefined) {
-  const normalizedStatus = String(status ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(normalizedStatus);
-}
-
 function transferFromAmountType(transaction: TransactionRecord) {
   if (transaction.transferDirection === "Credit") return transaction.transferAccountAmountType ?? transaction.accountAmountType;
   return transaction.accountAmountType;
@@ -132,7 +128,7 @@ function transferToAmountType(transaction: TransactionRecord) {
 }
 
 function editedTransactionBalanceAdjustment(transaction: TransactionRecord | undefined, accountId: string, amountType: string) {
-  if (!transaction || !postedStatusAffectsBalance(transaction.status)) return 0;
+  if (!transaction || !transactionStatusReservesWorkingBalance(transaction.status)) return 0;
 
   const amountValue = transaction.amountValue ?? 0;
   if (transaction.type === "Income" && transaction.accountId === accountId && transaction.accountAmountType === amountType) return -amountValue;
@@ -280,7 +276,7 @@ export function AddTransactionForm({
   const categoryHasError = showErrors && !isTransfer && !effectiveCategoryId;
   const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
   const availableAmountValue = (selectedAvailableBreakdown?.amountValue ?? 0) + editedTransactionBalanceAdjustment(transaction, accountId, effectiveAccountAmountType);
-  const shouldValidateAvailableAmount = postedStatusAffectsBalance(status)
+  const shouldValidateAvailableAmount = transactionStatusReservesWorkingBalance(status)
     && !isCreditCardAccount(selectedAccount)
     && (selectedType === "Expense" || selectedType === "Transfer");
   const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
@@ -478,12 +474,12 @@ export function AddTransactionForm({
               {isTransfer ? (
                 <SelectInput label="To Account Amount Type" onChange={setTransferAccountAmountType} options={transferAccountAmountTypeOptions.length > 0 ? transferAccountAmountTypeOptions : ["General"]} value={effectiveTransferAccountAmountType} />
               ) : (
-                <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
+                <SelectInput label="Status" onChange={(value) => setStatus(normalizeTransactionStatus(value))} options={["Cleared", "Pending", "Scheduled"]} value={transactionStatusLabel(status)} />
               )}
             </div>
             {isTransfer ? (
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <SelectInput label="Status" onChange={setStatus} options={["cleared", "pending", "scheduled"]} value={status} />
+                <SelectInput label="Status" onChange={(value) => setStatus(normalizeTransactionStatus(value))} options={["Cleared", "Pending", "Scheduled"]} value={transactionStatusLabel(status)} />
               </div>
             ) : null}
             {transferAmountTypeHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Choose a different amount type when transferring within the same account.</p> : null}

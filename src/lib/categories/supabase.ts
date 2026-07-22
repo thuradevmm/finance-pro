@@ -10,6 +10,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { deriveCreditCardDebtMetadata } from "@/lib/ledger";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 import type { CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
 
 export type CategoryRecord = FinancialCategory & {
@@ -25,11 +26,14 @@ export type CategoryFormData = {
   isActive: boolean;
   isDefault: boolean;
   name: string;
+  reportingRole: "" | "salary";
   scopes: CategoryScope[];
   type: CategoryType;
 };
 
 type CategoryRow = {
+  archived_at?: string | null;
+  category_type?: string | null;
   color: string | null;
   description?: string | null;
   icon: string | null;
@@ -37,7 +41,9 @@ type CategoryRow = {
   is_active: boolean;
   is_default: boolean;
   metadata: unknown;
+  merged_into_category_id?: string | null;
   name: string;
+  reporting_role?: string | null;
   type: string;
   user_id: string | null;
 };
@@ -81,9 +87,9 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
-function normalizeCategoryType(rowType: string, scopes: CategoryScope[], metadata: Record<string, unknown>): CategoryType {
+function normalizeCategoryType(categoryType: unknown, rowType: string, scopes: CategoryScope[], metadata: Record<string, unknown>): CategoryType {
   const metadataType = typeof metadata.category_type === "string" ? metadata.category_type : "";
-  const normalizedType = (metadataType || rowType).toLowerCase().replace(/[_-]/g, " ");
+  const normalizedType = String(categoryType || metadataType || rowType).toLowerCase().replace(/[_-]/g, " ");
 
   if (normalizedType === "account" || normalizedType === "accounts") return "Account";
   if (normalizedType === "asset" || normalizedType === "assets") return "Asset";
@@ -103,12 +109,12 @@ function normalizeCategoryType(rowType: string, scopes: CategoryScope[], metadat
   return "Expense";
 }
 
-function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRecord {
+function mapCategory(row: CategoryRow, categoryNames: Map<string, string>, activity?: CategoryActivity): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
   const scopes = Array.isArray(metadata.scopes)
     ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string")
     : ["Transactions", "Reports"] as CategoryScope[];
-  const type = normalizeCategoryType(row.type, scopes, metadata);
+  const type = normalizeCategoryType(row.category_type, row.type, scopes, metadata);
   const style = getCategoryTypeStyle(type);
   const isTransactionCategory = type === "Expense" || type === "Income";
   const activityValue = isTransactionCategory ? activity?.monthlyAverage ?? 0 : activity?.total ?? 0;
@@ -118,6 +124,8 @@ function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRec
     Expense: { activity: "Monthly Avg", count: "Transactions" },
     Income: { activity: "Monthly Avg", count: "Transactions" },
   };
+  const mergedIntoCategoryId = row.merged_into_category_id
+    ?? (typeof metadata.merged_into_category_id === "string" ? metadata.merged_into_category_id : "");
 
   return {
     ...style,
@@ -128,7 +136,11 @@ function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRec
     isSharedDefault: row.is_default && row.user_id === null,
     countLabel: labels[type].count,
     monthlyAverage: formatMmk(activityValue),
+    mergedIntoCategoryId,
+    mergedIntoCategoryName: categoryNames.get(mergedIntoCategoryId)
+      ?? (typeof metadata.merged_into_category_name === "string" ? metadata.merged_into_category_name : ""),
     name: row.name,
+    reportingRole: row.reporting_role === "salary" || metadata.reporting_role === "salary" ? "salary" : "",
     scopes,
     status: row.is_active ? "Active" : "Hidden",
     transactionCount,
@@ -136,24 +148,53 @@ function mapCategory(row: CategoryRow, activity?: CategoryActivity): CategoryRec
   };
 }
 
+async function getCategoryRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  options: { limit?: number },
+) {
+  let enrichedQuery = supabase
+    .from("categories")
+    .select("id,user_id,name,type,category_type,reporting_role,icon,color,is_default,is_active,archived_at,merged_into_category_id,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (options.limit) enrichedQuery = enrichedQuery.limit(options.limit);
+
+  const enrichedResult = await enrichedQuery;
+  if (!enrichedResult.error) return enrichedResult.data as CategoryRow[];
+  if (!isMissingDatabaseObject(enrichedResult.error, [
+    "category_type",
+    "reporting_role",
+    "archived_at",
+    "merged_into_category_id",
+  ])) {
+    throw new Error(enrichedResult.error.message);
+  }
+
+  let legacyQuery = supabase
+    .from("categories")
+    .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (options.limit) legacyQuery = legacyQuery.limit(options.limit);
+  const legacyResult = await legacyQuery;
+  if (legacyResult.error) throw new Error(legacyResult.error.message);
+  return legacyResult.data as CategoryRow[];
+}
+
 export async function getCategories(options: { limit?: number } = {}) {
   const supabase = await createClient();
   const { user, error: userError } = await getUserSafely(supabase);
   if (userError || !user) throw new Error(userError ?? "You must be signed in to view categories.");
 
-  let categoriesQuery = supabase
-    .from("categories")
-    .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
-    .eq("user_id", user.id)
-    .is("deleted_at", null)
-    .order("is_default", { ascending: false })
-    .order("sort_order", { ascending: true })
-    .order("name", { ascending: true });
-
-  if (options.limit) categoriesQuery = categoriesQuery.limit(options.limit);
-
-  const [categoriesResult, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult, accountsResult] = await Promise.all([
-    categoriesQuery,
+  const [categoryRows, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult, accountsResult] = await Promise.all([
+    getCategoryRows(supabase, user.id, options),
     supabase
       .from("transactions")
       .select("id,account_id,transfer_account_id,category_id,amount,transaction_date,type,status,metadata,related_entity_id,related_entity_type")
@@ -186,7 +227,6 @@ export async function getCategories(options: { limit?: number } = {}) {
       .is("deleted_at", null),
   ]);
 
-  if (categoriesResult.error) throw new Error(categoriesResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (debtsResult.error) throw new Error(debtsResult.error.message);
@@ -194,7 +234,7 @@ export async function getCategories(options: { limit?: number } = {}) {
   if (subscriptionsResult.error) throw new Error(subscriptionsResult.error.message);
   if (accountsResult.error) throw new Error(accountsResult.error.message);
 
-  const categoryRows = categoriesResult.data as CategoryRow[];
+  const categoryNames = new Map(categoryRows.map((category) => [category.id, category.name]));
   const categoryIdByName = new Map(categoryRows.map((category) => [category.name.trim().toLowerCase(), category.id]));
   const debtRows = debtsResult.data as CategoryDebtRow[];
   const accountRows = accountsResult.data as CategoryAccountRow[];
@@ -215,7 +255,7 @@ export async function getCategories(options: { limit?: number } = {}) {
     }),
   ];
   const activityByCategory = buildCategoryActivity(activityRows);
-  return categoryRows.map((category) => mapCategory(category, activityByCategory.get(category.id)));
+  return categoryRows.map((category) => mapCategory(category, categoryNames, activityByCategory.get(category.id)));
 }
 
 export async function getCategory(categoryId: string) {
@@ -224,12 +264,13 @@ export async function getCategory(categoryId: string) {
 }
 
 export function getCategorySummaries(categories: CategoryRecord[]): SummaryMetric[] {
-  const activeCategories = categories.filter((category) => category.status === "Active");
+  const currentCategories = categories.filter((category) => !category.mergedIntoCategoryId);
+  const activeCategories = currentCategories.filter((category) => category.status === "Active");
 
   return [
-    { label: "Expense Categories", value: String(categories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Income Categories", value: String(categories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Page Categories", value: String(categories.filter((category) => category.type !== "Expense" && category.type !== "Income").length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Expense Categories", value: String(currentCategories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Income Categories", value: String(currentCategories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Page Categories", value: String(currentCategories.filter((category) => category.type !== "Expense" && category.type !== "Income").length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Categories", value: String(activeCategories.length), icon: "category", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
 }

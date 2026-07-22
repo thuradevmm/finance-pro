@@ -14,11 +14,24 @@ import { getTransactionFilterOptions, getTransactions } from "@/lib/transactions
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string | string[]; category?: string | string[] }>;
+  searchParams: Promise<{
+    account?: string | string[];
+    category?: string | string[];
+    dateFrom?: string | string[];
+    dateTo?: string | string[];
+    q?: string | string[];
+    status?: string | string[];
+    type?: string | string[];
+  }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const requestedAccount = Array.isArray(resolvedSearchParams.account) ? resolvedSearchParams.account[0] : resolvedSearchParams.account;
   const requestedCategory = Array.isArray(resolvedSearchParams.category) ? resolvedSearchParams.category[0] : resolvedSearchParams.category;
+  const requestedSearch = Array.isArray(resolvedSearchParams.q) ? resolvedSearchParams.q[0] : resolvedSearchParams.q;
+  const requestedStatus = Array.isArray(resolvedSearchParams.status) ? resolvedSearchParams.status[0] : resolvedSearchParams.status;
+  const requestedDateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
+  const requestedDateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
+  const requestedType = Array.isArray(resolvedSearchParams.type) ? resolvedSearchParams.type[0] : resolvedSearchParams.type;
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   const accounts = user ? await getAccounts(supabase, user.id, { limit: 200 }) : [];
@@ -66,8 +79,11 @@ export default async function TransactionsPage({
         filterOptions={transactionFilterOptions}
         initialAccountFilter={requestedAccount}
         initialCategoryFilter={requestedCategory}
-        initialDateFrom={defaultDateRange.dateFrom}
-        initialDateTo={defaultDateRange.dateTo}
+        initialDateFrom={requestedDateFrom ?? defaultDateRange.dateFrom}
+        initialDateTo={requestedDateTo ?? defaultDateRange.dateTo}
+        initialSearchFilter={requestedSearch}
+        initialStatusFilter={requestedStatus}
+        initialTypeFilter={requestedType}
         transactions={transactions}
       />
     </AppShell>

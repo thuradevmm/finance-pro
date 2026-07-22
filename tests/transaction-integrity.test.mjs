@@ -11,5 +11,6 @@ test("posted reversals are unique and immutable", () => {
   assert.deepEqual([...reversed], ["source"]);
   assert.match(transactionMutationIntegrityError({ metadata: { reversed_transaction_id: "source" } }, false), /cannot be edited/i);
   assert.match(transactionMutationIntegrityError({}, true), /already been reversed/i);
-  assert.match(transactionReversalIntegrityError({ status: "scheduled" }, false), /Only posted/i);
+  assert.match(transactionReversalIntegrityError({ status: "scheduled" }, false), /Only cleared/i);
+  assert.match(transactionReversalIntegrityError({ status: "pending" }, false), /Mark a pending transaction as cleared/i);
 });

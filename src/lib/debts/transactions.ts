@@ -1,3 +1,5 @@
+import { transactionStatusIsFinalized } from "../transactions/status.ts";
+
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
@@ -11,11 +13,6 @@ function numericValue(value: unknown, fallback = 0) {
 
 function roundCurrencyValue(value: number) {
   return Math.round((value + Math.sign(value) * Number.EPSILON) * 100) / 100;
-}
-
-function transactionStatusAffectsBalance(value: unknown) {
-  const status = String(value ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
 }
 
 function transferDirection(metadata: Record<string, unknown>) {
@@ -154,7 +151,7 @@ export function effectiveDebtLedgerTransactions(transactions: DebtLedgerTransact
   const reversedTransferGroups = new Set<string>();
 
   for (const transaction of transactions) {
-    if (!transactionStatusAffectsBalance(transaction.status)) continue;
+    if (!transactionStatusIsFinalized(transaction.status)) continue;
     const sourceId = reversalSourceId(transaction);
     if (!sourceId) continue;
     reversedIds.add(sourceId);
@@ -164,7 +161,7 @@ export function effectiveDebtLedgerTransactions(transactions: DebtLedgerTransact
   }
 
   return transactions.filter((transaction) => {
-    if (!transactionStatusAffectsBalance(transaction.status)) return false;
+    if (!transactionStatusIsFinalized(transaction.status)) return false;
     if (reversalSourceId(transaction)) return false;
     if (transaction.id && reversedIds.has(transaction.id)) return false;
     const groupId = transferGroupId(transaction);

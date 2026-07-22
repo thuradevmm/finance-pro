@@ -25,6 +25,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
+  const [reportingRole, setReportingRole] = useState<"" | "salary">(category?.reportingRole ?? "");
   const [status, setStatus] = useState(category?.status ?? "Active");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
@@ -48,6 +49,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       isActive: status === "Active",
       isDefault: false,
       name: name.trim(),
+      reportingRole: selectedType === "Income" ? reportingRole : "",
       scopes: selectedScopes,
       type: selectedType,
     };
@@ -68,6 +70,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       setName("");
       setDescription("");
       setSelectedType("Expense");
+      setReportingRole("");
       setShowErrors(false);
       showSuccess("Category saved successfully.");
       return;
@@ -139,6 +142,18 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
               <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{selectedScopes.join(", ")}</span>
             </div>
           </div>
+
+          {selectedType === "Income" ? (
+            <div className="mt-5">
+              <SelectInput
+                label="Income Reporting Role"
+                onChange={(value) => setReportingRole(value === "Salary" ? "salary" : "")}
+                options={["General Income", "Salary"]}
+                value={reportingRole === "salary" ? "Salary" : "General Income"}
+              />
+              <p className="mt-2 text-xs leading-5 text-[#45464d]">Salary categories can be used by salary-period reports without depending on the category name. Multiple employers can each use a salary category.</p>
+            </div>
+          ) : null}
         </FormCard>
 
         <FormCard title="Category Usage">

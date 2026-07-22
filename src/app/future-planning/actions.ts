@@ -17,6 +17,7 @@ type ActionResult = {
 const recurrenceOptions = new Set(["Monthly", "Once", "Weekly", "Yearly"]);
 const statusOptions = new Set(["Active", "Paused"]);
 const typeOptions = new Set(["Expense", "Income"]);
+const relatedEntityTypes = new Set(["asset", "budget", "debt", "none", "savings_goal", "subscription"]);
 
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
@@ -40,12 +41,19 @@ function validateInput(input: FutureTransactionFormData) {
     || typeof input.accountId !== "string"
     || typeof input.accountAmountType !== "string"
     || typeof input.categoryId !== "string"
+    || typeof input.relatedEntityId !== "string"
+    || typeof input.relatedEntityLabel !== "string"
+    || typeof input.relatedEntityType !== "string"
     || typeof input.startDate !== "string"
     || typeof input.endDate !== "string"
     || typeof input.note !== "string") return "Enter valid planned transaction details.";
   if (!typeOptions.has(input.type)) return "Future plans support income and expense transactions only.";
   if (!recurrenceOptions.has(input.recurrence)) return "Choose a valid repeat schedule.";
   if (!statusOptions.has(input.status)) return "Choose a valid plan status.";
+  if (!relatedEntityTypes.has(input.relatedEntityType)) return "Choose a valid linked record.";
+  if (input.relatedEntityType === "none" && input.relatedEntityId.trim()) return "Choose a valid linked record.";
+  if (input.relatedEntityType !== "none" && !input.relatedEntityId.trim()) return "Choose a valid linked record.";
+  if (input.relatedEntityLabel.length > 160) return "Keep the linked record label under 160 characters.";
   if (!input.title?.trim() || input.title.trim().length > 120) return "Enter a title up to 120 characters.";
   if (!Number.isFinite(input.amount) || input.amount <= 0 || input.amount > 1_000_000_000_000_000) return "Enter a valid amount greater than zero.";
   if (!input.accountId?.trim()) return "Choose an account for this plan.";
@@ -97,7 +105,7 @@ async function authenticatedClient() {
 async function validateOwnedReferences(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-  input: Pick<FutureTransactionFormData, "accountAmountType" | "accountId" | "categoryId" | "type">,
+  input: Pick<FutureTransactionFormData, "accountAmountType" | "accountId" | "categoryId" | "relatedEntityId" | "relatedEntityType" | "type">,
 ) {
   const [accountResult, categoryResult] = await Promise.all([
     supabase.from("accounts").select("id,is_active,type,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
@@ -118,6 +126,23 @@ async function validateOwnedReferences(
   const categoryMetadata = metadataRecord(categoryResult.data.metadata);
   const categoryType = String(categoryMetadata.category_type ?? categoryResult.data.type).trim().toLowerCase();
   if (categoryType !== input.type.toLowerCase()) return `Choose an ${input.type.toLowerCase()} category for this plan.`;
+
+  if (input.relatedEntityType !== "none") {
+    let linkedResult: { data: { id: string } | null; error: { message: string } | null };
+    if (input.relatedEntityType === "asset") {
+      linkedResult = await supabase.from("assets").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
+    } else if (input.relatedEntityType === "budget") {
+      linkedResult = await supabase.from("budget_items").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
+    } else if (input.relatedEntityType === "debt") {
+      linkedResult = await supabase.from("debts").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
+    } else if (input.relatedEntityType === "savings_goal") {
+      linkedResult = await supabase.from("savings_goals").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
+    } else {
+      linkedResult = await supabase.from("subscriptions").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
+    }
+    if (linkedResult.error) return linkedResult.error.message;
+    if (!linkedResult.data) return "The linked record is no longer available.";
+  }
   return "";
 }
 
@@ -150,6 +175,7 @@ export async function createFutureTransactions(input: FutureTransactionFormData)
       future_materialized: true,
       future_occurrence_index: index,
       future_plan: true,
+      future_link_label: input.relatedEntityType === "none" ? null : input.relatedEntityLabel.trim(),
       future_recurrence: "once",
       future_series_end_date: input.recurrence === "Once" ? null : input.endDate,
       future_series_id: seriesId,
@@ -159,8 +185,8 @@ export async function createFutureTransactions(input: FutureTransactionFormData)
     },
     note,
     payment_method: null,
-    related_entity_id: null,
-    related_entity_type: null,
+    related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId,
+    related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
     status: "scheduled",
     title,
     transaction_date: occurrenceDate,
@@ -208,11 +234,14 @@ export async function updateFutureTransaction(transactionId: string, input: Futu
         ...metadata,
         account_amount_type: input.accountAmountType?.trim() || "General",
         future_end_date: null,
+        future_link_label: input.relatedEntityType === "none" ? null : input.relatedEntityLabel.trim(),
         future_plan: true,
         future_recurrence: "once",
         future_status: input.status.toLowerCase(),
       },
       note: input.note.trim() || null,
+      related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId,
+      related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
       title: input.title.trim(),
       transaction_date: input.startDate,
       type: input.type.toLowerCase(),

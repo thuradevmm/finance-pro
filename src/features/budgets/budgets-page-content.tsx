@@ -2,19 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { deleteBudget } from "@/app/budgets/actions";
 import { SummaryCards } from "@/components/app/summary-cards";
+import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressMeter } from "@/components/ui/progress-meter";
 import { RecordActions } from "@/components/ui/record-actions";
+import { SearchField } from "@/components/ui/search-field";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { budgetOverlapsSelection, currentBudgetRecords } from "@/lib/budgets/calculations";
 import { formatMmk } from "@/lib/currency";
 import { getBudgetSummaries, type BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
+import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
 type BudgetSortKey = "actual" | "budget" | "category" | "remaining" | "status" | "usage";
@@ -318,12 +320,12 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; 
 
 export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
   const { showError, showSuccess } = useToast();
-  const searchParams = useSearchParams();
+  const queryFilter = useSubmittedQueryFilter();
   const [activePeriod, setActivePeriod] = useState<BudgetPeriod>("Monthly");
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [visibleBudgets, setVisibleBudgets] = useState(budgets);
   const [isPending, setIsPending] = useState(false);
-  const search = searchParams.get("q") ?? "";
+  const search = queryFilter.appliedValue;
   const periodBudgets = useMemo(
     () => {
       return visibleBudgets.filter((budget) => {
@@ -336,7 +338,7 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
   const filteredBudgets = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return periodBudgets.filter((budget) => {
-      const searchable = `${budget.category} ${budget.period} ${budget.budget} ${budget.actual} ${budget.remaining} ${budget.status}`.toLowerCase();
+      const searchable = `${budget.category} ${budget.period} ${budget.budget} ${budget.actual} ${budget.remaining} ${budget.status} ${budget.planStatus}`.toLowerCase();
       return normalizedSearch === "" || searchable.includes(normalizedSearch);
     });
   }, [periodBudgets, search]);
@@ -372,6 +374,15 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
     <>
       <BudgetPeriodControls activePeriod={activePeriod} onNavigate={navigatePeriod} onPeriodChange={setActivePeriod} selectedDate={selectedDate} />
       <SummaryCards summaries={summaries} />
+      <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
+        event.preventDefault();
+        queryFilter.apply();
+      }}>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <SearchField label="Search budgets" onChange={queryFilter.setDraftValue} placeholder="Category, lifecycle, usage status..." value={queryFilter.draftValue} />
+          <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
+        </div>
+      </FilterForm>
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating budgets…</p> : null}
       <OverallBudgetUsage budgets={activeBudgets} />
       {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (

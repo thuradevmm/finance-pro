@@ -14,9 +14,9 @@ import { useToast } from "@/components/ui/toast-provider";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { formatMmkPreview } from "@/lib/currency";
+import { formatMmk, formatMmkPreview } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
-import { getFutureOccurrenceDates, type FuturePlanStatus, type FutureRecurrence, type FutureTransactionFormData, type FutureTransactionRecord } from "@/lib/future-planning/records";
+import { getFutureOccurrenceDates, type FuturePlanLinkOption, type FuturePlanRelatedEntityType, type FuturePlanStatus, type FutureRecurrence, type FutureTransactionFormData, type FutureTransactionRecord } from "@/lib/future-planning/records";
 
 const recurrenceOptions: FutureRecurrence[] = ["Once", "Weekly", "Monthly", "Yearly"];
 
@@ -38,11 +38,13 @@ export function FutureTransactionForm({
   accounts,
   categories,
   defaultDate,
+  linkOptions,
   transaction,
 }: {
   accounts: AccountRecord[];
   categories: CategoryRecord[];
   defaultDate: string;
+  linkOptions: FuturePlanLinkOption[];
   transaction?: FutureTransactionRecord;
 }) {
   const router = useRouter();
@@ -64,6 +66,9 @@ export function FutureTransactionForm({
   const [recurrence, setRecurrence] = useState<FutureRecurrence>("Once");
   const [endDate, setEndDate] = useState(transaction?.endDate ?? "");
   const [status, setStatus] = useState<FuturePlanStatus>(transaction?.status ?? "Active");
+  const [relatedEntityId, setRelatedEntityId] = useState(transaction?.relatedEntityId ?? "");
+  const [relatedEntityLabel, setRelatedEntityLabel] = useState(transaction?.relatedEntityLabel ?? "");
+  const [relatedEntityType, setRelatedEntityType] = useState<FuturePlanRelatedEntityType>(transaction?.relatedEntityType ?? "none");
   const [note, setNote] = useState(transaction?.note ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
@@ -74,6 +79,33 @@ export function FutureTransactionForm({
   const effectiveAmountType = amountTypeOptions.includes(accountAmountType) ? accountAmountType : amountTypeOptions[0] ?? "General";
   const availableCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", type), [categories, type]);
   const selectedCategory = availableCategories.find((category) => category.id === categoryId) ?? availableCategories[0];
+  const selectableLinks = useMemo(() => {
+    const links = [...linkOptions];
+    if (transaction?.relatedEntityId && transaction.relatedEntityType !== "none"
+      && !links.some((option) => option.id === transaction.relatedEntityId && option.type === transaction.relatedEntityType)) {
+      links.unshift({
+        amount: transaction.amountValue,
+        categoryId: transaction.categoryId,
+        id: transaction.relatedEntityId,
+        label: transaction.relatedEntityLabel || `${transaction.relatedEntityType.replaceAll("_", " ")} · linked record unavailable`,
+        type: transaction.relatedEntityType,
+      });
+    }
+    const baseLabels = links.map((option) => `${option.label} · ${formatMmk(option.amount)}`);
+    const totals = new Map<string, number>();
+    for (const label of baseLabels) totals.set(label, (totals.get(label) ?? 0) + 1);
+    const occurrences = new Map<string, number>();
+    return links.map((option, index) => {
+      const baseLabel = baseLabels[index];
+      const occurrence = (occurrences.get(baseLabel) ?? 0) + 1;
+      occurrences.set(baseLabel, occurrence);
+      return {
+        ...option,
+        selectLabel: (totals.get(baseLabel) ?? 0) > 1 ? `${baseLabel} (${occurrence})` : baseLabel,
+      };
+    });
+  }, [linkOptions, transaction]);
+  const selectedLink = selectableLinks.find((option) => option.id === relatedEntityId && option.type === relatedEntityType);
   const amountValue = Number(amount);
   const isRepeating = !transaction && recurrence !== "Once";
   const occurrenceCount = getFutureOccurrenceDates({ endDate, recurrence: transaction ? "Once" : recurrence, startDate }, 241).length;
@@ -97,6 +129,24 @@ export function FutureTransactionForm({
     setAccountAmountType(accountAmountTypeOptions(account)[0] ?? "General");
   }
 
+  function handleLinkChange(label: string) {
+    if (label === "No linked record") {
+      setRelatedEntityId("");
+      setRelatedEntityLabel("");
+      setRelatedEntityType("none");
+      return;
+    }
+    const option = selectableLinks.find((item) => item.selectLabel === label);
+    if (!option) return;
+    setRelatedEntityId(option.id);
+    setRelatedEntityLabel(option.label);
+    setRelatedEntityType(option.type);
+    setAmount(String(option.amount));
+    if (type !== "Expense") handleTypeChange("Expense");
+    const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
+    if (expenseCategories.some((category) => category.id === option.categoryId)) setCategoryId(option.categoryId);
+  }
+
   async function handleSave(addAnother = false) {
     const hasErrors = title.trim() === ""
       || !Number.isFinite(amountValue)
@@ -118,6 +168,9 @@ export function FutureTransactionForm({
       endDate: isRepeating ? endDate : "",
       note,
       recurrence: transaction ? "Once" : recurrence,
+      relatedEntityId,
+      relatedEntityLabel,
+      relatedEntityType,
       startDate,
       status,
       title,
@@ -145,6 +198,9 @@ export function FutureTransactionForm({
       setTitle("");
       setAmount("");
       setNote("");
+      setRelatedEntityId("");
+      setRelatedEntityLabel("");
+      setRelatedEntityType("none");
       setShowErrors(false);
       return;
     }
@@ -204,6 +260,17 @@ export function FutureTransactionForm({
         </FormCard>
 
         <FormCard title="Account & Category">
+          <div className="mb-5">
+            <SelectInput
+              label="Link Existing Record (optional)"
+              onChange={handleLinkChange}
+              options={["No linked record", ...selectableLinks.map((option) => option.selectLabel)]}
+              value={selectedLink?.selectLabel ?? "No linked record"}
+            />
+            <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">
+              Selecting a record copies its current amount and category. This plan keeps that amount as a snapshot, even if the source is later paused, archived, or changed.
+            </p>
+          </div>
           {planningAccounts.length > 0 ? (
             <>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -260,6 +327,7 @@ export function FutureTransactionForm({
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Schedule</dt><dd className="text-sm font-semibold text-[#0b1c30]">{transaction ? "One occurrence" : recurrence}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Occurrences</dt><dd className="text-sm font-semibold text-[#0b1c30]">{occurrenceCount || 0}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Category</dt><dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory?.name ?? "Not set"}</dd></div>
+              <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Linked record</dt><dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{relatedEntityLabel || selectedLink?.label || "None"}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Status</dt><dd className="text-sm font-semibold text-[#0b1c30]">{status}</dd></div>
             </dl>
             <p className="mt-4 rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-xs font-semibold leading-5 text-[#1e3a5f]">Scheduled plans stay out of real balances and actual spending until you complete them from Transactions.</p>

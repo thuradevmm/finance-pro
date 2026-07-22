@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { Icon } from "@/components/ui/icon";
 import { FuturePlanningPageContent } from "@/features/future-planning/future-planning-page-content";
-import { getFuturePlanningData, type FuturePlanningData } from "@/lib/future-planning/supabase";
+import { getManualFuturePlanningData, type ManualFuturePlanningData } from "@/lib/future-planning/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,20 +12,11 @@ function localDateValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-const emptyPlanningData: FuturePlanningData = {
-  budgets: [],
-  forecastItems: [],
-  historicalActuals: [],
-  openingBalance: 0,
-  openingCardCredits: {},
-  openingSavings: 0,
+const emptyPlanningData: ManualFuturePlanningData = {
+  categories: [],
+  columns: [],
   plannedTransactions: [],
-  sourceCounts: {
-    debtPayments: 0,
-    plannedTransactions: 0,
-    savingsGoals: 0,
-    subscriptions: 0,
-  },
+  selectedYears: [],
 };
 
 export default async function FuturePlanningPage() {
@@ -33,7 +24,7 @@ export default async function FuturePlanningPage() {
   const { user } = await getUserSafely(supabase);
   const today = localDateValue(new Date());
   const data = user
-    ? await getFuturePlanningData(supabase, user.id, today)
+    ? await getManualFuturePlanningData(supabase, user.id, today)
     : emptyPlanningData;
 
   return (
@@ -56,20 +47,15 @@ export default async function FuturePlanningPage() {
             Add Planned Transaction
           </Link>
         )}
-        description="Plan future income and expenses, combine them with subscriptions, debt payments, and savings goals, then preview your rolling cash position before money moves."
+        description="Build a simple year-by-year planning table from the income and expenses you schedule. Link a plan to an existing module when useful, while keeping its entered amount as a stable snapshot."
         title="Future Planning"
       />
 
       <FuturePlanningPageContent
-        budgets={data.budgets}
-        forecastItems={data.forecastItems}
-        historicalActuals={data.historicalActuals}
-        openingBalance={data.openingBalance}
-        openingCardCredits={data.openingCardCredits}
-        openingSavings={data.openingSavings}
+        categories={data.categories}
+        columns={data.columns}
         plannedTransactions={data.plannedTransactions}
-        sourceCounts={data.sourceCounts}
-        today={today}
+        selectedYears={data.selectedYears}
       />
     </AppShell>
   );

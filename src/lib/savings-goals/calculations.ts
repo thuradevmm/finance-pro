@@ -2,10 +2,10 @@ import {
   linkedExpenseContributionDelta,
   reversedTransactionType,
   roundCurrencyValue,
-  transactionStatusAffectsBalance,
   transferDirection,
   type LedgerTransactionInput,
 } from "../ledger.ts";
+import { transactionStatusIsFinalized } from "../transactions/status.ts";
 
 export type SavingsGoalEntryInput = {
   amount: number | string | null;
@@ -108,7 +108,7 @@ export function calculateLinkedSavingsAmounts(
 
   for (const entry of entries) {
     const transaction = entry.transaction_id ? transactionById.get(entry.transaction_id) : undefined;
-    if (transaction && !transactionStatusAffectsBalance(transaction.status)) continue;
+    if (transaction && !transactionStatusIsFinalized(transaction.status)) continue;
     const amount = signedSavingsEntryAmount(entry);
     add(progressByGoalId, entry.savings_goal_id, amount);
     if (!transaction || transactionReservesTrackedCash(transaction)) add(reserveByGoalId, entry.savings_goal_id, amount);
@@ -116,7 +116,7 @@ export function calculateLinkedSavingsAmounts(
 
   for (const transaction of transactions) {
     if (!transaction.related_entity_id || (transaction.id && representedTransactionIds.has(transaction.id))) continue;
-    if (!transactionStatusAffectsBalance(transaction.status)) continue;
+    if (!transactionStatusIsFinalized(transaction.status)) continue;
     const goalAccountId = goalAccountIdByGoalId.get(transaction.related_entity_id) ?? "";
     const amount = transactionReservesTrackedCash(transaction) && goalAccountId
       ? transferContributionForGoal(transaction, goalAccountId)

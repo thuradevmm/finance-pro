@@ -1,19 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { deleteDebt } from "@/app/debts/actions";
+import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { ProgressMeter } from "@/components/ui/progress-meter";
 import { RecordActions } from "@/components/ui/record-actions";
+import { SearchField } from "@/components/ui/search-field";
+import { SelectFilter } from "@/components/ui/select-filter";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatDisplayDate } from "@/lib/date-format";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
-import { getDebtListEmptyState, getDebtVisibilityToggleState, type DebtListEmptyState } from "@/lib/debts/visibility";
+import { getDebtListEmptyState, type DebtListEmptyState } from "@/lib/debts/visibility";
 import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
+import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 
 const statusStyles: Record<DebtStatus, string> = {
   Active: "bg-[#d8e2ff] text-[#004395]",
@@ -101,21 +104,16 @@ function buildCalendarEntries(payments: UpcomingDebtPayment[]) {
 function DebtsTable({
   debts,
   emptyState,
-  hasDebts,
   onDelete,
-  onToggleActiveOnly,
   showActiveOnly,
 }: {
   debts: DebtRecordWithValues[];
   emptyState: DebtListEmptyState;
-  hasDebts: boolean;
   onDelete: (id: string) => void | Promise<void>;
-  onToggleActiveOnly: () => void;
   showActiveOnly: boolean;
 }) {
   const [sortKey, setSortKey] = useState<DebtSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const visibilityToggle = getDebtVisibilityToggleState(showActiveOnly);
   const sortedDebts = useMemo(() => {
     function value(debt: DebtRecordWithValues) {
       if (sortKey === "name") return `${debt.name} ${debt.lender}`.toLowerCase();
@@ -143,21 +141,6 @@ function DebtsTable({
           <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
           <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue debts" : "Showing paid debts too"}</p>
         </div>
-        {hasDebts ? (
-          <button
-            aria-label={visibilityToggle.ariaLabel}
-            aria-pressed={visibilityToggle.isPressed}
-            className={showActiveOnly
-              ? "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-[#eff6ff] px-3 text-sm font-semibold text-[#0058be] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 sm:w-auto"
-              : "inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 sm:w-auto"}
-            onClick={onToggleActiveOnly}
-            title={visibilityToggle.label}
-            type="button"
-          >
-            <Icon className="size-4" name="category" />
-            <span>{visibilityToggle.label}</span>
-          </button>
-        ) : null}
       </div>
 
       {sortedDebts.length > 0 ? <>
@@ -389,12 +372,13 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
 
 export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithValues[]; payments: UpcomingDebtPayment[] }) {
   const { showError, showSuccess } = useToast();
-  const searchParams = useSearchParams();
+  const queryFilter = useSubmittedQueryFilter();
   const [visibleDebts, setVisibleDebts] = useState(debts);
   const [isPending, setIsPending] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [draftShowActiveOnly, setDraftShowActiveOnly] = useState(true);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
-  const search = searchParams.get("q") ?? "";
+  const search = queryFilter.appliedValue;
   const filteredDebts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleDebts.filter((debt) => {
@@ -408,7 +392,11 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
     search,
     showActiveOnly,
   });
-  const calendarEntries = useMemo(() => buildCalendarEntries(payments), [payments]);
+  const filteredPayments = useMemo(() => {
+    const visibleDebtIds = new Set(filteredDebts.map((debt) => debt.id));
+    return payments.filter((payment) => visibleDebtIds.has(payment.debtId));
+  }, [filteredDebts, payments]);
+  const calendarEntries = useMemo(() => buildCalendarEntries(filteredPayments), [filteredPayments]);
 
   async function handleDelete(debtId: string) {
     setIsPending(true);
@@ -423,22 +411,42 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   }
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
-      <div className="min-w-0 xl:col-span-9">
+    <>
+      <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
+        event.preventDefault();
+        setShowActiveOnly(draftShowActiveOnly);
+        queryFilter.apply();
+      }}>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)_auto] lg:items-end">
+          <SearchField label="Search debts" onChange={queryFilter.setDraftValue} placeholder="Debt, lender, amount, status..." value={queryFilter.draftValue} />
+          <SelectFilter
+            label="Debt status filter"
+            onChange={(value) => setDraftShowActiveOnly(value === "Active and overdue")}
+            options={["Active and overdue", "All debts"]}
+            value={draftShowActiveOnly ? "Active and overdue" : "All debts"}
+          />
+          <FilterActions isPending={queryFilter.isPending} onReset={() => {
+            setDraftShowActiveOnly(true);
+            setShowActiveOnly(true);
+            queryFilter.reset();
+          }} />
+        </div>
+      </FilterForm>
+      <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="min-w-0 xl:col-span-9">
         {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
         <DebtsTable
           debts={filteredDebts}
           emptyState={emptyState}
-          hasDebts={visibleDebts.length > 0}
           onDelete={handleDelete}
-          onToggleActiveOnly={() => setShowActiveOnly((value) => !value)}
           showActiveOnly={showActiveOnly}
         />
+        </div>
+        <div className="min-w-0 xl:col-span-3">
+          <UpcomingPayments onViewCalendar={() => setIsCalendarOpen(true)} payments={filteredPayments} />
+        </div>
+        <DebtPaymentCalendarModal entries={calendarEntries} isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
       </div>
-      <div className="min-w-0 xl:col-span-3">
-        <UpcomingPayments onViewCalendar={() => setIsCalendarOpen(true)} payments={payments} />
-      </div>
-      <DebtPaymentCalendarModal entries={calendarEntries} isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
-    </div>
+    </>
   );
 }

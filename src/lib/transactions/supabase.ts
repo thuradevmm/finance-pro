@@ -13,9 +13,9 @@ import {
   isCreditCardPayment,
   ledgerRelevantMetadata,
   summarizeLedgerTransactions,
-  transactionStatusAffectsBalance,
 } from "@/lib/ledger";
 import { effectiveTransferVolume } from "@/lib/transactions/summary";
+import { normalizeTransactionStatus, transactionStatusFilterLabels, transactionStatusIsFinalized } from "@/lib/transactions/status";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
 export type TransactionSubscriptionPaymentSnapshot = {
@@ -47,7 +47,7 @@ export type TransactionRecord = Transaction & {
   ledgerMetadata: Record<string, unknown>;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
-  status: string;
+  status: Transaction["status"];
   title: string;
   transferFromAccountId: string;
   transferAccountId: string;
@@ -297,13 +297,13 @@ function mapTransaction(
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
     ...(futurePlan ? { futurePlan } : {}),
     id: row.id,
-    isReversal: transactionStatusAffectsBalance(row.status) && Boolean(reversalSourceId),
+    isReversal: transactionStatusIsFinalized(row.status) && Boolean(reversalSourceId),
     isReversed: reversedGroupIds.has(groupId || row.id),
     ledgerMetadata: ledgerRelevantMetadata(metadata),
     note,
     relatedEntityId: row.related_entity_id ?? "",
     relatedEntityType: normalizeRelatedType(row.related_entity_type),
-    status: row.status ?? "cleared",
+    status: normalizeTransactionStatus(row.status),
     title: row.title ?? note,
     transferAccountId,
     transferAccount: transferAccountLabel,
@@ -362,7 +362,7 @@ export async function getTransactions(
   const reversedGroupIds = new Set(enrichedRows.flatMap((row) => {
     const metadata = metadataRecord(row.metadata);
     const sourceId = metadataString(metadata, "reversed_transaction_id");
-    if (!sourceId || !transactionStatusAffectsBalance(row.status)) return [];
+    if (!sourceId || !transactionStatusIsFinalized(row.status)) return [];
     const source = rowsById.get(sourceId);
     if (!source) return [sourceId];
     const sourceMetadata = metadataRecord(source.metadata);
@@ -387,6 +387,7 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
     account: ["Account", ...getAccountOptionLabels(accounts)],
     amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
     category: ["Category", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
+    status: ["Status", ...transactionStatusFilterLabels()],
     type: ["Type", "Income", "Expense", "Transfer"],
   };
 }

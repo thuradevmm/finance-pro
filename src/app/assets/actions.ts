@@ -7,6 +7,7 @@ import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { isValidCalendarDate } from "@/lib/date-validation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 
@@ -36,17 +37,27 @@ async function validateAssetCategory(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   categoryId: string,
+  allowedExistingCategoryId = "",
 ) {
   if (!categoryId) return "Select an asset category.";
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("categories")
-    .select("id,is_active,type,metadata")
+    .select("id,is_active,type,category_type,metadata")
     .eq("id", categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (error && isMissingDatabaseObject(error, ["category_type"])) {
+    ({ data, error } = await supabase
+      .from("categories")
+      .select("id,is_active,type,metadata")
+      .eq("id", categoryId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle());
+  }
   if (error) return error.message;
-  if (!data || data.is_active === false || !categoryRowSupports(data, "Assets", "Asset")) return "Select an active asset category.";
+  if (!data || (data.is_active === false && data.id !== allowedExistingCategoryId) || !categoryRowSupports(data, "Assets", "Asset")) return "Select an active asset category.";
   return "";
 }
 
@@ -93,7 +104,16 @@ export async function updateAsset(assetId: string, input: AssetFormData): Promis
   if (!user) return { error: "You must be signed in." };
   const validationError = validateAssetInput(input);
   if (validationError) return { error: validationError };
-  const categoryError = await validateAssetCategory(supabase, user.id, input.categoryId);
+  const { data: existingAsset, error: existingError } = await supabase
+    .from("assets")
+    .select("id,category_id")
+    .eq("id", assetId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (existingError) return { error: existingError.message };
+  if (!existingAsset) return { error: "Asset not found." };
+  const categoryError = await validateAssetCategory(supabase, user.id, input.categoryId, existingAsset.category_id ?? "");
   if (categoryError) return { error: categoryError };
   const { data, error } = await supabase.from("assets").update(payload(input)).eq("id", assetId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: error.message };

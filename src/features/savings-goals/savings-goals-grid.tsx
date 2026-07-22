@@ -1,18 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { deleteSavingsGoal } from "@/app/savings-goals/actions";
+import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { RecordActions } from "@/components/ui/record-actions";
+import { SearchField } from "@/components/ui/search-field";
 import { useToast } from "@/components/ui/toast-provider";
+import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
 const statusStyles: Record<SavingsGoalStatus, string> = {
-  "On Track": "bg-[#ecfdf5] text-[#166534]",
+  "In Progress": "bg-[#ecfdf5] text-[#166534]",
   Behind: "bg-[#fffbeb] text-[#92400e]",
   Completed: "bg-[#eff6ff] text-[#0058be]",
 };
@@ -67,10 +69,10 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
 
 export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
   const { showError, showSuccess } = useToast();
-  const searchParams = useSearchParams();
+  const queryFilter = useSubmittedQueryFilter();
   const [visibleGoals, setVisibleGoals] = useState(goals);
   const [isPending, setIsPending] = useState(false);
-  const search = searchParams.get("q") ?? "";
+  const search = queryFilter.appliedValue;
   const filteredGoals = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleGoals.filter((goal) => {
@@ -93,6 +95,15 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
 
   return (
     <>
+      <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
+        event.preventDefault();
+        queryFilter.apply();
+      }}>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <SearchField label="Search savings goals" onChange={queryFilter.setDraftValue} placeholder="Goal, account, amount, health..." value={queryFilter.draftValue} />
+          <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
+        </div>
+      </FilterForm>
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating savings goals…</p> : null}
 
       {filteredGoals.length === 0 ? (

@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { deleteSubscription } from "@/app/subscriptions/actions";
+import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
+import { SearchField } from "@/components/ui/search-field";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { dateTimeSortValue } from "@/lib/date-format";
 import type { SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
+import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
@@ -433,10 +435,10 @@ export function SubscriptionsPageContent({
   subscriptions: SubscriptionRecord[];
 }) {
   const { showError, showSuccess } = useToast();
-  const searchParams = useSearchParams();
+  const queryFilter = useSubmittedQueryFilter();
   const [visibleSubscriptions, setVisibleSubscriptions] = useState(subscriptions);
   const [isPending, setIsPending] = useState(false);
-  const search = searchParams.get("q") ?? "";
+  const search = queryFilter.appliedValue;
   const filteredSubscriptions = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleSubscriptions.filter((subscription) => {
@@ -444,6 +446,10 @@ export function SubscriptionsPageContent({
       return normalizedSearch === "" || searchable.includes(normalizedSearch);
     });
   }, [search, visibleSubscriptions]);
+  const filteredBillings = useMemo(() => {
+    const visibleSubscriptionIds = new Set(filteredSubscriptions.map((subscription) => subscription.id));
+    return billings.filter((billing) => visibleSubscriptionIds.has(billing.id));
+  }, [billings, filteredSubscriptions]);
 
   async function handleDelete(subscriptionId: string) {
     setIsPending(true);
@@ -459,10 +465,19 @@ export function SubscriptionsPageContent({
 
   return (
     <>
+      <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
+        event.preventDefault();
+        queryFilter.apply();
+      }}>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <SearchField label="Search subscriptions" onChange={queryFilter.setDraftValue} placeholder="Name, billing, payment, reminder, status..." value={queryFilter.draftValue} />
+          <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
+        </div>
+      </FilterForm>
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating subscriptions…</p> : null}
       <ReminderPanel subscriptions={filteredSubscriptions} />
       <PaidCyclePanel subscriptions={filteredSubscriptions} />
-      <BillingTimeline billings={billings} />
+      <BillingTimeline billings={filteredBillings} />
       <SubscriptionsTable
         onDelete={handleDelete}
         subscriptions={filteredSubscriptions}

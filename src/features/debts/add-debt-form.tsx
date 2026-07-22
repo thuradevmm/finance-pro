@@ -21,8 +21,8 @@ import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { buildEmiSchedule } from "@/lib/debts/emi";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
+import { calculateDebtStatus } from "@/lib/debts/status";
 import { isCreditCardDebtType } from "@/lib/debts/validation";
-import type { DebtStatus } from "@/types/finance";
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
@@ -48,7 +48,6 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const debtCategoryOptions = debt && !selectedCategory
     ? ["Uncategorized Debt", ...debtCategories.map((category) => category.name)]
     : debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Debt"];
-  const [status, setStatus] = useState<DebtStatus>(debt?.status ?? "Active");
   const availableAccounts = useMemo(() => accounts.filter((account) => (
     accountStatusContributesToCurrentTotals(account.status) || account.id === debt?.paymentAccountId
   )), [accounts, debt?.paymentAccountId]);
@@ -104,6 +103,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const progressPercent = total > 0 ? Math.min(Math.round((progressBasis / total) * 100), 100) : 0;
   const remaining = semanticIsCreditCard ? creditCardRemaining : repaymentSchedule.remainingPrincipal;
   const nextPaymentDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.nextPaymentDate;
+  const status = calculateDebtStatus({ dueDate: nextPaymentDate, remainingAmount: remaining, storedStatus: debt?.status });
   const payoffDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.payoffDate;
   const monthlyPaymentValue = semanticIsCreditCard ? creditCardMinimumPayment : repaymentSchedule.monthlyPayment;
   const totalRepaymentValue = semanticIsCreditCard ? total : repaymentSchedule.totalRepayment;
@@ -215,7 +215,11 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
 
         <FormCard title="Repayment Settings">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <SelectInput label="Status" onChange={(value) => setStatus(value as DebtStatus)} options={["Active", "Overdue", "Paid"]} value={status} />
+            <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
+              <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated Status</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{status}</span>
+              <span className="mt-1 block text-xs font-medium text-[#45464d]">Based on remaining balance and the next payment date.</span>
+            </div>
             <div>
               <SelectInput label="Debt Category" onChange={(name) => {
                 const nextCategory = debtCategories.find((category) => category.name === name);

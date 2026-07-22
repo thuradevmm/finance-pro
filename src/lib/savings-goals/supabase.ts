@@ -102,7 +102,10 @@ function deriveStatus(rowStatus: string | null | undefined, progressPercent: num
     const targetTime = new Date(`${targetDate}T23:59:59`).getTime();
     if (!Number.isNaN(targetTime) && targetTime < Date.now()) return "Behind";
   }
-  return "On Track";
+  // Without contribution timing evidence, do not claim the goal is on pace.
+  // "In Progress" is the conservative health label until completion or a
+  // missed target date provides an objective behind-schedule signal.
+  return "In Progress";
 }
 
 function mapGoal(

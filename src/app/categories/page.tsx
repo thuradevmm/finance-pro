@@ -35,7 +35,10 @@ export default async function CategoriesPage() {
       />
 
       <SummaryCards summaries={categorySummaries} />
-      <CategoriesPageContent categories={categories} />
+      <CategoriesPageContent
+        categories={categories}
+        key={categories.map((category) => `${category.id}:${category.status}:${category.mergedIntoCategoryId}:${category.reportingRole}`).join("|")}
+      />
     </AppShell>
   );
 }

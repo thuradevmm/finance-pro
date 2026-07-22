@@ -191,7 +191,17 @@ function amountTypeKey(value: string) {
   return value.trim().toLowerCase();
 }
 
-export function AddAccountForm({ account, categories, returnTo = "/accounts" }: { account?: AccountRecord; categories: CategoryRecord[]; returnTo?: string }) {
+export function AddAccountForm({
+  account,
+  amountTypeCatalog,
+  categories,
+  returnTo = "/accounts",
+}: {
+  account?: AccountRecord;
+  amountTypeCatalog: string[];
+  categories: CategoryRecord[];
+  returnTo?: string;
+}) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
@@ -232,6 +242,13 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   const selectedOption = accountTypes.find((option) => option.type === selectedType) ?? accountTypes[0];
   const isCreditCard = selectedType === "Credit Card";
   const namedAmountTypes = amountTypes.map((item) => item.type.trim()).filter(Boolean);
+  const selectedAmountTypeKeys = new Set(namedAmountTypes.map(amountTypeKey));
+  const reusableAmountTypes = Array.from(new Map(
+    [...amountTypeCatalog, ...namedAmountTypes]
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => [amountTypeKey(name), name]),
+  ).values());
   const hasDuplicateAmountTypes = new Set(namedAmountTypes.map(amountTypeKey)).size !== namedAmountTypes.length;
   const accountNameHasError = showErrors && accountName.trim() === "";
   const institutionHasError = showErrors && institution.trim() === "";
@@ -259,7 +276,17 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
   }
 
   function addAmountType() {
-    setAmountTypes((items) => [...items, createAmountTypeDraft(`Amount Type ${items.length + 1}`)]);
+    const reusableName = reusableAmountTypes.find((name) => !selectedAmountTypeKeys.has(amountTypeKey(name))) ?? "";
+    setAmountTypes((items) => [...items, createAmountTypeDraft(reusableName)]);
+  }
+
+  function addReusableAmountType(type: string) {
+    if (selectedAmountTypeKeys.has(amountTypeKey(type))) return;
+    setAmountTypes((items) => {
+      const emptyItem = items.find((item) => item.type.trim() === "");
+      if (emptyItem) return items.map((item) => item.id === emptyItem.id ? { ...item, type } : item);
+      return [...items, createAmountTypeDraft(type)];
+    });
   }
 
   function removeAmountType(id: string) {
@@ -454,6 +481,30 @@ export function AddAccountForm({ account, categories, returnTo = "/accounts" }: 
 
           {!isCreditCard ? (
             <FormCard title="Amount Types">
+              <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
+                <p className="text-sm font-semibold text-[#0b1c30]">Reuse an amount type from your other accounts</p>
+                <p className="mt-1 text-xs leading-5 text-[#45464d]">Select a saved name, or add a new one once. Amount values still remain separate for each account.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {reusableAmountTypes.map((type) => {
+                    const isSelected = selectedAmountTypeKeys.has(amountTypeKey(type));
+                    return (
+                      <button
+                        aria-pressed={isSelected}
+                        className={isSelected
+                          ? "inline-flex min-h-10 items-center gap-2 rounded-md border border-[#86efac] bg-[#ecfdf5] px-3 text-sm font-semibold text-[#166534]"
+                          : "inline-flex min-h-10 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0058be] transition hover:border-[#2170e4]"}
+                        disabled={isSelected}
+                        key={type}
+                        onClick={() => addReusableAmountType(type)}
+                        type="button"
+                      >
+                        {isSelected ? <Icon className="size-4" name="check" /> : <Icon className="size-4" name="plus" />}
+                        {type}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="space-y-3">
                 {amountTypes.map((amountType) => (
                   <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 md:grid-cols-[minmax(0,1fr)_auto]" key={amountType.id}>

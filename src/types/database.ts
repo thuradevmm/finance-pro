@@ -68,6 +68,45 @@ export type Database = {
         }
         Relationships: []
       }
+      account_amount_types: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          metadata: Json
+          name: string
+          normalized_name: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name: string
+          normalized_name?: never
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name?: string
+          normalized_name?: never
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       asset_history_events: {
         Row: {
           amount: number | null
@@ -334,6 +373,8 @@ export type Database = {
       }
       categories: {
         Row: {
+          archived_at: string | null
+          category_type: string
           color: string | null
           created_at: string
           deleted_at: string | null
@@ -342,14 +383,18 @@ export type Database = {
           is_active: boolean
           is_default: boolean
           metadata: Json
+          merged_into_category_id: string | null
           name: string
           parent_id: string | null
+          reporting_role: string | null
           sort_order: number
           type: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
+          category_type?: string
           color?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -358,14 +403,18 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           metadata?: Json
+          merged_into_category_id?: string | null
           name: string
           parent_id?: string | null
+          reporting_role?: string | null
           sort_order?: number
           type: string
           updated_at?: string
           user_id?: string
         }
         Update: {
+          archived_at?: string | null
+          category_type?: string
           color?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -374,14 +423,23 @@ export type Database = {
           is_active?: boolean
           is_default?: boolean
           metadata?: Json
+          merged_into_category_id?: string | null
           name?: string
           parent_id?: string | null
+          reporting_role?: string | null
           sort_order?: number
           type?: string
           updated_at?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "categories_merged_into_category_id_fkey"
+            columns: ["merged_into_category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "categories_parent_id_fkey"
             columns: ["parent_id"]
@@ -675,6 +733,77 @@ export type Database = {
           metadata?: Json
           name?: string
           status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      future_planning_columns: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          direction: string
+          id: string
+          is_active: boolean
+          metadata: Json
+          name: string
+          related_entity_type: string | null
+          sort_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          direction?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name: string
+          related_entity_type?: string | null
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          direction?: string
+          id?: string
+          is_active?: boolean
+          metadata?: Json
+          name?: string
+          related_entity_type?: string | null
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "future_planning_columns_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      future_planning_settings: {
+        Row: {
+          created_at: string
+          selected_years: number[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          selected_years?: number[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          selected_years?: number[]
           updated_at?: string
           user_id?: string
         }
@@ -1357,6 +1486,9 @@ export type Database = {
           default_account_id: string | null
           default_expense_category_id: string | null
           default_income_category_id: string | null
+          salary_period_default_view: boolean
+          salary_period_enabled: boolean
+          salary_period_start_day: number
           settings: Json
           updated_at: string
           user_id: string
@@ -1368,6 +1500,9 @@ export type Database = {
           default_account_id?: string | null
           default_expense_category_id?: string | null
           default_income_category_id?: string | null
+          salary_period_default_view?: boolean
+          salary_period_enabled?: boolean
+          salary_period_start_day?: number
           settings?: Json
           updated_at?: string
           user_id?: string
@@ -1379,6 +1514,9 @@ export type Database = {
           default_account_id?: string | null
           default_expense_category_id?: string | null
           default_income_category_id?: string | null
+          salary_period_default_view?: boolean
+          salary_period_enabled?: boolean
+          salary_period_start_day?: number
           settings?: Json
           updated_at?: string
           user_id?: string
@@ -1634,6 +1772,13 @@ export type Database = {
       create_default_user_settings: {
         Args: { p_user_id: string }
         Returns: undefined
+      }
+      merge_categories: {
+        Args: {
+          p_source_category_id: string
+          p_target_category_id: string
+        }
+        Returns: string
       }
       seed_default_categories: {
         Args: { p_user_id: string }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
+import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
@@ -14,6 +14,7 @@ import { dateTimeSortValue } from "@/lib/date-format";
 import type { AssetRecordWithValues } from "@/lib/assets/supabase";
 import { formatMmk } from "@/lib/currency";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
+import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 
 const statusStyles: Record<AssetStatus, string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
@@ -237,10 +238,14 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; on
 }
 
 function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All categories");
-  const [year, setYear] = useState("All years");
-  const [amountRange, setAmountRange] = useState<(typeof amountRanges)[number]>("All amounts");
+  const defaultFilters = {
+    amountRange: "All amounts" as (typeof amountRanges)[number],
+    category: "All categories",
+    search: "",
+    year: "All years",
+  };
+  const [draftFilters, setDraftFilters] = useState(defaultFilters);
+  const [appliedFilters, setAppliedFilters] = useState(defaultFilters);
 
   const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(assets.map((asset) => asset.category)))], [assets]);
   const yearOptions = useMemo(
@@ -252,53 +257,50 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
     [assets],
   );
   const filteredAssets = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch = appliedFilters.search.trim().toLowerCase();
 
     return assets
       .filter((asset) => {
         const searchTarget = `${asset.name} ${asset.category} ${asset.serialReference} ${asset.note}`.toLowerCase();
         const searchMatches = normalizedSearch === "" || searchTarget.includes(normalizedSearch);
-        const categoryMatches = category === "All categories" || asset.category === category;
-        const yearMatches = year === "All years" || getPurchaseYear(asset) === year;
-        const amountMatches = matchesAmountRange(asset, amountRange);
+        const categoryMatches = appliedFilters.category === "All categories" || asset.category === appliedFilters.category;
+        const yearMatches = appliedFilters.year === "All years" || getPurchaseYear(asset) === appliedFilters.year;
+        const amountMatches = matchesAmountRange(asset, appliedFilters.amountRange);
 
         return searchMatches && categoryMatches && yearMatches && amountMatches;
       })
       .sort((firstAsset, secondAsset) => dateTimeSortValue(secondAsset.purchaseDateTimeValue) - dateTimeSortValue(firstAsset.purchaseDateTimeValue));
-  }, [amountRange, assets, category, search, year]);
+  }, [appliedFilters, assets]);
   const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + parseCurrency(asset.purchaseAmount), 0);
 
   function clearFilters() {
-    setSearch("");
-    setCategory("All categories");
-    setYear("All years");
-    setAmountRange("All amounts");
+    setDraftFilters(defaultFilters);
+    setAppliedFilters(defaultFilters);
   }
 
   return (
     <section className="mt-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       <div className="border-b border-[#c6c6cd]/50 bg-[#f8f9ff] px-4 py-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
           <div>
             <h2 className="text-sm font-bold uppercase text-[#45464d]">Asset History</h2>
             <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
               {filteredAssets.length} purchases totaling {formatCurrency(totalPurchaseCost)}
             </p>
           </div>
-          <button
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[#c6c6cd]/70 bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] sm:w-fit"
-            onClick={clearFilters}
-            type="button"
-          >
-            Clear Filters
-          </button>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <TextInput label="Search History" onChange={setSearch} placeholder="Search asset, category, note..." value={search} />
-          <SelectInput label="Category" onChange={setCategory} options={categoryOptions} value={category} />
-          <SelectInput label="Purchase Year" onChange={setYear} options={yearOptions} value={year} />
-          <SelectInput label="Purchase Amount" onChange={(value) => setAmountRange(value as (typeof amountRanges)[number])} options={[...amountRanges]} value={amountRange} />
-        </div>
+        <FilterForm className="mt-4 space-y-3" onSubmit={(event) => {
+          event.preventDefault();
+          setAppliedFilters(draftFilters);
+        }}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <TextInput label="Search History" onChange={(search) => setDraftFilters((filters) => ({ ...filters, search }))} placeholder="Search asset, category, note..." value={draftFilters.search} />
+            <SelectInput label="Category" onChange={(category) => setDraftFilters((filters) => ({ ...filters, category }))} options={categoryOptions} value={draftFilters.category} />
+            <SelectInput label="Purchase Year" onChange={(year) => setDraftFilters((filters) => ({ ...filters, year }))} options={yearOptions} value={draftFilters.year} />
+            <SelectInput label="Purchase Amount" onChange={(amountRange) => setDraftFilters((filters) => ({ ...filters, amountRange: amountRange as (typeof amountRanges)[number] }))} options={[...amountRanges]} value={draftFilters.amountRange} />
+          </div>
+          <FilterActions onReset={clearFilters} resetLabel="Clear Filters" />
+        </FilterForm>
       </div>
       <div className="hidden max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch] xl:block">
         <table className="w-full min-w-[920px] border-collapse text-left">
@@ -385,10 +387,10 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
 
 export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] }) {
   const { showError, showSuccess } = useToast();
-  const searchParams = useSearchParams();
+  const queryFilter = useSubmittedQueryFilter();
   const [visibleAssets, setVisibleAssets] = useState(assets);
   const [isPending, setIsPending] = useState(false);
-  const search = searchParams.get("q") ?? "";
+  const search = queryFilter.appliedValue;
   const filteredAssets = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleAssets.filter((asset) => {
@@ -411,6 +413,15 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
 
   return (
     <>
+      <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
+        event.preventDefault();
+        queryFilter.apply();
+      }}>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <TextInput label="Search Assets" onChange={queryFilter.setDraftValue} placeholder="Name, category, condition, status..." value={queryFilter.draftValue} />
+          <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
+        </div>
+      </FilterForm>
       <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>

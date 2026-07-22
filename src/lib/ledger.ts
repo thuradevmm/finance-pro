@@ -1,3 +1,8 @@
+import {
+  transactionStatusIsFinalized,
+  transactionStatusReservesWorkingBalance,
+} from "./transactions/status.ts";
+
 export type LedgerAccountInput = {
   id: string;
   type?: string | null;
@@ -74,6 +79,7 @@ const ledgerRelevantMetadataKeys = [
   "credit_card_debt_impact",
   "credit_card_payment",
   "financial_event",
+  "future_link_label",
   "reversed_credit_card_payment",
   "reversed_transaction_id",
   "reversed_transaction_type",
@@ -83,10 +89,9 @@ const ledgerRelevantMetadataKeys = [
 ] as const;
 
 /**
- * Keeps every field that can change ledger or economic-summary behavior when
- * database rows are mapped into client-side transaction records. Centralizing
- * this projection prevents display models from silently dropping accounting
- * classifications such as credit-card payments or reversals.
+ * Keeps metadata required after database rows are mapped into client-side
+ * transaction records. This includes accounting classifications and stable
+ * display snapshots such as a future plan's linked-record label.
  */
 export function ledgerRelevantMetadata(metadata: unknown) {
   const source = metadataRecord(metadata);
@@ -151,8 +156,7 @@ export function isCreditCardType(value: unknown) {
 }
 
 export function transactionStatusAffectsBalance(value: unknown) {
-  const status = String(value ?? "cleared").trim().toLowerCase();
-  return !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status);
+  return transactionStatusReservesWorkingBalance(value);
 }
 
 export function transferDirection(metadata: Record<string, unknown>) {
@@ -207,7 +211,7 @@ export function reversedTransactionType(transaction: Pick<LedgerTransactionInput
  */
 export function economicTransactionDelta(transaction: LedgerTransactionInput): EconomicTransactionDelta {
   const empty = { expenseDelta: 0, incomeDelta: 0 };
-  if (!transactionStatusAffectsBalance(transaction.status)) return empty;
+  if (!transactionStatusIsFinalized(transaction.status)) return empty;
 
   const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
   if (amount <= 0) return empty;
@@ -232,7 +236,7 @@ export function economicTransactionDelta(transaction: LedgerTransactionInput): E
  * it. Arbitrary Income and the credit half of paired transfers are ignored.
  */
 export function linkedExpenseContributionDelta(transaction: LedgerTransactionInput) {
-  if (!transactionStatusAffectsBalance(transaction.status)) return 0;
+  if (!transactionStatusIsFinalized(transaction.status)) return 0;
   const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
   if (amount <= 0) return 0;
 

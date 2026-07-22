@@ -10,6 +10,7 @@ import { calculateLinkedSavingsAmounts, type SavingsGoalEntryInput } from "@/lib
 import { isValidCalendarDate } from "@/lib/date-validation";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 
@@ -43,13 +44,16 @@ async function validateGoalLinks(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   input: SavingsGoalFormData,
+  allowedExistingCategoryId = "",
 ) {
   if (!input.accountId) return "Select a savings account.";
   if (!input.categoryId) return "Select a savings goal category.";
-  const [accountResult, categoryResult] = await Promise.all([
-    supabase.from("accounts").select("id,type,is_active,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
-    supabase.from("categories").select("id,is_active,metadata,type").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
-  ]);
+  const accountPromise = supabase.from("accounts").select("id,type,is_active,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  let categoryResult = await supabase.from("categories").select("id,is_active,metadata,type,category_type").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  if (categoryResult.error && isMissingDatabaseObject(categoryResult.error, ["category_type"])) {
+    categoryResult = await supabase.from("categories").select("id,is_active,metadata,type").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  }
+  const accountResult = await accountPromise;
   const error = accountResult.error ?? categoryResult.error;
   if (error) return error.message;
   if (!accountResult.data
@@ -57,7 +61,9 @@ async function validateGoalLinks(
     || isCreditCardType(accountResult.data.type)) {
     return "Select an available non-credit-card savings account.";
   }
-  if (!categoryResult.data || categoryResult.data.is_active === false || !categoryRowSupports(categoryResult.data, "Savings Goals", "Savings Goal")) return "Select an active savings goal category.";
+  if (!categoryResult.data
+    || (categoryResult.data.is_active === false && categoryResult.data.id !== allowedExistingCategoryId)
+    || !categoryRowSupports(categoryResult.data, "Savings Goals", "Savings Goal")) return "Select an active savings goal category.";
   return "";
 }
 
@@ -132,7 +138,16 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
   if (!user) return { error: "You must be signed in." };
   const validationError = validateGoalInput(input);
   if (validationError) return { error: validationError };
-  const linkError = await validateGoalLinks(supabase, user.id, input);
+  const { data: existingGoal, error: existingError } = await supabase
+    .from("savings_goals")
+    .select("id,category_id")
+    .eq("id", goalId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (existingError) return { error: existingError.message };
+  if (!existingGoal) return { error: "Savings goal not found." };
+  const linkError = await validateGoalLinks(supabase, user.id, input, existingGoal.category_id ?? "");
   if (linkError) return { error: linkError };
   const linkedAmount = await linkedSavingsAmount(supabase, user.id, goalId, input.accountId);
   if (linkedAmount.error) return { error: linkedAmount.error };

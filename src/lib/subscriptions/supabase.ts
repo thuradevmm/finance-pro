@@ -11,6 +11,7 @@ import {
   normalizeSubscriptionStatus,
   subscriptionPaymentIsAfterCutoff,
 } from "@/lib/subscriptions/calculations";
+import { transactionStatusIsFinalized } from "@/lib/transactions/status";
 import type { BillingCycle, SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, SummaryMetric, UpcomingSubscriptionBilling } from "@/types/finance";
 
 export type SubscriptionFormData = {
@@ -220,10 +221,9 @@ function paymentStatus({
 }
 
 function isPostedExpensePayment(transaction: SubscriptionTransactionPaymentRow, reversedTransactionIds: Set<string>) {
-  const status = String(transaction.status ?? "cleared").trim().toLowerCase();
   return (
     String(transaction.type ?? "").toLowerCase() === "expense" &&
-    !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status) &&
+    transactionStatusIsFinalized(transaction.status) &&
     !reversedTransactionIds.has(transaction.id)
   );
 }
@@ -361,7 +361,7 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     exchangeRateLabel: exchangeRateLabel(billingCurrency, exchangeRate),
     reminderDaysBefore,
     reminderEnabled,
-    reminderStatus: reminderStatus(nextBillingDateValue, reminderEnabled, reminderDaysBefore),
+    reminderStatus: status === "Paused" ? "Paused" : reminderStatus(nextBillingDateValue, reminderEnabled, reminderDaysBefore),
     status,
     tone: category?.tone ?? "text-[#0058be]",
   };
@@ -403,8 +403,7 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
       transactionRows
         .map((transaction) => {
           const reversedId = metadataString(metadataRecord(transaction.metadata), "reversed_transaction_id");
-          const status = String(transaction.status ?? "cleared").trim().toLowerCase();
-          return reversedId && !["scheduled", "cancelled", "canceled", "void", "failed"].includes(status) ? reversedId : "";
+          return reversedId && transactionStatusIsFinalized(transaction.status) ? reversedId : "";
         })
         .filter(Boolean),
     );

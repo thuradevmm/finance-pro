@@ -9,6 +9,7 @@ import { getAccounts, type AccountFormData } from "@/lib/accounts/supabase";
 import { accountTypeChangesLedgerMeaning } from "@/lib/accounts/type-integrity";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 type DebtTermRow = {
@@ -109,7 +110,7 @@ async function activeAccountDependents(
   userId: string,
   accountId: string,
 ) {
-  const [transactionsResult, assetsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult] = await Promise.all([
+  const [transactionsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult] = await Promise.all([
     supabase
       .from("transactions")
       .select("id,status,metadata")
@@ -117,7 +118,6 @@ async function activeAccountDependents(
       .ilike("status", "scheduled")
       .is("deleted_at", null)
       .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`),
-    supabase.from("assets").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
     supabase
       .from("debts")
       .select("id,status,metadata")
@@ -129,7 +129,7 @@ async function activeAccountDependents(
     supabase.from("scenario_items").select("id,scenario_id").eq("user_id", userId).eq("account_id", accountId),
     supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
   ]);
-  const firstError = [transactionsResult, assetsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult]
+  const firstError = [transactionsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult]
     .find((result) => result.error)?.error;
   if (firstError) return { dependencies: [] as string[], error: firstError.message };
 
@@ -139,9 +139,6 @@ async function activeAccountDependents(
     return normalizedStatus(metadataRecord(transaction.metadata).future_status || "active") !== "paused";
   });
   if (hasScheduledTransaction) dependencies.push("scheduled transactions");
-  if ((assetsResult.data ?? []).some((asset) => normalizedStatus(asset.status || metadataRecord(asset.metadata).status) === "active")) {
-    dependencies.push("active assets");
-  }
   if ((debtsResult.data ?? []).some((debt) => !["archived", "cancelled", "canceled", "completed", "paid"].includes(normalizedStatus(debt.status || metadataRecord(debt.metadata).status)))) {
     dependencies.push("active debts");
   }
@@ -271,6 +268,7 @@ function accountPayload(input: AccountFormData, options: { existingMetadata?: Re
     ...(options.includeInitialBalance === false ? {} : { initial_balance: 0 }),
     is_active: input.status !== "Archived",
     metadata: {
+      ...existingMetadata,
       account_number: input.accountNumber.trim(),
       amount_types: amountTypePayload(input.amountTypes, existingMetadata),
       available_balance: existingMetadata.available_balance ?? 0,
@@ -341,18 +339,70 @@ async function validateAccountCategory(
   categoryId: string,
   allowInactive = false,
 ) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("categories")
-    .select("id,name,is_active,type,metadata")
+    .select("id,name,is_active,type,category_type,metadata")
     .eq("id", categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (error && isMissingDatabaseObject(error, ["category_type"])) {
+    ({ data, error } = await supabase
+      .from("categories")
+      .select("id,name,is_active,type,metadata")
+      .eq("id", categoryId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle());
+  }
   if (error) return { error: error.message, name: "" };
   if (!data || (!allowInactive && data.is_active === false) || !categoryRowSupports(data, "Accounts", "Account")) {
     return { error: "Select an active account category.", name: "" };
   }
   return { error: "", name: data.name };
+}
+
+async function syncAmountTypeCatalog(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  amountTypes: { type: string }[],
+) {
+  const names = Array.from(new Map(
+    activeAmountTypeEntries(amountTypes).map((item) => [item.key, item.type]),
+  ).values());
+  if (names.length === 0) return "";
+
+  const { error } = await supabase.from("account_amount_types").upsert(
+    names.map((name, index) => ({
+      deleted_at: null,
+      is_active: true,
+      metadata: { source: "account_form" },
+      name,
+      sort_order: index,
+      user_id: userId,
+    })),
+    { onConflict: "user_id,normalized_name" },
+  );
+  return error && !isMissingDatabaseObject(error, ["account_amount_types"])
+    ? error.message
+    : "";
+}
+
+async function accountArchiveError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  accountId: string,
+) {
+  let account;
+  try {
+    account = (await getAccounts(supabase, userId)).find((item) => item.id === accountId);
+  } catch (error) {
+    return error instanceof Error ? error.message : "Unable to reconcile the account before archiving it.";
+  }
+  if (!account) return "Account not found.";
+  const dependents = await activeAccountDependents(supabase, userId, accountId);
+  if (dependents.error) return dependents.error;
+  return accountArchivalIntegrityError(account, dependents.dependencies);
 }
 
 function migratedAmountType(value: unknown, migrations: AmountTypeMigration[]) {
@@ -507,6 +557,8 @@ export async function createAccount(input: AccountFormData): Promise<ActionResul
   if (validationError) return { error: validationError };
   const category = await validateAccountCategory(supabase, user.id, input.categoryId);
   if (category.error) return { error: category.error };
+  const catalogError = await syncAmountTypeCatalog(supabase, user.id, input.amountTypes);
+  if (catalogError) return { error: catalogError };
 
   const { error } = await supabase.from("accounts").insert({ ...accountPayload({ ...input, category: category.name }), user_id: user.id });
   if (error) return { error: error.message };
@@ -520,9 +572,6 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   if (!user) return { error: "You must be signed in." };
   const validationError = validateAccountInput(input);
   if (validationError) return { error: validationError };
-  const category = await validateAccountCategory(supabase, user.id, input.categoryId, input.status === "Archived");
-  if (category.error) return { error: category.error };
-  const validatedInput = { ...input, category: category.name };
 
   const { data: existingAccount, error: existingError } = await supabase
     .from("accounts")
@@ -533,18 +582,14 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
     .maybeSingle();
   if (existingError) return { error: existingError.message };
   if (!existingAccount) return { error: "Account not found." };
+  const existingMetadata = metadataRecord(existingAccount.metadata);
+  const preservesExistingCategory = existingMetadata.category_id === input.categoryId;
+  const category = await validateAccountCategory(supabase, user.id, input.categoryId, input.status === "Archived" || preservesExistingCategory);
+  if (category.error) return { error: category.error };
+  const validatedInput = { ...input, category: category.name };
 
   if (validatedInput.status === "Archived" && existingAccount.is_active !== false) {
-    let account;
-    try {
-      account = (await getAccounts(supabase, user.id)).find((item) => item.id === accountId);
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : "Unable to reconcile the account before archiving it." };
-    }
-    if (!account) return { error: "Account not found." };
-    const dependents = await activeAccountDependents(supabase, user.id, accountId);
-    if (dependents.error) return { error: dependents.error };
-    const archiveError = accountArchivalIntegrityError(account, dependents.dependencies);
+    const archiveError = await accountArchiveError(supabase, user.id, accountId);
     if (archiveError) return { error: archiveError };
   }
 
@@ -558,7 +603,8 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
     }
   }
 
-  const existingMetadata = metadataRecord(existingAccount.metadata);
+  const catalogError = await syncAmountTypeCatalog(supabase, user.id, validatedInput.amountTypes);
+  if (catalogError) return { error: catalogError };
   const amountTypeMigrations = amountTypeMigrationTargets(existingMetadata, validatedInput.amountTypes);
   const { data, error } = await supabase
     .from("accounts")
@@ -573,6 +619,83 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   if (migrationError) return { error: migrationError };
   const syncError = await syncCreditCardDebtTerms(supabase, user.id, accountId, validatedInput, existingMetadata);
   if (syncError) return { error: syncError };
+
+  revalidateAccountPaths([`/accounts/${accountId}/edit`]);
+  return {};
+}
+
+export async function archiveAccount(accountId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: target, error: targetError } = await supabase
+    .from("accounts")
+    .select("id,is_active,metadata")
+    .eq("id", accountId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (targetError) return { error: targetError.message };
+  if (!target) return { error: "Account not found." };
+  if (target.is_active === false) return {};
+
+  const archiveError = await accountArchiveError(supabase, user.id, accountId);
+  if (archiveError) return { error: archiveError };
+  const archivedAt = new Date().toISOString();
+  const metadata = metadataRecord(target.metadata);
+  const { data, error } = await supabase
+    .from("accounts")
+    .update({
+      is_active: false,
+      metadata: {
+        ...metadata,
+        archived_at: archivedAt,
+        retirement_reason: "no_longer_used",
+        status: "Archived",
+      },
+    })
+    .eq("id", accountId)
+    .eq("user_id", user.id)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "Account not found." };
+
+  revalidateAccountPaths([`/accounts/${accountId}/edit`]);
+  return {};
+}
+
+export async function restoreAccount(accountId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: target, error: targetError } = await supabase
+    .from("accounts")
+    .select("id,metadata")
+    .eq("id", accountId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (targetError) return { error: targetError.message };
+  if (!target) return { error: "Account not found." };
+  const metadata = metadataRecord(target.metadata);
+  const { data, error } = await supabase
+    .from("accounts")
+    .update({
+      is_active: true,
+      metadata: {
+        ...metadata,
+        archived_at: null,
+        restored_at: new Date().toISOString(),
+        status: "Active",
+      },
+    })
+    .eq("id", accountId)
+    .eq("user_id", user.id)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "Account not found." };
 
   revalidateAccountPaths([`/accounts/${accountId}/edit`]);
   return {};

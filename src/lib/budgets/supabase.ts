@@ -5,6 +5,7 @@ import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { deriveCreditCardDebtMetadata, economicTransactionDelta, roundCurrencyValue } from "@/lib/ledger";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus, CategoryScope, CategoryType, SummaryMetric } from "@/types/finance";
 
 export type BudgetRecord = BudgetCategory & {
@@ -55,6 +56,7 @@ type ItemRow = {
 };
 
 type CategoryRow = {
+  category_type?: string | null;
   id: string;
   metadata: unknown;
   name: string;
@@ -97,7 +99,7 @@ function metadataRecord(metadata: unknown) {
 function categoryTypeForBudget(row: CategoryRow): CategoryType {
   const metadata = metadataRecord(row.metadata);
   const metadataType = typeof metadata.category_type === "string" ? metadata.category_type : "";
-  const normalizedType = (metadataType || row.type).toLowerCase().replace(/[_-]/g, " ");
+  const normalizedType = String(row.category_type || metadataType || row.type).toLowerCase().replace(/[_-]/g, " ");
   const scopes = Array.isArray(metadata.scopes)
     ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string")
     : [];
@@ -109,6 +111,29 @@ function categoryTypeForBudget(row: CategoryRow): CategoryType {
   if (scopes.includes("Savings Goals")) return "Savings Goal";
   if (scopes.includes("Subscriptions")) return "Subscription";
   return "Expense";
+}
+
+async function getBudgetCategoryRows(supabase: SupabaseClient, userId: string) {
+  const enrichedResult = await supabase
+    .from("categories")
+    .select("id,name,type,category_type,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+  if (!enrichedResult.error) {
+    return { data: enrichedResult.data as CategoryRow[], error: null };
+  }
+  if (!isMissingDatabaseObject(enrichedResult.error, ["category_type"])) {
+    return { data: [] as CategoryRow[], error: enrichedResult.error };
+  }
+  const legacyResult = await supabase
+    .from("categories")
+    .select("id,name,type,metadata")
+    .eq("user_id", userId)
+    .is("deleted_at", null);
+  return {
+    data: (legacyResult.data ?? []) as CategoryRow[],
+    error: legacyResult.error,
+  };
 }
 
 function budgetStatus(usagePercent: number, alertPercentage: number): BudgetStatus {
@@ -124,7 +149,7 @@ export async function getBudgets(supabase: SupabaseClient, userId: string, optio
   const [plansResult, itemsResult, categoriesResult, transactionsResult, accountsResult, debtsResult] = await Promise.all([
     supabase.from("budget_plans").select("id,period_type,start_date,end_date,status,description,metadata,created_at").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false }),
     itemsQuery,
-    supabase.from("categories").select("id,name,type,metadata").eq("user_id", userId).is("deleted_at", null),
+    getBudgetCategoryRows(supabase, userId),
     supabase.from("transactions").select("account_id,transfer_account_id,category_id,transaction_date,type,amount,status,metadata,related_entity_id,related_entity_type").eq("user_id", userId).is("deleted_at", null),
     supabase.from("accounts").select("id,type").eq("user_id", userId).is("deleted_at", null),
     supabase.from("debts").select("id,payment_account_id,type,metadata").eq("user_id", userId).is("deleted_at", null),

@@ -15,6 +15,7 @@ import {
 import { validateDebtInput } from "@/lib/debts/validation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 type DebtPayload = Record<string, unknown>;
@@ -38,6 +39,7 @@ type DebtPaymentAccountRow = {
   type: string | null;
 };
 type DebtCategoryRow = {
+  category_type: string | null;
   id: string;
   is_active: boolean | null;
   metadata: unknown;
@@ -296,19 +298,28 @@ async function validateDebtCategory(
       ? { input }
       : { error: "Select an active debt category." };
   }
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("categories")
-    .select("id,name,type,is_active,metadata")
+    .select("id,name,type,category_type,is_active,metadata")
     .eq("id", input.categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (error && isMissingDatabaseObject(error, ["category_type"])) {
+    ({ data, error } = await supabase
+      .from("categories")
+      .select("id,name,type,is_active,metadata")
+      .eq("id", input.categoryId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle());
+  }
   if (error) return { error: error.message };
   if (!data) return { error: "The selected debt category does not exist." };
   const category = data as DebtCategoryRow;
   if (category.id !== allowedExistingCategoryId && category.is_active === false) return { error: "Select an active debt category." };
   const metadata = metadataRecord(category.metadata);
-  const categoryType = String(metadata.category_type ?? category.type ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  const categoryType = String(category.category_type ?? metadata.category_type ?? category.type ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   const scopes = Array.isArray(metadata.scopes) ? metadata.scopes.map((scope) => String(scope).toLowerCase()) : [];
   if (categoryType !== "debt" && !scopes.includes("debts")) return { error: "The selected category is not available for debts." };
   return {

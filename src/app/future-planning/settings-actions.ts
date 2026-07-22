@@ -1,0 +1,154 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { normalizePlanningYears, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
+import { getUserSafely } from "@/lib/supabase/auth";
+import {
+  isMissingDatabaseObject,
+  mergeJsonSettingsSection,
+  schemaUpgradeRequiredMessage,
+} from "@/lib/supabase/schema-compat";
+import { createClient } from "@/lib/supabase/server";
+
+type SettingsActionResult = { error?: string };
+type FuturePlanningColumnSource = "asset" | "budget" | "category" | "debt" | "savings_goal" | "subscription";
+
+const columnDirections = new Set<FuturePlanningColumnDirection>(["expense", "income", "neutral", "saving"]);
+const entitySources = new Set<Exclude<FuturePlanningColumnSource, "category">>(["asset", "budget", "debt", "savings_goal", "subscription"]);
+
+async function authenticatedClient() {
+  const supabase = await createClient();
+  const { user, error } = await getUserSafely(supabase);
+  return { authError: error, supabase, user };
+}
+
+function revalidateFuturePlanning() {
+  revalidatePath("/future-planning");
+}
+
+export async function saveFuturePlanningYears(years: number[]): Promise<SettingsActionResult> {
+  const selectedYears = normalizePlanningYears(years);
+  if (selectedYears.length === 0) return { error: "Add at least one valid four-digit year." };
+  if (selectedYears.length > 50) return { error: "Choose 50 years or fewer for one planning table." };
+
+  const { authError, supabase, user } = await authenticatedClient();
+  if (authError || !user) return { error: authError ?? "You must be signed in." };
+  const { error: directError } = await supabase.from("future_planning_settings").upsert({
+    selected_years: selectedYears,
+    user_id: user.id,
+  }, { onConflict: "user_id" });
+  const directTableMissing = isMissingDatabaseObject(directError, ["future_planning_settings"]);
+  if (directError && !directTableMissing) return { error: directError.message };
+
+  const existingResult = await supabase
+    .from("user_settings")
+    .select("settings")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existingResult.error) {
+    if (directTableMissing) return { error: existingResult.error.message };
+    revalidateFuturePlanning();
+    return {};
+  }
+  const settings = mergeJsonSettingsSection(existingResult.data?.settings, "future_planning", {
+    selected_years: selectedYears,
+    storage: directTableMissing ? "fallback" : "direct",
+  });
+  const { error: settingsError } = await supabase.from("user_settings").upsert({
+    settings,
+    user_id: user.id,
+  }, { onConflict: "user_id" });
+  if (settingsError && directTableMissing) return { error: settingsError.message };
+  revalidateFuturePlanning();
+  return {};
+}
+
+export async function createFuturePlanningColumn(input: {
+  direction: FuturePlanningColumnDirection;
+  name: string;
+  sourceId: string;
+  sourceType: FuturePlanningColumnSource;
+}): Promise<SettingsActionResult> {
+  const name = input.name?.trim() ?? "";
+  if (!name || name.length > 80) return { error: "Enter a column name up to 80 characters." };
+  if (!columnDirections.has(input.direction)) return { error: "Choose a valid column direction." };
+  if (input.sourceType !== "category" && !entitySources.has(input.sourceType)) return { error: "Choose a valid column source." };
+
+  const { authError, supabase, user } = await authenticatedClient();
+  if (authError || !user) return { error: authError ?? "You must be signed in." };
+
+  let categoryId: string | null = null;
+  let relatedEntityType: Exclude<FuturePlanningColumnSource, "category"> | null = null;
+  if (input.sourceType === "category") {
+    if (!input.sourceId?.trim()) return { error: "Choose a category source." };
+    const { data: category, error: categoryError } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("id", input.sourceId)
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (categoryError) return { error: categoryError.message };
+    if (!category) return { error: "The selected category is no longer available." };
+    categoryId = category.id;
+  } else {
+    relatedEntityType = input.sourceType;
+  }
+
+  const { data: finalColumn, error: finalColumnError } = await supabase
+    .from("future_planning_columns")
+    .select("sort_order")
+    .eq("user_id", user.id)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (finalColumnError) {
+    return {
+      error: isMissingDatabaseObject(finalColumnError, ["future_planning_columns"])
+        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        : finalColumnError.message,
+    };
+  }
+  const { error } = await supabase.from("future_planning_columns").insert({
+    category_id: categoryId,
+    direction: input.direction,
+    name,
+    related_entity_type: relatedEntityType,
+    sort_order: (finalColumn?.sort_order ?? -1) + 1,
+    user_id: user.id,
+  });
+  if (error) {
+    if (isMissingDatabaseObject(error, ["future_planning_columns"])) {
+      return { error: schemaUpgradeRequiredMessage("Custom future-planning columns") };
+    }
+    return { error: error.code === "23505" ? "An active column already uses that name." : error.message };
+  }
+  revalidateFuturePlanning();
+  return {};
+}
+
+export async function archiveFuturePlanningColumn(columnId: string): Promise<SettingsActionResult> {
+  if (!columnId?.trim()) return { error: "Column not found." };
+  const { authError, supabase, user } = await authenticatedClient();
+  if (authError || !user) return { error: authError ?? "You must be signed in." };
+  const { data, error } = await supabase
+    .from("future_planning_columns")
+    .update({ is_active: false })
+    .eq("id", columnId)
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    return {
+      error: isMissingDatabaseObject(error, ["future_planning_columns"])
+        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        : error.message,
+    };
+  }
+  if (!data) return { error: "Column not found." };
+  revalidateFuturePlanning();
+  return {};
+}

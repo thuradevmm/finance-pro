@@ -69,6 +69,7 @@ test("savings keeps explicit zero, consumes entries once, and signs transfer dir
     { id: "incoming", account_id: "bank", transfer_account_id: "saving", related_entity_id: "goal", amount: 200, metadata: { transfer_direction: "debit" }, status: "cleared", type: "transfer" },
     { id: "incoming-credit", account_id: "saving", transfer_account_id: "bank", related_entity_id: "goal", amount: 200, metadata: { transfer_direction: "credit" }, status: "cleared", type: "transfer" },
     { id: "outgoing", account_id: "saving", transfer_account_id: "bank", related_entity_id: "goal", amount: 50, metadata: { transfer_direction: "debit" }, status: "cleared", type: "transfer" },
+    { id: "pending", account_id: "bank", transfer_account_id: "saving", related_entity_id: "goal", amount: 777, metadata: { transfer_direction: "debit" }, status: "pending", type: "transfer" },
     { id: "scheduled", account_id: "bank", transfer_account_id: "saving", related_entity_id: "goal", amount: 999, metadata: { transfer_direction: "debit" }, status: "scheduled", type: "transfer" },
     { id: "expense", account_id: "bank", related_entity_id: "goal", amount: 25, metadata: {}, status: "cleared", type: "expense" },
   ];

@@ -8,6 +8,7 @@ import { isValidCalendarDate } from "@/lib/date-validation";
 import type { BudgetFormData } from "@/lib/budgets/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
 
@@ -100,16 +101,26 @@ async function validateBudgetCategory(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   categoryId: string,
+  allowedExistingCategoryId = "",
 ) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("categories")
-    .select("id,is_active,type,metadata")
+    .select("id,is_active,type,category_type,metadata")
     .eq("id", categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (error && isMissingDatabaseObject(error, ["category_type"])) {
+    ({ data, error } = await supabase
+      .from("categories")
+      .select("id,is_active,type,metadata")
+      .eq("id", categoryId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle());
+  }
   if (error) return error.message;
-  if (!data || data.is_active === false || !categoryRowSupports(data, "Transactions", "Expense")) return "Select an active expense category.";
+  if (!data || (data.is_active === false && data.id !== allowedExistingCategoryId) || !categoryRowSupports(data, "Transactions", "Expense")) return "Select an active expense category.";
   return "";
 }
 
@@ -157,9 +168,6 @@ export async function updateBudget(itemId: string, input: BudgetFormData): Promi
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const validationError = validateBudgetInput(input);
   if (validationError) return { error: validationError };
-  const categoryError = await validateBudgetCategory(supabase, user.id, input.categoryId);
-  if (categoryError) return { error: categoryError };
-
   const { data: item, error: findError } = await supabase
     .from("budget_items")
     .select("id,budget_plan_id,category_id,planned_amount,alert_percentage,note,type,metadata")
@@ -168,6 +176,8 @@ export async function updateBudget(itemId: string, input: BudgetFormData): Promi
     .maybeSingle();
   if (findError) return { error: findError.message };
   if (!item) return { error: "Budget not found." };
+  const categoryError = await validateBudgetCategory(supabase, user.id, input.categoryId, item.category_id ?? "");
+  if (categoryError) return { error: categoryError };
   const { data: existingPlan, error: existingPlanError } = await supabase
     .from("budget_plans")
     .select("description,end_date,metadata,name,period_type,plan_type,start_date,status")
