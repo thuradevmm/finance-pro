@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildFutureProjection } from "../src/lib/future-planning/projection.ts";
-import { getFutureOccurrenceDates } from "../src/lib/future-planning/records.ts";
+import {
+  futureLinkAmountSnapshot,
+  futurePredictedAmount,
+  getFutureOccurrenceDates,
+  materializeFuturePredictions,
+  suggestedFutureAmount,
+} from "../src/lib/future-planning/records.ts";
 
 const baseOptions = {
   startDate: "2028-01-01",
@@ -31,6 +37,33 @@ test("planned transaction materialization respects inclusive ends and safety lim
     recurrence: "Weekly",
     startDate: "2026-07-17",
   }), ["2026-07-17", "2026-07-24", "2026-07-31"]);
+});
+
+test("a transaction's exact predicted amount wins over linked snapshots and metadata", () => {
+  assert.equal(futurePredictedAmount(275.75, {
+    future_link_amount_snapshot: 500,
+    future_predicted_amount: 300,
+  }), 275.75);
+  assert.equal(futurePredictedAmount(0, { future_predicted_amount: 300.25 }), 300.25);
+  assert.equal(futureLinkAmountSnapshot({ future_link_amount_snapshot: 500 }, 275.75), 500);
+  assert.equal(futureLinkAmountSnapshot({ future_link_amount_snapshot: 0 }, 275.75), 0);
+});
+
+test("linked suggestions never replace an amount after the user edits it", () => {
+  assert.equal(suggestedFutureAmount("275", 500, true), "275");
+  assert.equal(suggestedFutureAmount("", 500, false), "500");
+});
+
+test("recurring predictions materialize explicit per-date values without averaging", () => {
+  const dates = ["2026-12-27", "2027-01-27", "2027-02-27"];
+  assert.deepEqual(materializeFuturePredictions(dates, 1_000, [
+    { amount: 1_250.5, date: "2027-01-27" },
+    { amount: 900.25, date: "2027-02-27" },
+  ]), [
+    { amount: 1_000, date: "2026-12-27" },
+    { amount: 1_250.5, date: "2027-01-27" },
+    { amount: 900.25, date: "2027-02-27" },
+  ]);
 });
 
 test("monthly and yearly recurrences preserve their anchor across leap month ends", () => {

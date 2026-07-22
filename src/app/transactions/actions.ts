@@ -182,17 +182,19 @@ function revalidateTransactionLinkedPaths(extraPaths: string[] = []) {
 
 type TransactionExtraMetadata = Record<string, unknown>;
 
-function futurePlanMetadata(input: TransactionFormData["futurePlan"]): TransactionExtraMetadata {
+function futurePlanMetadata(input: TransactionFormData["futurePlan"], amount: number): TransactionExtraMetadata {
   if (!input) return {};
   return {
     future_end_date: input.endDate || null,
     future_plan: true,
+    future_predicted_amount: amount,
+    future_prediction_mode: "explicit",
     future_recurrence: input.recurrence.toLowerCase(),
     future_status: input.status.toLowerCase(),
   };
 }
 
-function preservedFuturePlanMetadata(metadata: unknown): TransactionExtraMetadata {
+function preservedFuturePlanMetadata(metadata: unknown, amount: number): TransactionExtraMetadata {
   const source = metadataRecord(metadata);
   if (source.future_plan !== true
     && typeof source.future_recurrence !== "string"
@@ -200,12 +202,18 @@ function preservedFuturePlanMetadata(metadata: unknown): TransactionExtraMetadat
 
   return {
     future_end_date: source.future_end_date ?? null,
+    future_link_amount_snapshot: source.future_link_amount_snapshot ?? null,
+    future_link_label: source.future_link_label ?? null,
     future_materialized: source.future_materialized ?? false,
+    future_materialization_mode: source.future_materialization_mode ?? null,
     future_occurrence_index: source.future_occurrence_index ?? null,
     future_plan: true,
+    future_predicted_amount: amount,
+    future_prediction_mode: "explicit",
     future_recurrence: source.future_recurrence ?? "once",
     future_series_end_date: source.future_series_end_date ?? null,
     future_series_id: source.future_series_id ?? null,
+    future_series_occurrence_count: source.future_series_occurrence_count ?? null,
     future_series_recurrence: source.future_series_recurrence ?? null,
     future_status: source.future_status ?? "active",
   };
@@ -223,7 +231,11 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
       account_amount_type: input.accountAmountType,
       transfer_account_amount_type: null,
       ...extraMetadata,
-      ...futurePlanMetadata(input.futurePlan),
+      ...futurePlanMetadata(input.futurePlan, input.amount),
+      ...(input.status.toLowerCase() === "scheduled" ? {
+        future_predicted_amount: input.amount,
+        future_prediction_mode: "explicit",
+      } : {}),
     },
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
@@ -2039,7 +2051,7 @@ export async function updateTransaction(transactionId: string, input: Transactio
     return { error: cleanupError ? `${subscriptionMetadataResult.error} Automatic card-debt cleanup also failed: ${cleanupError}` : subscriptionMetadataResult.error };
   }
   const extraMetadata = {
-    ...preservedFuturePlanMetadata(existingTransaction.metadata),
+    ...preservedFuturePlanMetadata(existingTransaction.metadata, resolvedInput.amount),
     ...creditCardDebtResolution.metadata,
     ...subscriptionMetadataResult.metadata,
   };

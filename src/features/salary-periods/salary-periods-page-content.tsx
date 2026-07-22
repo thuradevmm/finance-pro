@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveSalaryPeriodSettings } from "@/app/salary-periods/actions";
+import {
+  deleteSalaryPaydayOverride,
+  saveSalaryPaydayOverride,
+  saveSalaryPeriodSettings,
+} from "@/app/salary-periods/actions";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
@@ -41,13 +45,28 @@ function transactionHref(startDate: string, endDate: string, type?: "Expense" | 
   return `/transactions?${params.toString()}`;
 }
 
+function salaryMonthLabel(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC", year: "numeric" })
+    .format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
 export function SalaryPeriodsPageContent({ data }: { data: SalaryPeriodData }) {
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const [enabled, setEnabled] = useState(data.settings.enabled);
   const [defaultView, setDefaultView] = useState(data.settings.defaultView);
   const [startDay, setStartDay] = useState(String(data.settings.startDay));
+  const [daysBeforeMonthEnd, setDaysBeforeMonthEnd] = useState(String(data.settings.daysBeforeMonthEnd));
+  const [ruleMode, setRuleMode] = useState(data.settings.ruleMode);
+  const [weekendPolicy, setWeekendPolicy] = useState(data.settings.weekendPolicy);
   const [isSaving, setIsSaving] = useState(false);
+  const [overrideMonth, setOverrideMonth] = useState(data.referenceDate.slice(0, 7));
+  const [overridePayday, setOverridePayday] = useState(
+    data.paydayOverrides.find((override) => override.salaryMonth === data.referenceDate.slice(0, 7))?.payday ?? "",
+  );
+  const [isSavingOverride, setIsSavingOverride] = useState(false);
+  const [deletingOverrideId, setDeletingOverrideId] = useState("");
 
   const summaries: SummaryMetric[] = [
     { bg: "bg-[#ecfdf5]", icon: "trendingUp", label: "Salary Received", tone: "text-[#047857]", value: formatMmk(data.current.salaryIncome) },
@@ -62,9 +81,21 @@ export function SalaryPeriodsPageContent({ data }: { data: SalaryPeriodData }) {
       showError("Payday must be from day 1 through day 31.");
       return;
     }
+    const offset = Number(daysBeforeMonthEnd);
+    if (!Number.isInteger(offset) || offset < 0 || offset > 27) {
+      showError("Days before month end must be from 0 through 27.");
+      return;
+    }
     setIsSaving(true);
     try {
-      const result = await saveSalaryPeriodSettings({ defaultView, enabled, startDay: day });
+      const result = await saveSalaryPeriodSettings({
+        daysBeforeMonthEnd: offset,
+        defaultView,
+        enabled,
+        ruleMode,
+        startDay: day,
+        weekendPolicy,
+      });
       if (result.error) {
         showError(result.error);
         return;
@@ -78,30 +109,142 @@ export function SalaryPeriodsPageContent({ data }: { data: SalaryPeriodData }) {
     }
   }
 
+  function handleOverrideMonthChange(value: string) {
+    setOverrideMonth(value);
+    setOverridePayday(data.paydayOverrides.find((override) => override.salaryMonth === value)?.payday ?? "");
+  }
+
+  async function handleSaveOverride() {
+    if (!overrideMonth || !overridePayday) {
+      showError("Choose a salary month and its actual payday.");
+      return;
+    }
+    setIsSavingOverride(true);
+    try {
+      const result = await saveSalaryPaydayOverride({ payday: overridePayday, salaryMonth: overrideMonth });
+      if (result.error) {
+        showError(result.error);
+        return;
+      }
+      showSuccess("Manual payday saved.");
+      router.refresh();
+    } catch {
+      showError("Manual payday could not be saved.");
+    } finally {
+      setIsSavingOverride(false);
+    }
+  }
+
+  async function handleDeleteOverride(overrideId: string) {
+    setDeletingOverrideId(overrideId);
+    try {
+      const result = await deleteSalaryPaydayOverride(overrideId);
+      if (result.error) {
+        showError(result.error);
+        return;
+      }
+      showSuccess("Manual payday removed. The standard rule now applies.");
+      const removed = data.paydayOverrides.find((override) => override.id === overrideId);
+      if (removed?.salaryMonth === overrideMonth) setOverridePayday("");
+      router.refresh();
+    } catch {
+      showError("Manual payday could not be removed.");
+    } finally {
+      setDeletingOverrideId("");
+    }
+  }
+
   return (
     <>
       <section className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
+        <div className="min-w-0">
+          <div>
             <h2 className="text-lg font-semibold text-[#0b1c30]">Salary cycle settings</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#45464d]">Your period starts on payday and ends the day before the next payday. Day 29–31 automatically uses the last valid day in shorter months.</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#45464d]">Each period starts on the resolved payday and ends the day before the next one, including across month and year boundaries.</p>
           </div>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-[9rem_auto_auto] sm:items-end">
+          <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
-              Payday / start day
-              <input className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" max={31} min={1} onChange={(event) => setStartDay(event.target.value)} type="number" value={startDay} />
+              Payday rule
+              <select className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold normal-case text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" onChange={(event) => setRuleMode(event.target.value as typeof ruleMode)} value={ruleMode}>
+                <option value="fixed_day">Fixed day of month</option>
+                <option value="days_before_month_end">Days before month end</option>
+              </select>
             </label>
-            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[#c6c6cd] px-3 text-sm font-semibold text-[#0b1c30]">
+            {ruleMode === "fixed_day" ? (
+              <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
+                Day of month
+                <input className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" max={31} min={1} onChange={(event) => setStartDay(event.target.value)} type="number" value={startDay} />
+              </label>
+            ) : (
+              <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
+                Days before month end
+                <input className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" max={27} min={0} onChange={(event) => setDaysBeforeMonthEnd(event.target.value)} type="number" value={daysBeforeMonthEnd} />
+              </label>
+            )}
+            <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
+              Weekend handling
+              <select className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold normal-case text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" onChange={(event) => setWeekendPolicy(event.target.value as typeof weekendPolicy)} value={weekendPolicy}>
+                <option value="none">Keep the calendar date</option>
+                <option value="previous_business_day">Move to previous Friday</option>
+                <option value="next_business_day">Move to next Monday</option>
+              </select>
+            </label>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[#c6c6cd] px-3 text-sm font-semibold text-[#0b1c30]">
               <input checked={enabled} className="size-4 accent-[#0058be]" onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />
               Enable
-            </label>
-            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[#c6c6cd] px-3 text-sm font-semibold text-[#0b1c30]">
-              <input checked={defaultView} className="size-4 accent-[#0058be]" disabled={!enabled} onChange={(event) => setDefaultView(event.target.checked)} type="checkbox" />
-              Default focus
-            </label>
-            <LoadingButton className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white sm:col-span-3" isLoading={isSaving} loadingLabel="Saving…" onClick={handleSaveSettings} type="button">
+              </label>
+              <label className="flex min-h-11 items-center gap-2 rounded-lg border border-[#c6c6cd] px-3 text-sm font-semibold text-[#0b1c30]">
+                <input checked={defaultView} className="size-4 accent-[#0058be]" disabled={!enabled} onChange={(event) => setDefaultView(event.target.checked)} type="checkbox" />
+                Default focus
+              </label>
+            </div>
+            <p className="text-xs leading-5 text-[#45464d] md:col-span-2 xl:col-span-3">
+              Fixed days 29–31 clamp to the last valid date first. Weekend handling is then applied to the resolved date.
+            </p>
+            <LoadingButton className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" isLoading={isSaving} loadingLabel="Saving…" onClick={handleSaveSettings} type="button">
               <Icon className="size-4" name="check" /> Save settings
             </LoadingButton>
+          </div>
+
+          <div className="mt-6 border-t border-[#c6c6cd]/60 pt-5">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div>
+                <h3 className="font-semibold text-[#0b1c30]">Manual payday overrides</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[#45464d]">Use an exact payday for an exceptional salary month. Manual dates take precedence and are not moved by the weekend rule.</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-[#eff4ff] px-3 py-1 text-xs font-bold text-[#004395]">{data.paydayOverrides.length} saved</span>
+            </div>
+            <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,13rem)_minmax(0,13rem)_auto] lg:items-end">
+              <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
+                Salary month
+                <input className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" max="9999-12" min="1900-01" onChange={(event) => handleOverrideMonthChange(event.target.value)} type="month" value={overrideMonth} />
+              </label>
+              <label className="min-w-0 text-xs font-bold uppercase text-[#45464d]">
+                Exact payday
+                <input className="mt-2 h-11 w-full rounded-lg border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20" max="9999-12-31" min="1900-01-01" onChange={(event) => setOverridePayday(event.target.value)} type="date" value={overridePayday} />
+              </label>
+              <LoadingButton className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#0058be] bg-[#eff6ff] px-4 text-sm font-semibold text-[#0058be] sm:col-span-2 lg:col-span-1" disabled={Boolean(deletingOverrideId)} isLoading={isSavingOverride} loadingLabel="Saving payday…" onClick={handleSaveOverride} type="button">
+                <Icon className="size-4" name="plus" /> Add or update
+              </LoadingButton>
+            </div>
+            {data.paydayOverrides.length > 0 ? (
+              <ul className="mt-4 grid gap-2 lg:grid-cols-2">
+                {data.paydayOverrides.map((override) => (
+                  <li className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-3 py-2" key={override.id}>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#0b1c30]">{salaryMonthLabel(override.salaryMonth)}</p>
+                      <p className="mt-0.5 text-xs text-[#45464d]">Exact payday: {override.payday}</p>
+                    </div>
+                    <LoadingButton aria-label={`Remove manual payday for ${salaryMonthLabel(override.salaryMonth)}`} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-[#b42318] hover:bg-[#fff1f0]" disabled={Boolean(deletingOverrideId) || isSavingOverride} isLoading={deletingOverrideId === override.id} loadingLabel="Removing…" onClick={() => handleDeleteOverride(override.id)} type="button">
+                      <Icon className="size-4" name="trash" /> Remove
+                    </LoadingButton>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-4 rounded-lg bg-[#f8f9ff] px-3 py-3 text-sm text-[#45464d]">No exceptions are saved. Every salary month currently follows the standard rule.</p>
+            )}
           </div>
         </div>
       </section>

@@ -8,7 +8,7 @@ import { getDebts, getUpcomingDebtPayments } from "@/lib/debts/supabase";
 import { calculateOpeningCashPosition } from "@/lib/future-planning/opening-position";
 import { normalizePlanningYears, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
 import type { ForecastItem, HistoricalActualItem } from "@/lib/future-planning/projection";
-import type { FutureTransactionRecord } from "@/lib/future-planning/records";
+import { futureLinkAmountSnapshot, futurePredictedAmount, type FutureTransactionRecord } from "@/lib/future-planning/records";
 import { economicTransactionDelta } from "@/lib/ledger";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
 import { getSubscriptions } from "@/lib/subscriptions/supabase";
@@ -66,11 +66,12 @@ function addAnchoredMonths(value: string, monthCount: number) {
 
 function asFutureTransaction(transaction: TransactionRecord): FutureTransactionRecord | null {
   if (transaction.status.toLowerCase() !== "scheduled" || (transaction.type !== "Expense" && transaction.type !== "Income")) return null;
+  const amountValue = futurePredictedAmount(transaction.amountValue, transaction.ledgerMetadata);
   return {
     account: transaction.account,
     accountAmountType: transaction.accountAmountType,
     accountId: transaction.accountId,
-    amountValue: transaction.amountValue,
+    amountValue,
     category: transaction.category,
     categoryId: transaction.categoryId,
     date: transaction.date,
@@ -79,6 +80,9 @@ function asFutureTransaction(transaction: TransactionRecord): FutureTransactionR
     id: transaction.id,
     note: transaction.note,
     recurrence: transaction.futurePlan?.recurrence ?? "Once",
+    relatedEntityAmountSnapshot: transaction.relatedEntityType === "none"
+      ? null
+      : futureLinkAmountSnapshot(transaction.ledgerMetadata, amountValue),
     relatedEntityId: transaction.relatedEntityId,
     relatedEntityLabel: typeof transaction.ledgerMetadata.future_link_label === "string"
       ? transaction.ledgerMetadata.future_link_label

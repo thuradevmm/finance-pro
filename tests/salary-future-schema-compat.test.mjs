@@ -45,8 +45,12 @@ test("salary and future planning loaders include pre-migration fallbacks", async
   ]);
 
   assert.match(salaryLoader, /\.select\("settings"\)/);
+  assert.match(salaryLoader, /fallbackSection\.payday_overrides/);
+  assert.match(salaryLoader, /mergeSalaryPaydayOverrides\(directRows, fallbackRows\)/);
   assert.match(salaryLoader, /isMissingDatabaseObject\(categoryResult\.error, \["reporting_role"\]\)/);
   assert.match(salaryAction, /storage: "fallback"/);
+  assert.match(salaryAction, /payday_overrides: serializedPaydayOverrides\(overrides\)/);
+  assert.match(salaryAction, /isMissingDatabaseObject\(error, \["salary_payday_overrides"\]\)/);
   assert.match(futureLoader, /columnsTableMissing \? \[\]/);
   assert.match(futureLoader, /jsonSettingsSection\(userSettingsResult\.data\?\.settings, "future_planning"\)/);
   assert.match(futureAction, /schemaUpgradeRequiredMessage\("Custom future-planning columns"\)/);

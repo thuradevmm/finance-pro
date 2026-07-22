@@ -17,6 +17,7 @@ function plan(overrides = {}) {
     id: crypto.randomUUID(),
     note: "",
     recurrence: "Once",
+    relatedEntityAmountSnapshot: null,
     relatedEntityId: "",
     relatedEntityLabel: "",
     relatedEntityType: "none",
@@ -53,8 +54,14 @@ test("manual table aggregates active scheduled rows only and keeps savings separ
   assert.equal(rows[0].plans.length, 3);
 });
 
-test("linked module records retain the manually snapshotted plan amount and label", () => {
-  const linked = plan({ amountValue: 275, relatedEntityId: "subscription-1", relatedEntityLabel: "Subscription · Cloud storage", relatedEntityType: "subscription" });
+test("linked module records use the manual prediction instead of the linked amount snapshot", () => {
+  const linked = plan({
+    amountValue: 275,
+    relatedEntityAmountSnapshot: 500,
+    relatedEntityId: "subscription-1",
+    relatedEntityLabel: "Subscription · Cloud storage",
+    relatedEntityType: "subscription",
+  });
   const [january] = buildManualFuturePlanningTable([linked], [
     { categoryId: "", direction: "expense", id: "subscriptions", name: "Subscriptions", relatedEntityType: "subscription", sortOrder: 0 },
   ], [2026]);

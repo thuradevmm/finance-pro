@@ -12,6 +12,11 @@ export type FuturePlanLinkOption = {
   type: Exclude<FuturePlanRelatedEntityType, "none">;
 };
 
+export type FutureDatePrediction = {
+  amount: number;
+  date: string;
+};
+
 export type FutureTransactionFormData = {
   accountAmountType: AccountAmountType;
   accountId: string;
@@ -19,7 +24,9 @@ export type FutureTransactionFormData = {
   categoryId: string;
   endDate: string;
   note: string;
+  predictions?: FutureDatePrediction[];
   recurrence: FutureRecurrence;
+  relatedEntityAmountSnapshot?: number | null;
   relatedEntityId: string;
   relatedEntityLabel: string;
   relatedEntityType: FuturePlanRelatedEntityType;
@@ -42,6 +49,7 @@ export type FutureTransactionRecord = {
   id: string;
   note: string;
   recurrence: FutureRecurrence;
+  relatedEntityAmountSnapshot: number | null;
   relatedEntityId: string;
   relatedEntityLabel: string;
   relatedEntityType: FuturePlanRelatedEntityType;
@@ -104,4 +112,49 @@ export function getFutureOccurrenceDates(input: Pick<FutureTransactionFormData, 
     }
   }
   return dates;
+}
+
+function positiveAmount(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+/**
+ * The transaction row is the source of truth for a user's prediction. The
+ * metadata value only supports older or partially migrated rows whose amount
+ * could not be read.
+ */
+export function futurePredictedAmount(transactionAmount: unknown, metadata: Record<string, unknown>) {
+  return positiveAmount(transactionAmount) || positiveAmount(metadata.future_predicted_amount);
+}
+
+/**
+ * A linked module amount is display-only context. Legacy linked plans did not
+ * store a separate snapshot, so their own prediction is the safest fallback.
+ */
+export function futureLinkAmountSnapshot(metadata: Record<string, unknown>, legacyPrediction?: unknown) {
+  const snapshot = Number(metadata.future_link_amount_snapshot);
+  if (metadata.future_link_amount_snapshot !== null
+    && metadata.future_link_amount_snapshot !== undefined
+    && Number.isFinite(snapshot)
+    && snapshot >= 0) return snapshot;
+  const fallback = positiveAmount(legacyPrediction);
+  return fallback > 0 ? fallback : null;
+}
+
+export function suggestedFutureAmount(currentAmount: string, suggestion: number, userEditedAmount: boolean) {
+  return userEditedAmount ? currentAmount : String(suggestion);
+}
+
+/** Materializes explicit rows; it never averages or infers a recurring value. */
+export function materializeFuturePredictions(
+  occurrenceDates: string[],
+  defaultAmount: number,
+  predictions: FutureDatePrediction[] = [],
+) {
+  const amountsByDate = new Map(predictions.map((prediction) => [prediction.date, prediction.amount]));
+  return occurrenceDates.map((date) => ({
+    amount: amountsByDate.get(date) ?? defaultAmount,
+    date,
+  }));
 }

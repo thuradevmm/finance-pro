@@ -16,15 +16,42 @@ import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { formatMmk, formatMmkPreview } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
-import { getFutureOccurrenceDates, type FuturePlanLinkOption, type FuturePlanRelatedEntityType, type FuturePlanStatus, type FutureRecurrence, type FutureTransactionFormData, type FutureTransactionRecord } from "@/lib/future-planning/records";
+import {
+  getFutureOccurrenceDates,
+  suggestedFutureAmount,
+  type FuturePlanLinkOption,
+  type FuturePlanRelatedEntityType,
+  type FuturePlanStatus,
+  type FutureRecurrence,
+  type FutureTransactionFormData,
+  type FutureTransactionRecord,
+} from "@/lib/future-planning/records";
 
 const recurrenceOptions: FutureRecurrence[] = ["Once", "Weekly", "Monthly", "Yearly"];
 
-function accountAmountTypeOptions(account: AccountRecord | undefined) {
-  if (!account) return ["General"];
-  if (account.type === "Credit Card") return ["Credit Card"];
-  const options = account.balanceBreakdowns.map((breakdown) => breakdown.type);
-  return options.length > 0 ? options : ["General"];
+function accountAmountTypeOptions(account: AccountRecord | undefined, preservedType?: string) {
+  if (!account) return preservedType ? [preservedType] : ["General"];
+  const options = account.type === "Credit Card"
+    ? ["Credit Card"]
+    : account.balanceBreakdowns.map((breakdown) => breakdown.type);
+  const availableOptions = options.length > 0 ? options : ["General"];
+  return preservedType && !availableOptions.includes(preservedType)
+    ? [preservedType, ...availableOptions]
+    : availableOptions;
+}
+
+function categoriesForPlan(categories: CategoryRecord[], type: "Expense" | "Income", preservedCategoryId?: string) {
+  const available = getCategoriesForScope(categories, "Transactions", type) as CategoryRecord[];
+  const preserved = categories.find((category) => category.id === preservedCategoryId
+    && category.type === type
+    && category.scopes.includes("Transactions"));
+  return preserved && !available.some((category) => category.id === preserved.id)
+    ? [preserved, ...available]
+    : available;
+}
+
+function categorySelectLabel(category: CategoryRecord) {
+  return category.status === "Hidden" ? `${category.name} (Hidden)` : category.name;
 }
 
 function typeCardClass(type: "Expense" | "Income", selectedType: "Expense" | "Income") {
@@ -52,39 +79,53 @@ export function FutureTransactionForm({
   const { showError, showSuccess } = useToast();
   const [type, setType] = useState<"Expense" | "Income">(transaction?.type ?? "Expense");
   const planningAccounts = useMemo(
-    () => accounts.filter((account) => account.status !== "Archived" && (type === "Expense" || account.type !== "Credit Card")),
-    [accounts, type],
+    () => accounts.filter((account) => account.id === transaction?.accountId
+      || (account.status !== "Archived" && (type === "Expense" || account.type !== "Credit Card"))),
+    [accounts, transaction?.accountId, type],
   );
   const initialAccount = planningAccounts.find((account) => account.id === transaction?.accountId) ?? planningAccounts[0];
   const [accountId, setAccountId] = useState(initialAccount?.id ?? "");
   const [accountAmountType, setAccountAmountType] = useState(transaction?.accountAmountType ?? accountAmountTypeOptions(initialAccount)[0]);
-  const initialCategories = getCategoriesForScope(categories, "Transactions", transaction?.type ?? "Expense");
+  const initialCategories = categoriesForPlan(categories, transaction?.type ?? "Expense", transaction?.categoryId);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? initialCategories[0]?.id ?? "");
   const [title, setTitle] = useState(transaction?.title ?? "");
   const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : "");
+  const [amountWasEdited, setAmountWasEdited] = useState(Boolean(transaction));
   const [startDate, setStartDate] = useState(transaction?.dateValue ?? defaultDate);
   const [recurrence, setRecurrence] = useState<FutureRecurrence>("Once");
   const [endDate, setEndDate] = useState(transaction?.endDate ?? "");
   const [status, setStatus] = useState<FuturePlanStatus>(transaction?.status ?? "Active");
+  const [relatedEntityAmountSnapshot, setRelatedEntityAmountSnapshot] = useState<number | null>(transaction?.relatedEntityAmountSnapshot ?? null);
   const [relatedEntityId, setRelatedEntityId] = useState(transaction?.relatedEntityId ?? "");
   const [relatedEntityLabel, setRelatedEntityLabel] = useState(transaction?.relatedEntityLabel ?? "");
   const [relatedEntityType, setRelatedEntityType] = useState<FuturePlanRelatedEntityType>(transaction?.relatedEntityType ?? "none");
   const [note, setNote] = useState(transaction?.note ?? "");
+  const [predictionDrafts, setPredictionDrafts] = useState<Record<string, string>>({});
+  const [showOccurrenceAmounts, setShowOccurrenceAmounts] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   const selectedAccount = planningAccounts.find((account) => account.id === accountId) ?? planningAccounts[0];
-  const amountTypeOptions = useMemo(() => accountAmountTypeOptions(selectedAccount), [selectedAccount]);
+  const amountTypeOptions = useMemo(
+    () => accountAmountTypeOptions(
+      selectedAccount,
+      selectedAccount?.id === transaction?.accountId ? transaction.accountAmountType : undefined,
+    ),
+    [selectedAccount, transaction?.accountAmountType, transaction?.accountId],
+  );
   const effectiveAmountType = amountTypeOptions.includes(accountAmountType) ? accountAmountType : amountTypeOptions[0] ?? "General";
-  const availableCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", type), [categories, type]);
+  const availableCategories = useMemo(
+    () => categoriesForPlan(categories, type, transaction?.categoryId),
+    [categories, transaction?.categoryId, type],
+  );
   const selectedCategory = availableCategories.find((category) => category.id === categoryId) ?? availableCategories[0];
   const selectableLinks = useMemo(() => {
     const links = [...linkOptions];
     if (transaction?.relatedEntityId && transaction.relatedEntityType !== "none"
       && !links.some((option) => option.id === transaction.relatedEntityId && option.type === transaction.relatedEntityType)) {
       links.unshift({
-        amount: transaction.amountValue,
+        amount: transaction.relatedEntityAmountSnapshot ?? transaction.amountValue,
         categoryId: transaction.categoryId,
         id: transaction.relatedEntityId,
         label: transaction.relatedEntityLabel || `${transaction.relatedEntityType.replaceAll("_", " ")} · linked record unavailable`,
@@ -108,7 +149,19 @@ export function FutureTransactionForm({
   const selectedLink = selectableLinks.find((option) => option.id === relatedEntityId && option.type === relatedEntityType);
   const amountValue = Number(amount);
   const isRepeating = !transaction && recurrence !== "Once";
-  const occurrenceCount = getFutureOccurrenceDates({ endDate, recurrence: transaction ? "Once" : recurrence, startDate }, 241).length;
+  const occurrenceDates = useMemo(
+    () => getFutureOccurrenceDates({ endDate, recurrence: transaction ? "Once" : recurrence, startDate }, 241),
+    [endDate, recurrence, startDate, transaction],
+  );
+  const occurrenceCount = occurrenceDates.length;
+  const customizedPredictions = occurrenceDates.flatMap((date) => predictionDrafts[date] === undefined
+    ? []
+    : [{ amount: Number(predictionDrafts[date]), date }]);
+  const predictionsHaveError = customizedPredictions.some((prediction) => !Number.isFinite(prediction.amount) || prediction.amount <= 0);
+  const predictedTotal = occurrenceDates.reduce((sum, date) => {
+    const value = Number(predictionDrafts[date] ?? amount);
+    return sum + (Number.isFinite(value) && value > 0 ? value : 0);
+  }, 0);
   const titleHasError = showErrors && title.trim() === "";
   const amountHasError = showErrors && (!Number.isFinite(amountValue) || amountValue <= 0);
   const dateHasError = showErrors && startDate.trim() === "";
@@ -118,7 +171,7 @@ export function FutureTransactionForm({
 
   function handleTypeChange(nextType: "Expense" | "Income") {
     setType(nextType);
-    const nextCategories = getCategoriesForScope(categories, "Transactions", nextType);
+    const nextCategories = categoriesForPlan(categories, nextType, transaction?.categoryId);
     setCategoryId(nextCategories[0]?.id ?? "");
   }
 
@@ -126,7 +179,15 @@ export function FutureTransactionForm({
     const account = findAccountByOptionLabel(planningAccounts, label);
     if (!account) return;
     setAccountId(account.id);
-    setAccountAmountType(accountAmountTypeOptions(account)[0] ?? "General");
+    setAccountAmountType(accountAmountTypeOptions(
+      account,
+      account.id === transaction?.accountId ? transaction.accountAmountType : undefined,
+    )[0] ?? "General");
+  }
+
+  function handleAmountChange(value: string) {
+    setAmount(value);
+    setAmountWasEdited(true);
   }
 
   function handleLinkChange(label: string) {
@@ -134,6 +195,7 @@ export function FutureTransactionForm({
       setRelatedEntityId("");
       setRelatedEntityLabel("");
       setRelatedEntityType("none");
+      setRelatedEntityAmountSnapshot(null);
       return;
     }
     const option = selectableLinks.find((item) => item.selectLabel === label);
@@ -141,10 +203,18 @@ export function FutureTransactionForm({
     setRelatedEntityId(option.id);
     setRelatedEntityLabel(option.label);
     setRelatedEntityType(option.type);
-    setAmount(String(option.amount));
+    setRelatedEntityAmountSnapshot(option.amount);
+    setAmount((currentAmount) => suggestedFutureAmount(currentAmount, option.amount, amountWasEdited));
     if (type !== "Expense") handleTypeChange("Expense");
     const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
     if (expenseCategories.some((category) => category.id === option.categoryId)) setCategoryId(option.categoryId);
+  }
+
+  function useLinkedAmountSuggestion() {
+    if (!selectedLink) return;
+    setAmount(String(selectedLink.amount));
+    setAmountWasEdited(true);
+    setRelatedEntityAmountSnapshot(selectedLink.amount);
   }
 
   async function handleSave(addAnother = false) {
@@ -155,6 +225,7 @@ export function FutureTransactionForm({
       || !selectedAccount
       || !selectedCategory
       || (isRepeating && (endDate.trim() === "" || endDate < startDate))
+      || predictionsHaveError
       || occurrenceCount > 240;
     setShowErrors(hasErrors);
     setFormError("");
@@ -167,7 +238,9 @@ export function FutureTransactionForm({
       categoryId: selectedCategory.id,
       endDate: isRepeating ? endDate : "",
       note,
+      predictions: isRepeating ? customizedPredictions : [],
       recurrence: transaction ? "Once" : recurrence,
+      relatedEntityAmountSnapshot,
       relatedEntityId,
       relatedEntityLabel,
       relatedEntityType,
@@ -197,10 +270,14 @@ export function FutureTransactionForm({
       setIsSaving(false);
       setTitle("");
       setAmount("");
+      setAmountWasEdited(false);
       setNote("");
+      setPredictionDrafts({});
       setRelatedEntityId("");
       setRelatedEntityLabel("");
       setRelatedEntityType("none");
+      setRelatedEntityAmountSnapshot(null);
+      setShowOccurrenceAmounts(false);
       setShowErrors(false);
       return;
     }
@@ -236,8 +313,9 @@ export function FutureTransactionForm({
               {titleHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Title is required.</p> : null}
             </div>
             <div>
-              <TextInput error={amountHasError} label="Amount (MMK)" onChange={setAmount} placeholder="0" type="number" value={amount} />
+              <TextInput error={amountHasError} label="Predicted Amount (MMK)" onChange={handleAmountChange} placeholder="0" type="number" value={amount} />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter an amount greater than zero.</p> : null}
+              {!amountHasError ? <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">This is your forecast, independent of category history or a linked record&apos;s current value.</p> : null}
             </div>
           </div>
 
@@ -255,6 +333,54 @@ export function FutureTransactionForm({
               {endDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Choose an end date on or after the first date.</p> : null}
               {occurrenceCount > 240 ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Shorten this schedule to 240 occurrences or fewer.</p> : null}
               <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">This creates {occurrenceCount || 0} individual scheduled transactions, so each occurrence can be adjusted or completed independently.</p>
+              {occurrenceCount > 1 && occurrenceCount <= 240 ? (
+                <div className="mt-4 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-3 sm:p-4">
+                  <button
+                    aria-expanded={showOccurrenceAmounts}
+                    className="flex min-h-11 w-full items-center justify-between gap-3 text-left text-sm font-semibold text-[#0058be]"
+                    onClick={() => setShowOccurrenceAmounts((visible) => !visible)}
+                    type="button"
+                  >
+                    <span>Customize predicted amounts by date</span>
+                    <Icon className={`size-4 transition ${showOccurrenceAmounts ? "rotate-180" : ""}`} name="chevronDown" />
+                  </button>
+                  {showOccurrenceAmounts ? (
+                    <div className="mt-3 border-t border-[#c6c6cd]/50 pt-4">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs font-medium leading-5 text-[#45464d]">Dates without an override use the base predicted amount above.</p>
+                        <button
+                          className="min-h-9 shrink-0 rounded-md px-3 text-xs font-semibold text-[#0058be] transition hover:bg-[#dce9ff] disabled:opacity-50"
+                          disabled={Object.keys(predictionDrafts).length === 0}
+                          onClick={() => setPredictionDrafts({})}
+                          type="button"
+                        >
+                          Reset all to base
+                        </button>
+                      </div>
+                      <div className="grid max-h-96 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+                        {occurrenceDates.map((date) => {
+                          const predictionValue = predictionDrafts[date] ?? amount;
+                          const parsedPrediction = Number(predictionValue);
+                          const predictionHasError = showErrors && (!Number.isFinite(parsedPrediction) || parsedPrediction <= 0);
+                          return (
+                            <TextInput
+                              error={predictionHasError}
+                              key={date}
+                              label={formatDisplayDate(date, date)}
+                              onChange={(value) => setPredictionDrafts((current) => ({ ...current, [date]: value }))}
+                              placeholder="0"
+                              type="number"
+                              value={predictionValue}
+                            />
+                          );
+                        })}
+                      </div>
+                      {showErrors && predictionsHaveError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Enter an amount greater than zero for every customized date.</p> : null}
+                      <p className="mt-4 text-sm font-semibold text-[#0b1c30]">Total predicted across {occurrenceCount} dates: {formatMmk(predictedTotal)}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </FormCard>
@@ -268,8 +394,18 @@ export function FutureTransactionForm({
               value={selectedLink?.selectLabel ?? "No linked record"}
             />
             <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">
-              Selecting a record copies its current amount and category. This plan keeps that amount as a snapshot, even if the source is later paused, archived, or changed.
+              Selecting a record keeps its ID linked and suggests its current category and amount. A linked amount is only a snapshot and never replaces a predicted amount you have entered or changes later with the source.
             </p>
+            {selectedLink ? (
+              <div className="mt-2 flex flex-col gap-2 rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs font-semibold text-[#45464d]">
+                  Saved linked suggestion: {relatedEntityAmountSnapshot == null ? "Not saved" : formatMmk(relatedEntityAmountSnapshot)}
+                </p>
+                <button className="min-h-9 shrink-0 rounded-md px-3 text-xs font-semibold text-[#0058be] transition hover:bg-[#dce9ff]" onClick={useLinkedAmountSuggestion} type="button">
+                  Use current suggestion ({formatMmk(selectedLink.amount)})
+                </button>
+              </div>
+            ) : null}
           </div>
           {planningAccounts.length > 0 ? (
             <>
@@ -286,7 +422,7 @@ export function FutureTransactionForm({
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             {availableCategories.length > 0 ? (
-              <SelectInput label="Category" onChange={(name) => setCategoryId(availableCategories.find((category) => category.name === name)?.id ?? "")} options={availableCategories.map((category) => category.name)} value={selectedCategory?.name ?? ""} />
+              <SelectInput label="Category" onChange={(label) => setCategoryId(availableCategories.find((category) => categorySelectLabel(category) === label)?.id ?? "")} options={availableCategories.map(categorySelectLabel)} value={selectedCategory ? categorySelectLabel(selectedCategory) : ""} />
             ) : (
               <p className="rounded-md border border-dashed border-[#c6c6cd] p-5 text-sm text-[#45464d]">Create a {type.toLowerCase()} category first. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></p>
             )}
@@ -326,6 +462,7 @@ export function FutureTransactionForm({
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">First date</dt><dd className="text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(startDate, "Not set")}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Schedule</dt><dd className="text-sm font-semibold text-[#0b1c30]">{transaction ? "One occurrence" : recurrence}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Occurrences</dt><dd className="text-sm font-semibold text-[#0b1c30]">{occurrenceCount || 0}</dd></div>
+              {isRepeating ? <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Predicted total</dt><dd className="text-sm font-semibold text-[#0b1c30]">{formatMmk(predictedTotal)}</dd></div> : null}
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Category</dt><dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{selectedCategory?.name ?? "Not set"}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Linked record</dt><dd className="max-w-40 truncate text-sm font-semibold text-[#0b1c30]">{relatedEntityLabel || selectedLink?.label || "None"}</dd></div>
               <div className="flex justify-between gap-4"><dt className="text-xs font-bold uppercase text-[#45464d]">Status</dt><dd className="text-sm font-semibold text-[#0b1c30]">{status}</dd></div>

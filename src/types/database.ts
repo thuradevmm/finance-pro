@@ -921,6 +921,36 @@ export type Database = {
           },
         ]
       }
+      salary_payday_overrides: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json
+          payday: string
+          salary_month: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json
+          payday: string
+          salary_month: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json
+          payday?: string
+          salary_month?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       savings_goal_entries: {
         Row: {
           amount: number

@@ -3,7 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   comparablePreviousPeriodEnd,
   dateInTimeZone,
+  mergeSalaryPaydayOverrides,
+  resolvedSalaryPayday,
   salaryPeriodHistory,
+  type SalaryPaydayOverride,
+  type SalaryPaydayRule,
+  type SalaryPaydayRuleMode,
+  type SalaryWeekendPolicy,
 } from "@/lib/salary-periods/calendar";
 import {
   salaryPeriodChange,
@@ -16,10 +22,14 @@ import {
   jsonSettingsSection,
 } from "@/lib/supabase/schema-compat";
 
-export type SalaryPeriodSettings = {
+export type SalaryPeriodSettings = SalaryPaydayRule & {
   defaultView: boolean;
   enabled: boolean;
-  startDay: number;
+};
+
+export type SalaryPaydayOverrideRecord = SalaryPaydayOverride & {
+  id: string;
+  storage: "database" | "settings";
 };
 
 export type SalaryPeriodData = {
@@ -29,6 +39,7 @@ export type SalaryPeriodData = {
   history: SalaryPeriodSummary[];
   previousComparable: SalaryPeriodSummary;
   previousFull: SalaryPeriodSummary;
+  paydayOverrides: SalaryPaydayOverrideRecord[];
   referenceDate: string;
   settings: SalaryPeriodSettings;
   timezone: string;
@@ -66,16 +77,32 @@ function numberValue(value: unknown, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function salaryRuleMode(value: unknown): SalaryPaydayRuleMode {
+  return value === "days_before_month_end" ? "days_before_month_end" : "fixed_day";
+}
+
+function salaryWeekendPolicy(value: unknown): SalaryWeekendPolicy {
+  if (value === "previous_business_day" || value === "next_business_day") return value;
+  return "none";
+}
+
 function salarySettingsFromRow(
   row: Record<string, unknown>,
   directColumnsAvailable: boolean,
 ): SalaryPeriodSettings {
   const fallback = jsonSettingsSection(row.settings, "salary_period");
   const fallbackStartDay = Math.min(Math.max(Math.trunc(numberValue(fallback.start_day, 1)), 1), 31);
+  const daysBeforeMonthEnd = Math.min(Math.max(Math.trunc(numberValue(fallback.days_before_month_end, 0)), 0), 27);
+  const flexibleSettings = {
+    daysBeforeMonthEnd,
+    ruleMode: salaryRuleMode(fallback.rule_mode),
+    weekendPolicy: salaryWeekendPolicy(fallback.weekend_policy),
+  };
   const fallbackSettings: SalaryPeriodSettings = {
     defaultView: fallback.default_view === true,
     enabled: fallback.enabled === true,
     startDay: fallbackStartDay,
+    ...flexibleSettings,
   };
   if (!directColumnsAvailable) return fallbackSettings;
 
@@ -89,6 +116,7 @@ function salarySettingsFromRow(
       defaultView: row.salary_period_default_view === true || fallbackSettings.defaultView,
       enabled: row.salary_period_enabled === true || fallbackSettings.enabled,
       startDay: directStartDay !== 1 ? directStartDay : fallbackSettings.startDay,
+      ...flexibleSettings,
     };
   }
   return {
@@ -99,7 +127,62 @@ function salarySettingsFromRow(
       ? row.salary_period_enabled
       : fallbackSettings.enabled,
     startDay: row.salary_period_start_day == null ? fallbackSettings.startDay : directStartDay,
+    ...flexibleSettings,
   };
+}
+
+export async function getSalaryPaydayOverrides(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<SalaryPaydayOverrideRecord[]> {
+  const [directResult, settingsResult] = await Promise.all([
+    supabase
+      .from("salary_payday_overrides")
+      .select("id,salary_month,payday")
+      .eq("user_id", userId)
+      .order("salary_month", { ascending: false }),
+    supabase
+      .from("user_settings")
+      .select("settings")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+  const tableMissing = isMissingDatabaseObject(directResult.error, ["salary_payday_overrides"]);
+  if (directResult.error && !tableMissing) throw new Error(directResult.error.message);
+
+  const fallbackSection = jsonSettingsSection(settingsResult.data?.settings, "salary_period");
+  const fallbackRows: SalaryPaydayOverrideRecord[] = Array.isArray(fallbackSection.payday_overrides)
+    ? fallbackSection.payday_overrides.flatMap((value) => {
+      const row = metadataRecord(value);
+      const salaryMonth = typeof row.salary_month === "string" ? row.salary_month : "";
+      const payday = typeof row.payday === "string" ? row.payday : "";
+      if (!/^\d{4}-\d{2}$/.test(salaryMonth) || !/^\d{4}-\d{2}-\d{2}$/.test(payday)) return [];
+      try {
+        resolvedSalaryPayday(salaryMonth, 1, [{ payday, salaryMonth }]);
+      } catch {
+        return [];
+      }
+      return [{ id: `settings:${salaryMonth}`, payday, salaryMonth, storage: "settings" as const }];
+    })
+    : [];
+  if (settingsResult.error) {
+    if (tableMissing) throw new Error(settingsResult.error.message);
+    return (directResult.data ?? []).map((row) => ({
+      id: row.id,
+      payday: row.payday,
+      salaryMonth: row.salary_month.slice(0, 7),
+      storage: "database" as const,
+    }));
+  }
+  const directRows: SalaryPaydayOverrideRecord[] = (directResult.data ?? []).map((row) => ({
+    id: row.id,
+    payday: row.payday,
+    salaryMonth: row.salary_month.slice(0, 7),
+    storage: "database" as const,
+  }));
+  return tableMissing
+    ? mergeSalaryPaydayOverrides([], fallbackRows)
+    : mergeSalaryPaydayOverrides(directRows, fallbackRows);
 }
 
 export async function getSalaryPeriodSettings(
@@ -137,8 +220,9 @@ export async function getSalaryPeriodData(
   userId: string,
   options: { historyCount?: number; now?: Date } = {},
 ): Promise<SalaryPeriodData> {
-  const [settings, { data: profileRow, error: profileError }] = await Promise.all([
+  const [settings, paydayOverrides, { data: profileRow, error: profileError }] = await Promise.all([
     getSalaryPeriodSettings(supabase, userId),
+    getSalaryPaydayOverrides(supabase, userId),
     supabase
       .from("user_profiles")
       .select("timezone")
@@ -147,11 +231,10 @@ export async function getSalaryPeriodData(
   ]);
   if (profileError) throw new Error(profileError.message);
 
-  const startDay = settings.startDay;
   const timezone = typeof profileRow?.timezone === "string" && profileRow.timezone ? profileRow.timezone : "Asia/Yangon";
   const referenceDate = dateInTimeZone(options.now ?? new Date(), timezone);
   const historyCount = Math.max(2, Math.trunc(options.historyCount ?? 12));
-  const periods = salaryPeriodHistory(referenceDate, startDay, historyCount);
+  const periods = salaryPeriodHistory(referenceDate, settings, historyCount, paydayOverrides);
   const earliestStart = periods.at(-1)?.startDate ?? periods[0].startDate;
 
   const [categoryResult, { data: transactionRows, error: transactionError }] = await Promise.all([
@@ -229,6 +312,7 @@ export async function getSalaryPeriodData(
     history,
     previousComparable,
     previousFull,
+    paydayOverrides,
     referenceDate,
     settings,
     timezone,
