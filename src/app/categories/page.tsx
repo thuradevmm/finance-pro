@@ -6,6 +6,7 @@ import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { CategoriesPageContent } from "@/features/categories/categories-page-content";
 import { getCategories, getCategorySummaries } from "@/lib/categories/supabase";
+import { getDefaultTransactionDateRange } from "@/lib/transactions/date-range";
 
 export default async function CategoriesPage({
   searchParams,
@@ -16,8 +17,11 @@ export default async function CategoriesPage({
   }>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const dateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
-  const dateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
+  const requestedDateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
+  const requestedDateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
+  const defaultDateRange = getDefaultTransactionDateRange();
+  const dateFrom = requestedDateFrom ?? defaultDateRange.dateFrom;
+  const dateTo = requestedDateTo ?? defaultDateRange.dateTo;
   const categories = await getCategories({ dateFrom, dateTo, limit: 200 });
   const categorySummaries = getCategorySummaries(categories);
   return (
@@ -47,6 +51,8 @@ export default async function CategoriesPage({
       <SummaryCards summaries={categorySummaries} />
       <CategoriesPageContent
         categories={categories}
+        initialDateFrom={dateFrom}
+        initialDateTo={dateTo}
         key={`${dateFrom ?? ""}:${dateTo ?? ""}:${categories.map((category) => `${category.id}:${category.status}:${category.mergedIntoCategoryId}:${category.reportingRole}:${category.monthlyAverage}:${category.transactionCount}`).join("|")}`}
       />
     </AppShell>

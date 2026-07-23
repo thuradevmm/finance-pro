@@ -245,7 +245,15 @@ function CategoryFilters({
   );
 }
 
-export function CategoriesPageContent({ categories }: { categories: CategoryRecord[] }) {
+export function CategoriesPageContent({
+  categories,
+  initialDateFrom,
+  initialDateTo,
+}: {
+  categories: CategoryRecord[];
+  initialDateFrom: string;
+  initialDateTo: string;
+}) {
   const { showError, showSuccess } = useToast();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -257,8 +265,8 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
   const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
   const search = searchParams.get("q") ?? "";
   const status = searchParams.get("categoryStatus") ?? "All statuses";
-  const dateFrom = searchParams.get("dateFrom") ?? "";
-  const dateTo = searchParams.get("dateTo") ?? "";
+  const dateFrom = searchParams.get("dateFrom") ?? initialDateFrom;
+  const dateTo = searchParams.get("dateTo") ?? initialDateTo;
   const filteredCategories = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleCategories.filter((category) => {
@@ -292,13 +300,13 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
   useEffect(() => {
     if (filtersRestored.current) return;
     filtersRestored.current = true;
-    if (searchParams.has("q") || searchParams.has("categoryStatus") || searchParams.has("dateFrom") || searchParams.has("dateTo")) return;
     try {
       const saved = JSON.parse(window.localStorage.getItem("finance-pro:filters:categories") ?? "null");
       if (!saved || typeof saved !== "object") return;
       if (typeof saved.activeTab === "string" && tabs.includes(saved.activeTab)) {
         queueMicrotask(() => setActiveTab(saved.activeTab));
       }
+      if (searchParams.has("q") || searchParams.has("categoryStatus") || searchParams.has("dateFrom") || searchParams.has("dateTo")) return;
       applyFilters(
         typeof saved.search === "string" ? saved.search : "",
         typeof saved.status === "string" ? saved.status : "All statuses",
