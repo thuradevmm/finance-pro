@@ -15,6 +15,7 @@ import type { AssetRecordWithValues } from "@/lib/assets/supabase";
 import { formatMmk } from "@/lib/currency";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
+import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
 
 const statusStyles: Record<AssetStatus, string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
@@ -244,8 +245,13 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
     search: "",
     year: "All years",
   };
-  const [draftFilters, setDraftFilters] = useState(defaultFilters);
-  const [appliedFilters, setAppliedFilters] = useState(defaultFilters);
+  const {
+    appliedFilters,
+    applyFilters,
+    draftFilters,
+    resetFilters,
+    setDraftFilters,
+  } = usePersistentFilterState("assets:history", defaultFilters);
 
   const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(assets.map((asset) => asset.category)))], [assets]);
   const yearOptions = useMemo(
@@ -274,8 +280,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
   const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + parseCurrency(asset.purchaseAmount), 0);
 
   function clearFilters() {
-    setDraftFilters(defaultFilters);
-    setAppliedFilters(defaultFilters);
+    resetFilters();
   }
 
   return (
@@ -291,7 +296,7 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
         </div>
         <FilterForm className="mt-4 space-y-3" onSubmit={(event) => {
           event.preventDefault();
-          setAppliedFilters(draftFilters);
+          applyFilters();
         }}>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <TextInput label="Search History" onChange={(search) => setDraftFilters((filters) => ({ ...filters, search }))} placeholder="Search asset, category, note..." value={draftFilters.search} />

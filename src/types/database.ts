@@ -738,55 +738,79 @@ export type Database = {
         }
         Relationships: []
       }
+      future_planning_amounts: {
+        Row: {
+          amount: number
+          column_id: string
+          created_at: string
+          id: string
+          period_month: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          column_id: string
+          created_at?: string
+          id?: string
+          period_month: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          column_id?: string
+          created_at?: string
+          id?: string
+          period_month?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "future_planning_amounts_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "future_planning_columns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       future_planning_columns: {
         Row: {
-          category_id: string | null
           created_at: string
           direction: string
           id: string
           is_active: boolean
           metadata: Json
           name: string
-          related_entity_type: string | null
           sort_order: number
           updated_at: string
           user_id: string
         }
         Insert: {
-          category_id?: string | null
           created_at?: string
           direction?: string
           id?: string
           is_active?: boolean
           metadata?: Json
           name: string
-          related_entity_type?: string | null
           sort_order?: number
           updated_at?: string
           user_id: string
         }
         Update: {
-          category_id?: string | null
           created_at?: string
           direction?: string
           id?: string
           is_active?: boolean
           metadata?: Json
           name?: string
-          related_entity_type?: string | null
           sort_order?: number
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "future_planning_columns_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       future_planning_settings: {
         Row: {
@@ -920,36 +944,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      salary_payday_overrides: {
-        Row: {
-          created_at: string
-          id: string
-          metadata: Json
-          payday: string
-          salary_month: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          metadata?: Json
-          payday: string
-          salary_month: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          metadata?: Json
-          payday?: string
-          salary_month?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
       savings_goal_entries: {
         Row: {
@@ -1516,9 +1510,6 @@ export type Database = {
           default_account_id: string | null
           default_expense_category_id: string | null
           default_income_category_id: string | null
-          salary_period_default_view: boolean
-          salary_period_enabled: boolean
-          salary_period_start_day: number
           settings: Json
           updated_at: string
           user_id: string
@@ -1530,9 +1521,6 @@ export type Database = {
           default_account_id?: string | null
           default_expense_category_id?: string | null
           default_income_category_id?: string | null
-          salary_period_default_view?: boolean
-          salary_period_enabled?: boolean
-          salary_period_start_day?: number
           settings?: Json
           updated_at?: string
           user_id?: string
@@ -1544,9 +1532,6 @@ export type Database = {
           default_account_id?: string | null
           default_expense_category_id?: string | null
           default_income_category_id?: string | null
-          salary_period_default_view?: boolean
-          salary_period_enabled?: boolean
-          salary_period_start_day?: number
           settings?: Json
           updated_at?: string
           user_id?: string

@@ -36,6 +36,11 @@ export type CategoryActivity = {
   transactionCount: number;
 };
 
+export type CategoryActivityDateRange = {
+  dateFrom?: string;
+  dateTo?: string;
+};
+
 export type CategoryRollupAccount = {
   created_at: string | null;
   id: string;
@@ -144,8 +149,20 @@ function accountCurrentValue(
 
 export function transactionCategoryActivityRows(
   transactions: CategoryRollupTransaction[],
+  dateRange: CategoryActivityDateRange = {},
 ): CategoryActivityRow[] {
   return transactions.flatMap((transaction) => {
+    const metadata = metadataRecord(transaction.metadata);
+    const isTransferPair = String(transaction.type ?? "").toLowerCase() === "transfer"
+      || Boolean(transaction.transfer_account_id)
+      || (typeof metadata.transfer_group_id === "string" && Boolean(metadata.transfer_group_id))
+      || (typeof metadata.same_account_transfer_group_id === "string" && Boolean(metadata.same_account_transfer_group_id))
+      || (typeof metadata.transfer_direction === "string" && Boolean(metadata.transfer_direction))
+      || (typeof metadata.same_account_transfer_role === "string" && Boolean(metadata.same_account_transfer_role));
+    if (isTransferPair) return [];
+    if (dateRange.dateFrom && transaction.transaction_date < dateRange.dateFrom) return [];
+    if (dateRange.dateTo && transaction.transaction_date > dateRange.dateTo) return [];
+
     const { expenseDelta, incomeDelta } = economicTransactionDelta(transaction);
     const amount = expenseDelta + incomeDelta;
     if (amount === 0) return [];
@@ -255,7 +272,15 @@ export function pageCategoryActivityRows(input: {
   ];
 }
 
-export function buildCategoryActivity(rows: CategoryActivityRow[]) {
+function monthOrdinal(date: string) {
+  const [year, month] = date.slice(0, 7).split("-").map(Number);
+  return Number.isFinite(year) && Number.isFinite(month) ? (year * 12) + month - 1 : null;
+}
+
+export function buildCategoryActivity(
+  rows: CategoryActivityRow[],
+  dateRange: CategoryActivityDateRange = {},
+) {
   const monthlyTotalsByCategory = new Map<string, Map<string, number>>();
   const transactionCounts = new Map<string, number>();
 
@@ -272,11 +297,16 @@ export function buildCategoryActivity(rows: CategoryActivityRow[]) {
   const activityByCategory = new Map<string, CategoryActivity>();
   for (const [categoryId, monthlyTotals] of monthlyTotalsByCategory) {
     const total = roundCurrencyValue(Array.from(monthlyTotals.values()).reduce((sum, value) => sum + value, 0));
-    const monthOrdinals = [...monthlyTotals.keys()].map((month) => {
-      const [year, monthNumber] = month.split("-").map(Number);
-      return (year * 12) + monthNumber - 1;
-    });
-    const monthSpan = monthOrdinals.length === 0 ? 0 : Math.max(...monthOrdinals) - Math.min(...monthOrdinals) + 1;
+    const monthOrdinals = [...monthlyTotals.keys()]
+      .map(monthOrdinal)
+      .filter((month): month is number => month !== null);
+    const fromMonth = dateRange.dateFrom ? monthOrdinal(dateRange.dateFrom) : null;
+    const toMonth = dateRange.dateTo ? monthOrdinal(dateRange.dateTo) : null;
+    const firstMonth = fromMonth ?? (monthOrdinals.length > 0 ? Math.min(...monthOrdinals) : null);
+    const lastMonth = toMonth ?? (monthOrdinals.length > 0 ? Math.max(...monthOrdinals) : null);
+    const monthSpan = firstMonth === null || lastMonth === null || lastMonth < firstMonth
+      ? 0
+      : lastMonth - firstMonth + 1;
     activityByCategory.set(categoryId, {
       monthlyAverage: monthSpan === 0 ? 0 : total / monthSpan,
       total,

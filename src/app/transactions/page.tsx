@@ -84,6 +84,7 @@ export default async function TransactionsPage({
         initialSearchFilter={requestedSearch}
         initialStatusFilter={requestedStatus}
         initialTypeFilter={requestedType}
+        restoreSavedFilters={!Object.values(resolvedSearchParams).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value))}
         transactions={transactions}
       />
     </AppShell>

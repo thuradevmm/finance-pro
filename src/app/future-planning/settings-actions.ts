@@ -12,10 +12,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 type SettingsActionResult = { error?: string };
-type FuturePlanningColumnSource = "asset" | "budget" | "category" | "debt" | "savings_goal" | "subscription";
-
 const columnDirections = new Set<FuturePlanningColumnDirection>(["expense", "income", "neutral", "saving"]);
-const entitySources = new Set<Exclude<FuturePlanningColumnSource, "category">>(["asset", "budget", "debt", "savings_goal", "subscription"]);
 
 async function authenticatedClient() {
   const supabase = await createClient();
@@ -67,35 +64,13 @@ export async function saveFuturePlanningYears(years: number[]): Promise<Settings
 export async function createFuturePlanningColumn(input: {
   direction: FuturePlanningColumnDirection;
   name: string;
-  sourceId: string;
-  sourceType: FuturePlanningColumnSource;
 }): Promise<SettingsActionResult> {
   const name = input.name?.trim() ?? "";
   if (!name || name.length > 80) return { error: "Enter a column name up to 80 characters." };
   if (!columnDirections.has(input.direction)) return { error: "Choose a valid column direction." };
-  if (input.sourceType !== "category" && !entitySources.has(input.sourceType)) return { error: "Choose a valid column source." };
 
   const { authError, supabase, user } = await authenticatedClient();
   if (authError || !user) return { error: authError ?? "You must be signed in." };
-
-  let categoryId: string | null = null;
-  let relatedEntityType: Exclude<FuturePlanningColumnSource, "category"> | null = null;
-  if (input.sourceType === "category") {
-    if (!input.sourceId?.trim()) return { error: "Choose a category source." };
-    const { data: category, error: categoryError } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("id", input.sourceId)
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (categoryError) return { error: categoryError.message };
-    if (!category) return { error: "The selected category is no longer available." };
-    categoryId = category.id;
-  } else {
-    relatedEntityType = input.sourceType;
-  }
 
   const { data: finalColumn, error: finalColumnError } = await supabase
     .from("future_planning_columns")
@@ -112,10 +87,8 @@ export async function createFuturePlanningColumn(input: {
     };
   }
   const { error } = await supabase.from("future_planning_columns").insert({
-    category_id: categoryId,
     direction: input.direction,
     name,
-    related_entity_type: relatedEntityType,
     sort_order: (finalColumn?.sort_order ?? -1) + 1,
     user_id: user.id,
   });
@@ -127,6 +100,51 @@ export async function createFuturePlanningColumn(input: {
   }
   revalidateFuturePlanning();
   return {};
+}
+
+export async function saveFuturePlanningAmount(input: {
+  amount: number;
+  columnId: string;
+  periodMonth: string;
+}): Promise<SettingsActionResult & { id?: string }> {
+  if (!input.columnId?.trim()) return { error: "Planning type not found." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(input.periodMonth)) return { error: "Choose a valid planning month." };
+  if (!Number.isFinite(input.amount) || input.amount < 0 || input.amount > 1_000_000_000_000_000) {
+    return { error: "Enter a valid planned amount of zero or more." };
+  }
+
+  const { authError, supabase, user } = await authenticatedClient();
+  if (authError || !user) return { error: authError ?? "You must be signed in." };
+  const { data: column, error: columnError } = await supabase
+    .from("future_planning_columns")
+    .select("id")
+    .eq("id", input.columnId)
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (columnError) return { error: columnError.message };
+  if (!column) return { error: "Planning type not found." };
+
+  const { data, error } = await supabase
+    .from("future_planning_amounts")
+    .upsert({
+      amount: input.amount,
+      column_id: input.columnId,
+      period_month: input.periodMonth,
+      user_id: user.id,
+    }, { onConflict: "user_id,column_id,period_month" })
+    .select("id")
+    .single();
+  if (error) {
+    return {
+      error: isMissingDatabaseObject(error, ["future_planning_amounts"])
+        ? schemaUpgradeRequiredMessage("Manual future-planning amounts")
+        : error.message,
+    };
+  }
+  revalidateFuturePlanning();
+  revalidatePath("/transactions/add");
+  return { id: data.id };
 }
 
 export async function archiveFuturePlanningColumn(columnId: string): Promise<SettingsActionResult> {

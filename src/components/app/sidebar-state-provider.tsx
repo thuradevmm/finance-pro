@@ -47,3 +47,7 @@ export function useSidebarState() {
   }
   return context;
 }
+
+export function useOptionalSidebarState() {
+  return useContext(SidebarStateContext);
+}

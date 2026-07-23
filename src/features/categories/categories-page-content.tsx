@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { deleteCategory, mergeCategory, setCategoryStatus } from "@/app/categories/actions";
@@ -155,7 +155,6 @@ function CategoryListItem({
             <h2 className="min-w-0 break-words text-lg font-semibold leading-tight text-[#0b1c30]">{category.name}</h2>
             <CategoryBadge type={category.type} />
             {category.isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
-            {category.reportingRole === "salary" ? <span className="rounded bg-[#ecfdf5] px-2 py-0.5 text-xs font-semibold text-[#047857]">Salary</span> : null}
             <span className={category.status === "Active"
               ? "rounded bg-[#ecfdf5] px-2 py-0.5 text-xs font-semibold text-[#166534]"
               : "rounded bg-[#f1f1f4] px-2 py-0.5 text-xs font-semibold text-[#45464d]"}>{category.status}</span>
@@ -187,26 +186,54 @@ function CategoryListItem({
 }
 
 function CategoryFilters({
+  initialDateFrom,
+  initialDateTo,
   initialSearch,
   initialStatus,
   onSearch,
 }: {
+  initialDateFrom: string;
+  initialDateTo: string;
   initialSearch: string;
   initialStatus: string;
-  onSearch: (search: string, status: string) => void;
+  onSearch: (search: string, status: string, dateFrom: string, dateTo: string) => void;
 }) {
+  const [draftDateFrom, setDraftDateFrom] = useState(initialDateFrom);
+  const [draftDateTo, setDraftDateTo] = useState(initialDateTo);
   const [draftSearch, setDraftSearch] = useState(initialSearch);
   const [draftStatus, setDraftStatus] = useState(initialStatus);
 
   return (
     <form
-      className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] md:grid-cols-[minmax(0,1fr)_minmax(11rem,0.35fr)_auto]"
+      className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] lg:grid-cols-[minmax(12rem,1fr)_minmax(20rem,1.35fr)_minmax(11rem,0.45fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        onSearch(draftSearch, draftStatus);
+        onSearch(draftSearch, draftStatus, draftDateFrom, draftDateTo);
       }}
     >
       <TextInput label="Search Categories" onChange={setDraftSearch} placeholder="Name, type, scope, status..." value={draftSearch} />
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+        <TextInput
+          label="Activity Date From"
+          onChange={(value) => {
+            setDraftDateFrom(value);
+            if (value && draftDateTo && value > draftDateTo) setDraftDateTo(value);
+          }}
+          placeholder=""
+          type="date"
+          value={draftDateFrom}
+        />
+        <TextInput
+          label="Activity Date To"
+          onChange={(value) => {
+            setDraftDateTo(value);
+            if (value && draftDateFrom && value < draftDateFrom) setDraftDateFrom(value);
+          }}
+          placeholder=""
+          type="date"
+          value={draftDateTo}
+        />
+      </div>
       <SelectInput label="Status" onChange={setDraftStatus} options={["All statuses", "Active", "Hidden"]} value={draftStatus} />
       <div className="flex items-end">
         <button className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]" type="submit">
@@ -226,9 +253,12 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
   const [activeTab, setActiveTab] = useState("Expense Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [isPending, setIsPending] = useState(false);
+  const filtersRestored = useRef(false);
   const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
   const search = searchParams.get("q") ?? "";
   const status = searchParams.get("categoryStatus") ?? "All statuses";
+  const dateFrom = searchParams.get("dateFrom") ?? "";
+  const dateTo = searchParams.get("dateTo") ?? "";
   const filteredCategories = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleCategories.filter((category) => {
@@ -238,15 +268,49 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
     });
   }, [activeType, search, status, visibleCategories]);
 
-  function applyFilters(nextSearch: string, nextStatus: string) {
+  function applyFilters(nextSearch: string, nextStatus: string, nextDateFrom: string, nextDateTo: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (nextSearch.trim()) params.set("q", nextSearch.trim());
     else params.delete("q");
     if (nextStatus !== "All statuses") params.set("categoryStatus", nextStatus);
     else params.delete("categoryStatus");
+    if (nextDateFrom) params.set("dateFrom", nextDateFrom);
+    else params.delete("dateFrom");
+    if (nextDateTo) params.set("dateTo", nextDateTo);
+    else params.delete("dateTo");
     const query = params.toString();
+    window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({
+      activeTab,
+      dateFrom: nextDateFrom,
+      dateTo: nextDateTo,
+      search: nextSearch.trim(),
+      status: nextStatus,
+    }));
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
+
+  useEffect(() => {
+    if (filtersRestored.current) return;
+    filtersRestored.current = true;
+    if (searchParams.has("q") || searchParams.has("categoryStatus") || searchParams.has("dateFrom") || searchParams.has("dateTo")) return;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("finance-pro:filters:categories") ?? "null");
+      if (!saved || typeof saved !== "object") return;
+      if (typeof saved.activeTab === "string" && tabs.includes(saved.activeTab)) {
+        queueMicrotask(() => setActiveTab(saved.activeTab));
+      }
+      applyFilters(
+        typeof saved.search === "string" ? saved.search : "",
+        typeof saved.status === "string" ? saved.status : "All statuses",
+        typeof saved.dateFrom === "string" ? saved.dateFrom : "",
+        typeof saved.dateTo === "string" ? saved.dateTo : "",
+      );
+    } catch {
+      // Invalid browser storage is ignored.
+    }
+    // This one-time restoration intentionally uses the initial URL state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleDelete(categoryId: string) {
     setIsPending(true);
@@ -306,8 +370,18 @@ export function CategoriesPageContent({ categories }: { categories: CategoryReco
 
   return (
     <>
-      <CategoryFilters initialSearch={search} initialStatus={status} key={searchParams.toString()} onSearch={applyFilters} />
-      <SegmentedTabs activeTab={activeTab} onTabChange={setActiveTab} tabs={tabs} />
+      <CategoryFilters
+        initialDateFrom={dateFrom}
+        initialDateTo={dateTo}
+        initialSearch={search}
+        initialStatus={status}
+        key={searchParams.toString()}
+        onSearch={applyFilters}
+      />
+      <SegmentedTabs activeTab={activeTab} onTabChange={(tab) => {
+        setActiveTab(tab);
+        window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({ activeTab: tab, dateFrom, dateTo, search, status }));
+      }} tabs={tabs} />
 
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating categories…</p> : null}
 

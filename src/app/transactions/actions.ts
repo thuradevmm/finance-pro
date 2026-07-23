@@ -229,6 +229,7 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
     payment_method: null,
     metadata: {
       account_amount_type: input.accountAmountType,
+      future_planning_amount_id: input.futurePlanningAmountId || null,
       transfer_account_amount_type: null,
       ...extraMetadata,
       ...futurePlanMetadata(input.futurePlan, input.amount),
@@ -245,6 +246,41 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
     transfer_account_id: null,
     type: input.type.toLowerCase(),
   };
+}
+
+async function validateFuturePlanningAmount(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: TransactionFormData,
+) {
+  if (!input.futurePlanningAmountId) return "";
+  if (input.type === "Transfer") return "Transfers cannot be linked to a future-planning amount.";
+  const { data: amount, error } = await supabase
+    .from("future_planning_amounts")
+    .select("id,column_id,period_month")
+    .eq("id", input.futurePlanningAmountId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!amount) return "The selected predefined amount is no longer available.";
+  const { data: column, error: columnError } = await supabase
+    .from("future_planning_columns")
+    .select("id,direction,is_active")
+    .eq("id", amount.column_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (columnError) return columnError.message;
+  if (!column || column.is_active === false) return "The selected planning type is no longer available.";
+  if (input.date.slice(0, 7) !== amount.period_month.slice(0, 7)) {
+    return "The transaction date must be in the same month as the selected predefined amount.";
+  }
+  const requiredType = column.direction === "income" ? "Income" : "Expense";
+  if (input.type !== requiredType) return `${directionLabelForError(column.direction)} planning amounts require an ${requiredType} transaction.`;
+  return "";
+}
+
+function directionLabelForError(direction: string) {
+  return direction === "saving" ? "Saving" : direction === "income" ? "Income" : "Expense";
 }
 
 function metadataRecord(metadata: unknown) {
@@ -1955,6 +1991,8 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
   if (!user) return { error: "You must be signed in." };
   const inputError = validateTransactionInput(input);
   if (inputError) return { error: inputError };
+  const planningError = await validateFuturePlanningAmount(supabase, user.id, input);
+  if (planningError) return { error: planningError };
   const referenceResult = await validateAndResolveTransactionReferences(supabase, user.id, input);
   if (referenceResult.error) return { error: referenceResult.error };
   const validatedInput = referenceResult.input;
@@ -2003,6 +2041,8 @@ export async function updateTransaction(transactionId: string, input: Transactio
   if (!user) return { error: "You must be signed in." };
   const inputError = validateTransactionInput(input);
   if (inputError) return { error: inputError };
+  const planningError = await validateFuturePlanningAmount(supabase, user.id, input);
+  if (planningError) return { error: planningError };
   let existingTransaction: MutationTransaction | null;
   let ignoredTransactionIds: string[];
   let previousDebtIds: string[];
@@ -2241,6 +2281,7 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
       amount: numericValue(debitRow.amount),
       categoryId: "",
       date: new Date().toISOString().slice(0, 10),
+      futurePlanningAmountId: "",
       note: reversalNote,
       relatedEntityId: debitRow.related_entity_id ?? "",
       relatedEntityType: normalizeRelatedTypeForAction(debitRow.related_entity_type),

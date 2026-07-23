@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -982,6 +982,7 @@ export default function AccountsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const filtersRestored = useRef(false);
   const search = searchParams.get("q") ?? "";
   const viewParam = searchParams.get("view");
   const viewMode: AccountViewMode = viewParam === "Card" || viewParam === "List" ? viewParam : "Lookup";
@@ -1054,8 +1055,30 @@ export default function AccountsPage() {
       else params.set(key, value);
     }
     const query = params.toString();
+    window.localStorage.setItem("finance-pro:filters:accounts", JSON.stringify(values));
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
+
+  useEffect(() => {
+    if (filtersRestored.current) return;
+    filtersRestored.current = true;
+    if (currentQuery) return;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("finance-pro:filters:accounts") ?? "null");
+      if (!saved || typeof saved !== "object") return;
+      applyAccountFilters({
+        accountCategory: typeof saved.accountCategory === "string" ? saved.accountCategory : "All categories",
+        accountStatus: typeof saved.accountStatus === "string" ? saved.accountStatus : "All statuses",
+        accountType: typeof saved.accountType === "string" ? saved.accountType : "All types",
+        q: typeof saved.q === "string" ? saved.q : "",
+        view: saved.view === "Card" || saved.view === "List" ? saved.view : "Lookup",
+      });
+    } catch {
+      // Invalid browser storage is ignored.
+    }
+    // This one-time restoration intentionally uses the initial URL state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuery]);
 
   useEffect(() => {
     let isMounted = true;

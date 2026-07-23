@@ -42,6 +42,7 @@ export type TransactionRecord = Transaction & {
   creditCardPayment: boolean;
   dateValue: string;
   futurePlan?: TransactionFuturePlan;
+  futurePlanningAmountId: string;
   isReversal: boolean;
   isReversed: boolean;
   ledgerMetadata: Record<string, unknown>;
@@ -94,6 +95,7 @@ export type TransactionFormData = {
   amount: number;
   categoryId: string;
   date: string;
+  futurePlanningAmountId: string;
   futurePlan?: TransactionFuturePlan;
   note: string;
   relatedEntityId: string;
@@ -296,6 +298,7 @@ function mapTransaction(
     dateValue: row.transaction_date,
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
     ...(futurePlan ? { futurePlan } : {}),
+    futurePlanningAmountId: metadataString(metadata, "future_planning_amount_id"),
     id: row.id,
     isReversal: transactionStatusIsFinalized(row.status) && Boolean(reversalSourceId),
     isReversed: reversedGroupIds.has(groupId || row.id),

@@ -1,8 +1,5 @@
-import Link from "next/link";
-
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
-import { Icon } from "@/components/ui/icon";
 import { FuturePlanningPageContent } from "@/features/future-planning/future-planning-page-content";
 import { getManualFuturePlanningData, type ManualFuturePlanningData } from "@/lib/future-planning/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -13,6 +10,7 @@ function localDateValue(date: Date) {
 }
 
 const emptyPlanningData: ManualFuturePlanningData = {
+  amounts: [],
   categories: [],
   columns: [],
   plannedTransactions: [],
@@ -30,7 +28,6 @@ export default async function FuturePlanningPage() {
   return (
     <AppShell
       activeNavLabel="Future Planning"
-      mobileAction={{ label: "Add planned transaction", icon: "plus", href: "/future-planning/add", title: "Add planned transaction" }}
       mobileSearchLabel="Search future plans on mobile"
       mobileSearchPlaceholder="Search plans..."
       mobileSubtitle="Future Planning"
@@ -38,23 +35,13 @@ export default async function FuturePlanningPage() {
       topSearchPlaceholder="Search plans..."
     >
       <PageHeader
-        actions={(
-          <Link
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
-            href="/future-planning/add"
-          >
-            <Icon className="size-4" name="plus" />
-            Add Planned Transaction
-          </Link>
-        )}
-        description="Build a simple year-by-year planning table from the income and expenses you schedule. Link a plan to an existing module when useful, while keeping its entered amount as a stable snapshot."
+        description="Define your own income, expense, and saving types, enter monthly planned amounts manually, and compare them with linked actual transactions."
         title="Future Planning"
       />
 
       <FuturePlanningPageContent
-        categories={data.categories}
+        amounts={data.amounts}
         columns={data.columns}
-        plannedTransactions={data.plannedTransactions}
         selectedYears={data.selectedYears}
       />
     </AppShell>

@@ -16,6 +16,7 @@ import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/c
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
+import type { FuturePlanningTransactionOption } from "@/lib/future-planning/supabase";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
@@ -144,12 +145,14 @@ export function AddTransactionForm({
   accounts,
   categories,
   initialValues,
+  planningOptions,
   relatedOptions,
   transaction,
 }: {
   accounts: AccountRecord[];
   categories: CategoryRecord[];
   initialValues?: TransactionFormInitialValues;
+  planningOptions: FuturePlanningTransactionOption[];
   relatedOptions: TransactionRelatedOption[];
   transaction?: TransactionRecord;
 }) {
@@ -164,6 +167,7 @@ export function AddTransactionForm({
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
   const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : initialValues?.amount ?? "");
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? initialValues?.date ?? new Date().toISOString().slice(0, 10));
+  const [futurePlanningAmountId, setFuturePlanningAmountId] = useState(transaction?.futurePlanningAmountId ?? "");
   const initialTransferFromAccountId = transaction?.type === "Transfer" ? transaction.transferFromAccountId || transaction.accountId : transaction?.accountId;
   const initialTransferToAccountId = transaction?.type === "Transfer" ? transaction.transferToAccountId || transaction.transferAccountId : transaction?.transferAccountId;
   const initialTransferFromAmountType = transaction?.type === "Transfer" && transaction.transferDirection === "Credit"
@@ -194,6 +198,12 @@ export function AddTransactionForm({
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
+  const availablePlanningOptions = useMemo(() => planningOptions.filter((option) => (
+    option.id === futurePlanningAmountId
+    || (option.periodMonth.slice(0, 7) === transactionDate.slice(0, 7)
+      && (option.direction === "income" ? selectedType === "Income" : selectedType === "Expense"))
+  )), [futurePlanningAmountId, planningOptions, selectedType, transactionDate]);
+  const selectedPlanningOption = planningOptions.find((option) => option.id === futurePlanningAmountId);
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const accountAmountTypeOptions = useMemo(() => {
     const optionNames = accountAmountTypeOptionsFor(selectedAccount);
@@ -339,6 +349,17 @@ export function AddTransactionForm({
     }
   }
 
+  function handlePlanningAmountChange(label: string) {
+    if (label === "No predefined amount") return setFuturePlanningAmountId("");
+    const option = availablePlanningOptions.find((item) => item.label === label);
+    if (!option) return;
+    setFuturePlanningAmountId(option.id);
+  }
+
+  function usePredefinedAmount() {
+    if (selectedPlanningOption) setAmount(String(selectedPlanningOption.amount));
+  }
+
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
@@ -353,6 +374,7 @@ export function AddTransactionForm({
       amount: amountNumber,
       categoryId: effectiveCategoryId,
       date: transactionDate,
+      futurePlanningAmountId: isTransfer ? "" : futurePlanningAmountId,
       note,
       relatedEntityId: effectiveRelatedOption?.value ?? "",
       relatedEntityType: effectiveRelatedOption?.type ?? "none",
@@ -462,6 +484,27 @@ export function AddTransactionForm({
                 </div>
               )}
             </div>
+            {!isTransfer ? (
+              <div className="mt-5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                  <SelectInput
+                    label="Future planning predefined amount"
+                    onChange={handlePlanningAmountChange}
+                    options={["No predefined amount", ...availablePlanningOptions.map((option) => option.label)]}
+                    value={selectedPlanningOption?.label ?? "No predefined amount"}
+                  />
+                  <button
+                    className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#2170e4] bg-white px-4 text-sm font-semibold text-[#0058be] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!selectedPlanningOption}
+                    onClick={usePredefinedAmount}
+                    type="button"
+                  >
+                    Use planned amount
+                  </button>
+                </div>
+                <p className="mt-2 text-xs font-semibold leading-5 text-[#45464d]">This link is only for planned-versus-actual comparison. You can keep any actual transaction amount.</p>
+              </div>
+            ) : null}
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
               <p className="text-xs font-semibold text-[#76777d]">{selectedAccount ? getAccountOptionDescription(selectedAccount) : ""}</p>
               {isTransfer ? <p className="text-xs font-semibold text-[#76777d]">{selectedTransferAccount ? getAccountOptionDescription(selectedTransferAccount) : ""}</p> : null}

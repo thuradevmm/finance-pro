@@ -81,6 +81,7 @@ const ledgerRelevantMetadataKeys = [
   "financial_event",
   "future_link_amount_snapshot",
   "future_link_label",
+  "future_planning_amount_id",
   "future_predicted_amount",
   "future_prediction_mode",
   "reversed_credit_card_payment",

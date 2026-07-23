@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
+import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
 import { getTransactionSummaries, type TransactionRecord } from "@/lib/transactions/supabase";
 import type { TransactionFilterOptions, TransactionType } from "@/types/finance";
@@ -33,6 +34,7 @@ type TransactionsPageContentProps = {
   initialSearchFilter?: string;
   initialStatusFilter?: string;
   initialTypeFilter?: string;
+  restoreSavedFilters?: boolean;
   transactions: TransactionRecord[];
 };
 
@@ -160,6 +162,7 @@ export function TransactionsPageContent({
   initialSearchFilter,
   initialStatusFilter,
   initialTypeFilter,
+  restoreSavedFilters = true,
   transactions,
 }: TransactionsPageContentProps) {
   const effectiveFilterOptions = useMemo(() => ({
@@ -172,9 +175,14 @@ export function TransactionsPageContent({
     () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialSearchFilter, initialStatusFilter, initialTypeFilter),
     [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialSearchFilter, initialStatusFilter, initialTypeFilter],
   );
-  const [filters, setFilters] = useState<TransactionFiltersState>(initialFilters);
-  const [draftFilters, setDraftFilters] = useState<TransactionFiltersState>(initialFilters);
-  const [activeTab, setActiveTab] = useState<TransactionTab>(initialFilters.type === "Type" ? "All" : (initialFilters.type as TransactionTab));
+  const {
+    appliedFilters: filters,
+    applyFilters: persistFilters,
+    draftFilters,
+    resetFilters: resetPersistedFilters,
+    setDraftFilters,
+  } = usePersistentFilterState("transactions", initialFilters, restoreSavedFilters);
+  const activeTab: TransactionTab = filters.type === "Type" ? "All" : filters.type as TransactionTab;
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
   const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
@@ -207,7 +215,6 @@ export function TransactionsPageContent({
     const nextTab = tab as TransactionTab;
     const nextType = nextTab === "All" ? "Type" : nextTab;
 
-    setActiveTab(nextTab);
     function withType(currentFilters: TransactionFiltersState) {
       return {
         ...currentFilters,
@@ -220,7 +227,7 @@ export function TransactionsPageContent({
       };
     }
     const nextFilters = withType(filters);
-    setFilters(nextFilters);
+    persistFilters(nextFilters);
     setDraftFilters((current) => withType(current));
     replaceFilterUrl(nextFilters);
   }
@@ -245,15 +252,12 @@ export function TransactionsPageContent({
   }
 
   function applyFilters() {
-    setFilters(draftFilters);
-    setActiveTab(draftFilters.type === "Type" ? "All" : draftFilters.type as TransactionTab);
+    persistFilters(draftFilters);
     replaceFilterUrl(draftFilters);
   }
 
   function resetFilters() {
-    setDraftFilters(initialFilters);
-    setFilters(initialFilters);
-    setActiveTab(initialFilters.type === "Type" ? "All" : initialFilters.type as TransactionTab);
+    resetPersistedFilters();
     replaceFilterUrl(initialFilters);
   }
 

@@ -7,8 +7,18 @@ import { Icon } from "@/components/ui/icon";
 import { CategoriesPageContent } from "@/features/categories/categories-page-content";
 import { getCategories, getCategorySummaries } from "@/lib/categories/supabase";
 
-export default async function CategoriesPage() {
-  const categories = await getCategories({ limit: 200 });
+export default async function CategoriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    dateFrom?: string | string[];
+    dateTo?: string | string[];
+  }>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const dateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
+  const dateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
+  const categories = await getCategories({ dateFrom, dateTo, limit: 200 });
   const categorySummaries = getCategorySummaries(categories);
   return (
     <AppShell
@@ -37,7 +47,7 @@ export default async function CategoriesPage() {
       <SummaryCards summaries={categorySummaries} />
       <CategoriesPageContent
         categories={categories}
-        key={categories.map((category) => `${category.id}:${category.status}:${category.mergedIntoCategoryId}:${category.reportingRole}`).join("|")}
+        key={`${dateFrom ?? ""}:${dateTo ?? ""}:${categories.map((category) => `${category.id}:${category.status}:${category.mergedIntoCategoryId}:${category.reportingRole}:${category.monthlyAverage}:${category.transactionCount}`).join("|")}`}
       />
     </AppShell>
   );

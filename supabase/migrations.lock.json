@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607220004",
+  "sealedThrough": "202607230001",
   "migrations": [
     {
       "version": "202606180001",
@@ -141,6 +141,11 @@
       "version": "202607220004",
       "file": "202607220004_flexible_salary_paydays.sql",
       "sha256": "da46773c94204161b1aef3c3337877c69a244c2615a7172a900f4050aafeba3e"
+    },
+    {
+      "version": "202607230001",
+      "file": "202607230001_future_planning_amounts_and_remove_salary_periods.sql",
+      "sha256": "0199c53657b617569d66427e3c62cea54f9b9c8f1d9bfbb94d32ae90ea428e32"
     }
   ],
   "historyRepairs": [

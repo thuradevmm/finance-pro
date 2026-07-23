@@ -188,7 +188,7 @@ async function getCategoryRows(
   return legacyResult.data as CategoryRow[];
 }
 
-export async function getCategories(options: { limit?: number } = {}) {
+export async function getCategories(options: { dateFrom?: string; dateTo?: string; limit?: number } = {}) {
   const supabase = await createClient();
   const { user, error: userError } = await getUserSafely(supabase);
   if (userError || !user) throw new Error(userError ?? "You must be signed in to view categories.");
@@ -242,9 +242,9 @@ export async function getCategories(options: { limit?: number } = {}) {
     ...transaction,
     metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
   }));
-  const activityRows = [
-    ...transactionCategoryActivityRows(transactionRows),
-    ...pageCategoryActivityRows({
+  const dateRange = { dateFrom: options.dateFrom, dateTo: options.dateTo };
+  const activityByCategory = buildCategoryActivity(
+    pageCategoryActivityRows({
       accounts: accountRows,
       assets: assetsResult.data,
       categoryIdByName,
@@ -253,8 +253,14 @@ export async function getCategories(options: { limit?: number } = {}) {
       subscriptions: subscriptionsResult.data,
       transactions: transactionRows,
     }),
-  ];
-  const activityByCategory = buildCategoryActivity(activityRows);
+  );
+  const transactionActivityByCategory = buildCategoryActivity(
+    transactionCategoryActivityRows(transactionRows, dateRange),
+    dateRange,
+  );
+  for (const [categoryId, activity] of transactionActivityByCategory) {
+    activityByCategory.set(categoryId, activity);
+  }
   return categoryRows.map((category) => mapCategory(category, categoryNames, activityByCategory.get(category.id)));
 }
 

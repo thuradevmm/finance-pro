@@ -4,6 +4,7 @@ export type ValidatableTransactionInput = {
   amount: number;
   categoryId: string;
   date: string;
+  futurePlanningAmountId?: string;
   relatedEntityId: string;
   relatedEntityType: string;
   status: string;
@@ -25,6 +26,7 @@ export function validateTransactionInput(input: ValidatableTransactionInput) {
   if (!input.accountId) return "Select an account.";
   if (!input.accountAmountType.trim()) return "Select an account amount type.";
   if (!["Expense", "Income", "Transfer"].includes(input.type)) return "Choose a supported transaction type.";
+  if (input.type === "Transfer" && input.futurePlanningAmountId) return "Transfers cannot be linked to a future-planning amount.";
   if (!["cleared", "pending", "scheduled"].includes(input.status.trim().toLowerCase())) return "Choose a supported transaction status.";
 
   if (input.type === "Transfer") {

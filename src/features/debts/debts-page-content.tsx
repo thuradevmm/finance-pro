@@ -17,6 +17,7 @@ import type { DebtRecordWithValues } from "@/lib/debts/supabase";
 import { getDebtListEmptyState, type DebtListEmptyState } from "@/lib/debts/visibility";
 import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
+import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
 
 const statusStyles: Record<DebtStatus, string> = {
   Active: "bg-[#d8e2ff] text-[#004395]",
@@ -376,8 +377,15 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   const [visibleDebts, setVisibleDebts] = useState(debts);
   const [isPending, setIsPending] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [draftShowActiveOnly, setDraftShowActiveOnly] = useState(true);
-  const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const {
+    appliedFilters: debtStatusFilters,
+    applyFilters: applyDebtStatusFilters,
+    draftFilters: draftDebtStatusFilters,
+    resetFilters: resetDebtStatusFilters,
+    setDraftFilters: setDraftDebtStatusFilters,
+  } = usePersistentFilterState<{ activeOnly: boolean }>("debts:status", { activeOnly: true });
+  const draftShowActiveOnly = draftDebtStatusFilters.activeOnly;
+  const showActiveOnly = debtStatusFilters.activeOnly;
   const search = queryFilter.appliedValue;
   const filteredDebts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -414,20 +422,19 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        setShowActiveOnly(draftShowActiveOnly);
+        applyDebtStatusFilters();
         queryFilter.apply();
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)_auto] lg:items-end">
           <SearchField label="Search debts" onChange={queryFilter.setDraftValue} placeholder="Debt, lender, amount, status..." value={queryFilter.draftValue} />
           <SelectFilter
             label="Debt status filter"
-            onChange={(value) => setDraftShowActiveOnly(value === "Active and overdue")}
+            onChange={(value) => setDraftDebtStatusFilters({ activeOnly: value === "Active and overdue" })}
             options={["Active and overdue", "All debts"]}
             value={draftShowActiveOnly ? "Active and overdue" : "All debts"}
           />
           <FilterActions isPending={queryFilter.isPending} onReset={() => {
-            setDraftShowActiveOnly(true);
-            setShowActiveOnly(true);
+            resetDebtStatusFilters();
             queryFilter.reset();
           }} />
         </div>

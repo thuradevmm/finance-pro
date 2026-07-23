@@ -3,15 +3,26 @@ import type { FutureTransactionRecord } from "./records.ts";
 export type FuturePlanningColumnDirection = "expense" | "income" | "neutral" | "saving";
 
 export type FuturePlanningColumn = {
-  categoryId: string;
   direction: FuturePlanningColumnDirection;
   id: string;
   name: string;
-  relatedEntityType: string;
   sortOrder: number;
 };
 
+export type FuturePlanningAmount = {
+  actualAmount: number;
+  amount: number;
+  columnId: string;
+  id: string;
+  periodMonth: string;
+};
+
 export type FuturePlanningMonthlyRow = {
+  actualColumnAmounts: Record<string, number>;
+  actualExpense: number;
+  actualIncome: number;
+  actualNetAmount: number;
+  actualSaving: number;
   columnAmounts: Record<string, number>;
   month: number;
   monthKey: string;
@@ -44,34 +55,19 @@ export function normalizePlanningYears(values: Iterable<number>, fallbackYear?: 
   return fallback >= 1900 && fallback <= 9999 ? [fallback] : [];
 }
 
-function columnMatchesPlan(column: FuturePlanningColumn, plan: FutureTransactionRecord) {
-  if (column.categoryId) return plan.categoryId === column.categoryId;
-  return Boolean(column.relatedEntityType) && plan.relatedEntityType === column.relatedEntityType;
-}
-
-function defaultPlanDirection(plan: FutureTransactionRecord): FuturePlanningColumnDirection {
-  if (plan.type === "Income") return "income";
-  if (plan.relatedEntityType === "savings_goal") return "saving";
-  return "expense";
-}
-
-function planDirection(
-  plan: FutureTransactionRecord,
-  orderedColumns: FuturePlanningColumn[],
-): FuturePlanningColumnDirection {
-  return orderedColumns.find((column) => columnMatchesPlan(column, plan))?.direction
-    ?? defaultPlanDirection(plan);
-}
-
 export function buildManualFuturePlanningTable(
   plans: FutureTransactionRecord[],
   columns: FuturePlanningColumn[],
   selectedYears: number[],
+  amounts: FuturePlanningAmount[] = [],
 ): FuturePlanningMonthlyRow[] {
   const years = normalizePlanningYears(selectedYears);
   const activePlans = plans.filter((plan) => plan.status === "Active");
-  const classificationColumns = [...columns]
-    .sort((first, second) => first.sortOrder - second.sortOrder);
+  const amountsByMonth = new Map<string, FuturePlanningAmount[]>();
+  for (const amount of amounts) {
+    const monthKey = amount.periodMonth.slice(0, 7);
+    amountsByMonth.set(monthKey, [...(amountsByMonth.get(monthKey) ?? []), amount]);
+  }
   const plansByMonth = new Map<string, FutureTransactionRecord[]>();
   for (const plan of activePlans) {
     const monthKey = plan.dateValue.slice(0, 7);
@@ -84,22 +80,28 @@ export function buildManualFuturePlanningTable(
     const month = monthIndex + 1;
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;
     const monthPlans = plansByMonth.get(monthKey) ?? [];
-    const classifiedPlans = monthPlans.map((plan) => ({
-      direction: planDirection(plan, classificationColumns),
-      plan,
-    }));
-    const savingPlans = classifiedPlans.filter((item) => item.direction === "saving");
-    const incomePlans = classifiedPlans.filter((item) => item.direction === "income");
-    const expensePlans = classifiedPlans.filter((item) => item.direction === "expense");
-    const totalIncome = roundMoney(incomePlans.reduce((total, item) => total + item.plan.amountValue, 0));
-    const totalExpense = roundMoney(expensePlans.reduce((total, item) => total + item.plan.amountValue, 0));
-    const totalSaving = roundMoney(savingPlans.reduce((total, item) => total + item.plan.amountValue, 0));
+    const monthAmounts = amountsByMonth.get(monthKey) ?? [];
+    const amountFor = (column: FuturePlanningColumn) => monthAmounts
+      .filter((amount) => amount.columnId === column.id)
+      .reduce((total, amount) => total + amount.amount, 0);
+    const actualFor = (column: FuturePlanningColumn) => monthAmounts
+      .filter((amount) => amount.columnId === column.id)
+      .reduce((total, amount) => total + amount.actualAmount, 0);
+    const totalIncome = roundMoney(columns.filter((column) => column.direction === "income").reduce((total, column) => total + amountFor(column), 0));
+    const totalExpense = roundMoney(columns.filter((column) => column.direction === "expense").reduce((total, column) => total + amountFor(column), 0));
+    const totalSaving = roundMoney(columns.filter((column) => column.direction === "saving").reduce((total, column) => total + amountFor(column), 0));
+    const actualIncome = roundMoney(columns.filter((column) => column.direction === "income").reduce((total, column) => total + actualFor(column), 0));
+    const actualExpense = roundMoney(columns.filter((column) => column.direction === "expense").reduce((total, column) => total + actualFor(column), 0));
+    const actualSaving = roundMoney(columns.filter((column) => column.direction === "saving").reduce((total, column) => total + actualFor(column), 0));
     return {
+      actualColumnAmounts: Object.fromEntries(columns.map((column) => [column.id, roundMoney(actualFor(column))])),
+      actualExpense,
+      actualIncome,
+      actualNetAmount: roundMoney(actualIncome - actualExpense - actualSaving),
+      actualSaving,
       columnAmounts: Object.fromEntries(columns.map((column) => [
         column.id,
-        roundMoney(monthPlans
-          .filter((plan) => columnMatchesPlan(column, plan))
-          .reduce((total, plan) => total + plan.amountValue, 0)),
+        roundMoney(amountFor(column)),
       ])),
       month,
       monthKey,

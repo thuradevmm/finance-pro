@@ -5,6 +5,7 @@ import {
   buildCategoryActivity,
   pageCategoryActivityRows,
   pageCategoryRollupLabels,
+  transactionCategoryActivityRows,
 } from "../src/lib/categories/rollups.ts";
 
 function emptyInput(overrides = {}) {
@@ -200,4 +201,43 @@ test("page category labels match the related module's primary metric", () => {
     "Savings Goal": { activity: "Total Target", count: "Goals" },
     Subscription: { activity: "Monthly Cost", count: "Ongoing Subscriptions" },
   });
+});
+
+test("transaction category rollups honor the selected date range and exclude transfer pairs", () => {
+  const base = {
+    account_id: "bank",
+    category_id: "expense",
+    related_entity_id: null,
+    related_entity_type: null,
+    status: "cleared",
+    transfer_account_id: null,
+    type: "expense",
+  };
+  const rows = transactionCategoryActivityRows([
+    { ...base, amount: 300, id: "included", metadata: {}, transaction_date: "2028-01-15" },
+    { ...base, amount: 900, id: "too-early", metadata: {}, transaction_date: "2027-12-31" },
+    {
+      ...base,
+      amount: 500,
+      id: "legacy-transfer-expense",
+      metadata: { transfer_direction: "debit", transfer_group_id: "pair-1" },
+      transaction_date: "2028-01-20",
+      transfer_account_id: "savings",
+    },
+    {
+      ...base,
+      amount: 500,
+      category_id: "income",
+      id: "legacy-transfer-income",
+      metadata: { transfer_direction: "credit", transfer_group_id: "pair-1" },
+      transaction_date: "2028-01-20",
+      transfer_account_id: "bank",
+      type: "income",
+    },
+  ], { dateFrom: "2028-01-01", dateTo: "2028-03-31" });
+  const activity = buildCategoryActivity(rows, { dateFrom: "2028-01-01", dateTo: "2028-03-31" });
+
+  assert.deepEqual(rows, [{ amount: 300, category_id: "expense", date: "2028-01-15" }]);
+  assert.deepEqual(activity.get("expense"), { monthlyAverage: 100, total: 300, transactionCount: 1 });
+  assert.equal(activity.has("income"), false);
 });

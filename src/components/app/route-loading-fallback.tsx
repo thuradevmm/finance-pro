@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 
 import { useIsInteractionLoading } from "@/components/app/interaction-loading-provider";
-import { useSidebarState } from "@/components/app/sidebar-state-provider";
+import { useOptionalSidebarState } from "@/components/app/sidebar-state-provider";
 import { FinancialPageSkeleton, type FinancialSkeletonRouteKind } from "@/components/ui/loading-state";
 
 function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
@@ -20,7 +20,7 @@ function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
 export function RouteLoadingFallback() {
   const isInteractionLoading = useIsInteractionLoading();
   const pathname = usePathname();
-  const { isSidebarCollapsed } = useSidebarState();
+  const isSidebarCollapsed = useOptionalSidebarState()?.isSidebarCollapsed ?? false;
 
   return isInteractionLoading ? null : <FinancialPageSkeleton routeKind={routeKindFromPath(pathname)} sidebarCollapsed={isSidebarCollapsed} />;
 }

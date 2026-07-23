@@ -4,9 +4,10 @@ import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financia
 import { getAccounts, type AccountRecord } from "@/lib/accounts/supabase";
 import { getBudgets, type BudgetRecord } from "@/lib/budgets/supabase";
 import { getCategories, type CategoryRecord } from "@/lib/categories/supabase";
+import { formatMmk } from "@/lib/currency";
 import { getDebts, getUpcomingDebtPayments } from "@/lib/debts/supabase";
 import { calculateOpeningCashPosition } from "@/lib/future-planning/opening-position";
-import { normalizePlanningYears, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
+import { normalizePlanningYears, type FuturePlanningAmount, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
 import type { ForecastItem, HistoricalActualItem } from "@/lib/future-planning/projection";
 import { futureLinkAmountSnapshot, futurePredictedAmount, type FutureTransactionRecord } from "@/lib/future-planning/records";
 import { economicTransactionDelta } from "@/lib/ledger";
@@ -38,10 +39,19 @@ export type FuturePlanningData = {
 };
 
 export type ManualFuturePlanningData = {
+  amounts: FuturePlanningAmount[];
   categories: CategoryRecord[];
   columns: FuturePlanningColumn[];
   plannedTransactions: FutureTransactionRecord[];
   selectedYears: number[];
+};
+
+export type FuturePlanningTransactionOption = {
+  amount: number;
+  direction: FuturePlanningColumnDirection;
+  id: string;
+  label: string;
+  periodMonth: string;
 };
 
 function planningColumnDirection(value: string): FuturePlanningColumnDirection {
@@ -307,7 +317,7 @@ export async function getManualFuturePlanningData(
   userId: string,
   today: string,
 ): Promise<ManualFuturePlanningData> {
-  const [accounts, categories, settingsResult, columnsResult, userSettingsResult] = await Promise.all([
+  const [accounts, categories, settingsResult, columnsResult, amountsResult, userSettingsResult] = await Promise.all([
     getAccounts(supabase, userId),
     getCategories(),
     supabase
@@ -317,11 +327,15 @@ export async function getManualFuturePlanningData(
       .maybeSingle(),
     supabase
       .from("future_planning_columns")
-      .select("id,name,direction,category_id,related_entity_type,sort_order")
+      .select("id,name,direction,sort_order")
       .eq("user_id", userId)
       .eq("is_active", true)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
+    supabase
+      .from("future_planning_amounts")
+      .select("id,column_id,period_month,amount")
+      .eq("user_id", userId),
     supabase
       .from("user_settings")
       .select("settings")
@@ -332,8 +346,26 @@ export async function getManualFuturePlanningData(
   if (settingsResult.error && !settingsTableMissing) throw new Error(settingsResult.error.message);
   const columnsTableMissing = isMissingDatabaseObject(columnsResult.error, ["future_planning_columns"]);
   if (columnsResult.error && !columnsTableMissing) throw new Error(columnsResult.error.message);
+  const amountsTableMissing = isMissingDatabaseObject(amountsResult.error, ["future_planning_amounts"]);
+  if (amountsResult.error && !amountsTableMissing) throw new Error(amountsResult.error.message);
 
   const transactions = await getTransactions(supabase, userId, accounts, categories);
+  const actualsByAmountId = new Map<string, number>();
+  for (const transaction of transactions) {
+    if (!transactionStatusIsFinalized(transaction.status) || transaction.type === "Transfer") continue;
+    const amountId = typeof transaction.ledgerMetadata.future_planning_amount_id === "string"
+      ? transaction.ledgerMetadata.future_planning_amount_id
+      : "";
+    if (!amountId) continue;
+    const delta = economicTransactionDelta({
+      amount: transaction.amountValue,
+      metadata: transaction.ledgerMetadata,
+      status: transaction.status,
+      type: transaction.type,
+    });
+    const actualAmount = delta.incomeDelta + delta.expenseDelta;
+    actualsByAmountId.set(amountId, (actualsByAmountId.get(amountId) ?? 0) + actualAmount);
+  }
   const plannedTransactions = transactions
     .flatMap((transaction) => {
       const plan = asFutureTransaction(transaction);
@@ -356,13 +388,18 @@ export async function getManualFuturePlanningData(
     ], currentYear);
 
   return {
+    amounts: (amountsTableMissing ? [] : amountsResult.data ?? []).map((amount) => ({
+      actualAmount: actualsByAmountId.get(amount.id) ?? 0,
+      amount: Number(amount.amount) || 0,
+      columnId: amount.column_id,
+      id: amount.id,
+      periodMonth: amount.period_month,
+    })),
     categories,
     columns: (columnsTableMissing ? [] : columnsResult.data ?? []).map((column) => ({
-      categoryId: column.category_id ?? "",
       direction: planningColumnDirection(column.direction),
       id: column.id,
       name: column.name,
-      relatedEntityType: column.related_entity_type ?? "",
       sortOrder: column.sort_order,
     })),
     plannedTransactions,
@@ -379,4 +416,40 @@ export async function getFutureTransaction(
 ) {
   const transaction = await getTransaction(supabase, userId, transactionId, accounts, categories);
   return transaction ? asFutureTransaction(transaction) : null;
+}
+
+export async function getFuturePlanningTransactionOptions(
+  supabase: SupabaseClient,
+  userId: string,
+  preservedAmountId = "",
+): Promise<FuturePlanningTransactionOption[]> {
+  const [columnsResult, amountsResult] = await Promise.all([
+    supabase
+      .from("future_planning_columns")
+      .select("id,name,direction,is_active")
+      .eq("user_id", userId),
+    supabase
+      .from("future_planning_amounts")
+      .select("id,column_id,period_month,amount")
+      .eq("user_id", userId)
+      .order("period_month", { ascending: true }),
+  ]);
+  if (isMissingDatabaseObject(amountsResult.error, ["future_planning_amounts"])) return [];
+  if (columnsResult.error) throw new Error(columnsResult.error.message);
+  if (amountsResult.error) throw new Error(amountsResult.error.message);
+  const columns = new Map((columnsResult.data ?? []).map((column) => [column.id, column]));
+  return (amountsResult.data ?? []).flatMap((amount) => {
+    const column = columns.get(amount.column_id);
+    const amountValue = Number(amount.amount) || 0;
+    if (!column || ((!column.is_active || amountValue <= 0) && amount.id !== preservedAmountId)) return [];
+    const periodLabel = new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" })
+      .format(new Date(`${amount.period_month}T00:00:00Z`));
+    return [{
+      amount: amountValue,
+      direction: planningColumnDirection(column.direction),
+      id: amount.id,
+      label: `${column.name} · ${periodLabel} · ${formatMmk(amountValue)}`,
+      periodMonth: amount.period_month,
+    }];
+  });
 }

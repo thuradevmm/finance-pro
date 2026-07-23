@@ -3,30 +3,12 @@ import test from "node:test";
 
 import { buildManualFuturePlanningTable, normalizePlanningYears } from "../src/lib/future-planning/manual-table.ts";
 
-function plan(overrides = {}) {
-  return {
-    account: "Bank",
-    accountAmountType: "General",
-    accountId: "bank",
-    amountValue: 100,
-    category: "Food",
-    categoryId: "food",
-    date: "",
-    dateValue: "2026-01-15",
-    endDate: "",
-    id: crypto.randomUUID(),
-    note: "",
-    recurrence: "Once",
-    relatedEntityAmountSnapshot: null,
-    relatedEntityId: "",
-    relatedEntityLabel: "",
-    relatedEntityType: "none",
-    status: "Active",
-    title: "Plan",
-    type: "Expense",
-    ...overrides,
-  };
-}
+const columns = [
+  { direction: "income", id: "salary", name: "Salary", sortOrder: 0 },
+  { direction: "income", id: "freelance", name: "Freelance", sortOrder: 1 },
+  { direction: "expense", id: "rent", name: "Rent", sortOrder: 2 },
+  { direction: "saving", id: "reserve", name: "Reserve", sortOrder: 3 },
+];
 
 test("planning years support arbitrary mixed selections", () => {
   assert.deepEqual(normalizePlanningYears([2027, 2026, 2027, Number.NaN]), [2026, 2027]);
@@ -34,73 +16,39 @@ test("planning years support arbitrary mixed selections", () => {
   assert.equal(buildManualFuturePlanningTable([], [], [2026, 2028]).length, 24);
 });
 
-test("manual table aggregates active scheduled rows only and keeps savings separate", () => {
-  const rows = buildManualFuturePlanningTable([
-    plan({ amountValue: 3_000, categoryId: "salary", dateValue: "2026-01-27", type: "Income" }),
-    plan({ amountValue: 500, categoryId: "food", dateValue: "2026-01-30" }),
-    plan({ amountValue: 200, categoryId: "saving", dateValue: "2026-01-31", relatedEntityId: "goal", relatedEntityType: "savings_goal" }),
-    plan({ amountValue: 999, categoryId: "food", dateValue: "2026-01-30", status: "Paused" }),
-    plan({ amountValue: 800, categoryId: "food", dateValue: "2027-01-30" }),
-  ], [
-    { categoryId: "food", direction: "expense", id: "food-col", name: "Food", relatedEntityType: "", sortOrder: 0 },
-    { categoryId: "", direction: "saving", id: "saving-col", name: "Goals", relatedEntityType: "savings_goal", sortOrder: 1 },
-  ], [2026]);
+test("manual amounts provide multiple types under income, expense, and saving totals", () => {
+  const [january] = buildManualFuturePlanningTable([], columns, [2026], [
+    { actualAmount: 2_900, amount: 3_000, columnId: "salary", id: "a", periodMonth: "2026-01-01" },
+    { actualAmount: 700, amount: 500, columnId: "freelance", id: "b", periodMonth: "2026-01-01" },
+    { actualAmount: 950, amount: 1_000, columnId: "rent", id: "c", periodMonth: "2026-01-01" },
+    { actualAmount: 450, amount: 400, columnId: "reserve", id: "d", periodMonth: "2026-01-01" },
+  ]);
 
-  assert.equal(rows[0].totalIncome, 3_000);
-  assert.equal(rows[0].totalExpense, 500);
-  assert.equal(rows[0].totalSaving, 200);
-  assert.equal(rows[0].netAmount, 2_300);
-  assert.deepEqual(rows[0].columnAmounts, { "food-col": 500, "saving-col": 200 });
-  assert.equal(rows[0].plans.length, 3);
+  assert.equal(january.totalIncome, 3_500);
+  assert.equal(january.totalExpense, 1_000);
+  assert.equal(january.totalSaving, 400);
+  assert.equal(january.netAmount, 2_100);
+  assert.equal(january.actualIncome, 3_600);
+  assert.equal(january.actualExpense, 950);
+  assert.equal(january.actualSaving, 450);
+  assert.equal(january.actualNetAmount, 2_200);
+  assert.deepEqual(january.columnAmounts, { freelance: 500, rent: 1_000, reserve: 400, salary: 3_000 });
+  assert.deepEqual(january.actualColumnAmounts, { freelance: 700, rent: 950, reserve: 450, salary: 2_900 });
 });
 
-test("linked module records use the manual prediction instead of the linked amount snapshot", () => {
-  const linked = plan({
-    amountValue: 275,
-    relatedEntityAmountSnapshot: 500,
-    relatedEntityId: "subscription-1",
-    relatedEntityLabel: "Subscription · Cloud storage",
-    relatedEntityType: "subscription",
-  });
-  const [january] = buildManualFuturePlanningTable([linked], [
-    { categoryId: "", direction: "expense", id: "subscriptions", name: "Subscriptions", relatedEntityType: "subscription", sortOrder: 0 },
-  ], [2026]);
-  assert.equal(january.columnAmounts.subscriptions, 275);
-  assert.equal(january.plans[0].relatedEntityLabel, "Subscription · Cloud storage");
-});
-
-test("custom directions override plan classification and neutral plans do not affect net", () => {
-  const [january] = buildManualFuturePlanningTable([
-    plan({ amountValue: 100, categoryId: "income-override" }),
-    plan({ amountValue: 200, categoryId: "saving-override" }),
-    plan({ amountValue: 300, categoryId: "expense-override", type: "Income" }),
-    plan({ amountValue: 400, categoryId: "neutral-override" }),
-    plan({ amountValue: 50, categoryId: "unmatched" }),
-  ], [
-    { categoryId: "income-override", direction: "income", id: "income", name: "Income override", relatedEntityType: "", sortOrder: 0 },
-    { categoryId: "saving-override", direction: "saving", id: "saving", name: "Saving override", relatedEntityType: "", sortOrder: 1 },
-    { categoryId: "expense-override", direction: "expense", id: "expense", name: "Expense override", relatedEntityType: "", sortOrder: 2 },
-    { categoryId: "neutral-override", direction: "neutral", id: "neutral", name: "Neutral override", relatedEntityType: "", sortOrder: 3 },
-  ], [2026]);
+test("amounts are isolated by month and never inferred from scheduled transactions", () => {
+  const fakeScheduledTransaction = {
+    amountValue: 999_999,
+    dateValue: "2026-01-15",
+    status: "Active",
+    type: "Income",
+  };
+  const [january, february] = buildManualFuturePlanningTable([fakeScheduledTransaction], columns, [2026], [
+    { actualAmount: 90, amount: 100, columnId: "freelance", id: "jan", periodMonth: "2026-01-01" },
+    { actualAmount: 120, amount: 110, columnId: "freelance", id: "feb", periodMonth: "2026-02-01" },
+  ]);
 
   assert.equal(january.totalIncome, 100);
-  assert.equal(january.totalSaving, 200);
-  assert.equal(january.totalExpense, 350);
-  assert.equal(january.netAmount, -450);
-  assert.equal(january.columnAmounts.neutral, 400);
-});
-
-test("overlapping columns display a plan twice but classify it once by earliest sort order", () => {
-  const [january] = buildManualFuturePlanningTable([
-    plan({ amountValue: 125, categoryId: "utilities", relatedEntityId: "cloud", relatedEntityType: "subscription" }),
-  ], [
-    { categoryId: "", direction: "income", id: "linked", name: "Linked subscriptions", relatedEntityType: "subscription", sortOrder: 10 },
-    { categoryId: "utilities", direction: "neutral", id: "utilities", name: "Utilities", relatedEntityType: "", sortOrder: 0 },
-  ], [2026]);
-
-  assert.deepEqual(january.columnAmounts, { linked: 125, utilities: 125 });
-  assert.equal(january.totalIncome, 0);
-  assert.equal(january.totalExpense, 0);
-  assert.equal(january.totalSaving, 0);
-  assert.equal(january.netAmount, 0);
+  assert.equal(february.totalIncome, 110);
+  assert.equal(january.plans.length, 1);
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { stageSubmittedQueryDraft, syncSubmittedQueryDraft } from "@/lib/filters/submitted-query";
 
@@ -12,6 +12,8 @@ export function useSubmittedQueryFilter(parameter = "q") {
   const appliedValue = searchParams.get(parameter) ?? "";
   const [draftState, setDraftState] = useState(() => stageSubmittedQueryDraft(appliedValue, appliedValue));
   const [isPending, startTransition] = useTransition();
+  const restoredRef = useRef(false);
+  const storageKey = `finance-pro:filters:${pathname}:${parameter}`;
   const syncedDraftState = syncSubmittedQueryDraft(draftState, appliedValue);
 
   // React's guarded render-time adjustment keeps the field synchronized with
@@ -19,6 +21,19 @@ export function useSubmittedQueryFilter(parameter = "q") {
   if (syncedDraftState !== draftState) {
     setDraftState(syncedDraftState);
   }
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (appliedValue) {
+      window.localStorage.setItem(storageKey, appliedValue);
+      return;
+    }
+    const storedValue = window.localStorage.getItem(storageKey) ?? "";
+    if (storedValue) navigate(storedValue);
+    // Navigation is intentionally performed only once for the initial page state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedValue, storageKey]);
 
   function setDraftValue(value: string) {
     setDraftState(stageSubmittedQueryDraft(appliedValue, value));
@@ -32,6 +47,7 @@ export function useSubmittedQueryFilter(parameter = "q") {
     const query = params.toString();
     const href = query ? `${pathname}?${query}` : pathname;
     setDraftState(stageSubmittedQueryDraft(appliedValue, normalizedValue));
+    window.localStorage.setItem(storageKey, normalizedValue);
     startTransition(() => router.replace(href, { scroll: false }));
   }
 

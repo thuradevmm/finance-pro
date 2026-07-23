@@ -61,7 +61,7 @@ test("responsive account lookup preserves its calculated aggregate rows", async 
   assert.match(source, /key=\{`card-total-mobile-/);
 });
 
-test("narrow transaction and planning cards do not constrain exact amounts to a side column", async () => {
+test("narrow transaction cards and the planning table preserve exact editable amounts", async () => {
   const [transactions, planning] = await Promise.all([
     readFile(new URL("../src/features/transactions/transactions-table.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/features/future-planning/future-planning-page-content.tsx", import.meta.url), "utf8"),
@@ -70,7 +70,8 @@ test("narrow transaction and planning cards do not constrain exact amounts to a 
   assert.doesNotMatch(transactions, /amount-value overflow-hidden/);
   assert.doesNotMatch(transactions, /max-w-\[45%\] shrink text-right/);
   assert.match(transactions, /w-full pl-7 text-left sm:w-auto/);
-  assert.match(planning, /amount-value w-full text-left[^"\n]*sm:w-auto sm:text-right/);
+  assert.match(planning, /overflow-x-auto \[-webkit-overflow-scrolling:touch\]/);
+  assert.match(planning, /aria-label=\{`\$\{column\.name\} planned amount/);
 });
 
 test("subscription timeline values use the full card width", async () => {
