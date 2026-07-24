@@ -313,7 +313,7 @@ export function FutureTransactionForm({
               {titleHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Title is required.</p> : null}
             </div>
             <div>
-              <TextInput error={amountHasError} label="Predicted Amount (MMK)" onChange={handleAmountChange} placeholder="0" type="number" value={amount} />
+              <TextInput error={amountHasError} label="Predicted Amount (MMK)" onChange={handleAmountChange} placeholder="0" type="amount" value={amount} />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter an amount greater than zero.</p> : null}
               {!amountHasError ? <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">This is your forecast, independent of category history or a linked record&apos;s current value.</p> : null}
             </div>
@@ -369,7 +369,7 @@ export function FutureTransactionForm({
                               label={formatDisplayDate(date, date)}
                               onChange={(value) => setPredictionDrafts((current) => ({ ...current, [date]: value }))}
                               placeholder="0"
-                              type="number"
+                              type="amount"
                               value={predictionValue}
                             />
                           );

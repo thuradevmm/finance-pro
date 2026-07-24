@@ -121,7 +121,7 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Service name is required.</p> : null}
             </div>
             <div>
-              <TextInput error={amountHasError} label="Billed Amount" onChange={setBilledAmount} placeholder="20.00" type="number" value={billedAmount} />
+              <TextInput error={amountHasError} label="Billed Amount" onChange={setBilledAmount} placeholder="20.00" type="amount" value={billedAmount} />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter a billed amount greater than zero.</p> : null}
             </div>
           </div>

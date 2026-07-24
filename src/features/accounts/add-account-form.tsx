@@ -11,7 +11,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { formatMmkPreview } from "@/lib/currency";
+import { cleanAmountInputValue, formatAmountInputValue, formatMmkPreview } from "@/lib/currency";
 import { calculateCreditCardPosition } from "@/lib/accounts/card-display";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
@@ -145,8 +145,9 @@ function TextInput({
   onChange?: (value: string) => void;
   placeholder: string;
   value?: string;
-  type?: "text" | "number";
+  type?: "amount" | "text" | "number";
 }) {
+  const isAmount = type === "amount";
   const inputId = useId();
 
   return (
@@ -155,10 +156,11 @@ function TextInput({
       <input
         className="h-12 w-full rounded-lg border border-[#c6c6cd] bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
         id={inputId}
-        onChange={(event) => onChange?.(event.target.value)}
+        inputMode={isAmount ? "decimal" : undefined}
+        onChange={(event) => onChange?.(isAmount ? cleanAmountInputValue(event.target.value) : event.target.value)}
         placeholder={placeholder}
-        type={type}
-        value={value}
+        type={isAmount ? "text" : type}
+        value={isAmount ? formatAmountInputValue(value) : value}
       />
     </div>
   );
@@ -460,11 +462,11 @@ export function AddAccountForm({
             <FormCard title="Credit Card Terms">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <TextInput label="Credit Limit" onChange={setCreditLimit} placeholder="Maximum usable amount" type="number" value={creditLimit} />
+                  <TextInput label="Credit Limit" onChange={setCreditLimit} placeholder="Maximum usable amount" type="amount" value={creditLimit} />
                   {creditLimitHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Credit limit must be greater than zero.</p> : null}
                 </div>
                 <div>
-                  <TextInput label="Minimum Payment Amount" onChange={setCreditMinimumPayment} placeholder="Optional" type="number" value={creditMinimumPayment} />
+                  <TextInput label="Minimum Payment Amount" onChange={setCreditMinimumPayment} placeholder="Optional" type="amount" value={creditMinimumPayment} />
                   {creditMinimumPaymentHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Minimum payment cannot be negative.</p> : null}
                 </div>
                 <div>
@@ -546,7 +548,7 @@ export function AddAccountForm({
 
             {!isCreditCard ? (
               <div className="mt-5">
-                <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="number" value={monthlyBudgetLimit} />
+                <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="amount" value={monthlyBudgetLimit} />
               </div>
             ) : null}
 

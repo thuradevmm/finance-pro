@@ -13,7 +13,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ProgressCircle } from "@/components/ui/progress-circle";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { formatMmkPreview } from "@/lib/currency";
+import { formatMmkPreview, parseAmountInputValue } from "@/lib/currency";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
@@ -25,7 +25,7 @@ import { calculateDebtStatus } from "@/lib/debts/status";
 import { isCreditCardDebtType } from "@/lib/debts/validation";
 
 function parseAmount(value: string) {
-  return Number(value.replace(/[^0-9.-]/g, ""));
+  return parseAmountInputValue(value);
 }
 
 export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountRecord[]; categories: CategoryRecord[]; debt?: DebtRecordWithValues }) {
@@ -127,10 +127,10 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       notes,
       paymentAccountId,
       payoffDate,
-      repaidAmount: repaidAmount.trim() ? Number(repaidAmount) : 0,
+      repaidAmount: repaidAmount.trim() ? parseAmountInputValue(repaidAmount) : 0,
       startDate,
       status,
-      totalAmount: Number(totalAmount),
+      totalAmount: parseAmountInputValue(totalAmount),
       type: semanticIsCreditCard ? "Credit Card" : debt?.type ?? selectedCategory?.name ?? "Debt",
     };
     setIsSaving(true);
@@ -175,10 +175,10 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={totalHasError} label="Total Amount" onChange={setTotalAmount} placeholder="350000" type="number" value={totalAmount} />
+              <TextInput error={totalHasError} label="Total Amount" onChange={setTotalAmount} placeholder="350000" type="amount" value={totalAmount} />
               {totalHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Total amount is required.</p> : null}
             </div>
-            <TextInput label={semanticIsCreditCard ? "Payments / Credits" : "Payments Made (Including Interest)"} onChange={setRepaidAmount} placeholder="0" type="number" value={repaidAmount} />
+            <TextInput label={semanticIsCreditCard ? "Payments / Credits" : "Payments Made (Including Interest)"} onChange={setRepaidAmount} placeholder="0" type="amount" value={repaidAmount} />
           </div>
 
           <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>

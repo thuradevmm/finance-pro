@@ -126,7 +126,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
                 label="Purchase Amount"
                 onChange={setPurchaseAmount}
                 placeholder="2499"
-                type="number"
+                type="amount"
                 value={purchaseAmount}
               />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Purchase amount is required.</p> : null}
@@ -135,7 +135,7 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={currentValueHasError} label="Current Value" onChange={setCurrentValue} placeholder="1850" type="number" value={currentValue} />
+              <TextInput error={currentValueHasError} label="Current Value" onChange={setCurrentValue} placeholder="1850" type="amount" value={currentValue} />
               {currentValueHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Current value cannot be negative.</p> : null}
             </div>
             <TextInput label="Serial / Reference" onChange={setSerialReference} placeholder="Optional" value={serialReference} />

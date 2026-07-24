@@ -216,7 +216,7 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; 
                 <td className={`whitespace-nowrap px-4 py-4 font-semibold ${budget.status === "Over Budget" ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
                   {budget.actual}
                 </td>
-                <td className={`whitespace-nowrap px-4 py-4 font-medium ${budget.remaining.startsWith("-") ? "text-[#b42318]" : "text-[#047857]"}`}>
+                <td className={`whitespace-nowrap px-4 py-4 font-medium ${parseCurrency(budget.remaining) < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>
                   {budget.remaining}
                 </td>
                 <td className="px-4 py-4">
@@ -290,7 +290,7 @@ function BudgetBreakdownTable({ budgets, onDelete }: { budgets: BudgetRecord[]; 
                 </div>
                 <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
                   <dt className="text-xs font-bold uppercase text-[#45464d]">Remaining</dt>
-                  <dd className={`amount-value mt-1 font-semibold ${budget.remaining.startsWith("-") ? "text-[#b42318]" : "text-[#047857]"}`} title={budget.remaining}>{budget.remaining}</dd>
+                  <dd className={`amount-value mt-1 font-semibold ${parseCurrency(budget.remaining) < 0 ? "text-[#b42318]" : "text-[#047857]"}`} title={budget.remaining}>{budget.remaining}</dd>
                 </div>
               </div>
             </dl>

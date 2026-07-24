@@ -162,13 +162,13 @@ export function AddSavingsGoalForm({
                 label="Target Amount"
                 onChange={setTargetAmount}
                 placeholder="10000"
-                type="number"
+                type="amount"
                 value={targetAmount}
               />
               {targetHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target amount is required.</p> : null}
             </div>
             <div>
-              <TextInput error={savedHasError} label="Already Saved (Manual)" onChange={setSavedAmount} placeholder="0" type="number" value={savedAmount} />
+              <TextInput error={savedHasError} label="Already Saved (Manual)" onChange={setSavedAmount} placeholder="0" type="amount" value={savedAmount} />
               {savedHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Already saved amount cannot be negative.</p> : null}
               {goal && linkedSaved !== 0 ? <p className="mt-1 text-xs font-semibold text-[#45464d]">Linked activity {linkedSaved > 0 ? "adds" : "subtracts"} {formatMmkPreview(Math.abs(linkedSaved))}; it is preserved separately when you edit.</p> : null}
             </div>
@@ -180,7 +180,7 @@ export function AddSavingsGoalForm({
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
             </div>
             <div>
-              <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="number" value={monthlyContribution} />
+              <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="amount" value={monthlyContribution} />
               {contributionHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly contribution cannot be negative.</p> : null}
             </div>
           </div>

@@ -168,7 +168,7 @@ function AccountCard({
 }) {
   const isCreditCard = isCreditCardAccount(account);
   const primaryAmountLabel = isCreditCard ? "Available Credit" : "Total Amount";
-  const primaryAmountClassName = isCreditCard ? "text-[#0058be]" : account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]";
+  const primaryAmountClassName = isCreditCard ? "text-[#0058be]" : account.balanceValue < 0 ? "text-[#b42318]" : "text-[#0b1c30]";
   const breakdowns = isCreditCard ? account.availableBreakdowns : account.balanceBreakdowns;
 
   return (
@@ -940,7 +940,7 @@ function AccountsTable({
                 <td className="px-4 py-4">
                   <StatusBadge status={account.status} />
                 </td>
-                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${isCreditCardAccount(account) ? "text-[#0058be]" : account.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
+                <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${isCreditCardAccount(account) ? "text-[#0058be]" : account.balanceValue < 0 ? "text-[#b42318]" : "text-[#0b1c30]"}`}>
                   {account.balance}
                 </td>
                 <td className="px-4 py-4">
@@ -1311,7 +1311,7 @@ export default function AccountsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#c6c6cd]/60 bg-white p-4">
               <div>
                 <p className="text-xs font-bold uppercase text-[#45464d]">{isCreditCardAccount(viewedAccount) ? "Available Credit" : "Total Amount"}</p>
-                <ResponsiveAmount className={`mt-1 font-bold ${isCreditCardAccount(viewedAccount) ? "text-[#0058be]" : viewedAccount.balance.startsWith("-") ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
+                <ResponsiveAmount className={`mt-1 font-bold ${isCreditCardAccount(viewedAccount) ? "text-[#0058be]" : viewedAccount.balanceValue < 0 ? "text-[#b42318]" : "text-[#0b1c30]"}`} maxSizeRem={1.5}>
                   {viewedAccount.balance}
                 </ResponsiveAmount>
               </div>

@@ -12,7 +12,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
+import { SYSTEM_CURRENCY, cleanAmountInputValue, formatAmountInputValue, formatCurrencyAmount, formatMmkPreview, parseAmountInputValue } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
@@ -100,8 +100,7 @@ function formatPreviewAmount(amount: string, type: TransactionType) {
 }
 
 function parseAmountInput(value: string) {
-  const number = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(number) ? number : 0;
+  return parseAmountInputValue(value);
 }
 
 function roundMoney(value: number) {
@@ -452,11 +451,11 @@ export function AddTransactionForm({
                     aria-invalid={amountHasError}
                     className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
                     id={amountInputId}
-                    onChange={(event) => setAmount(event.target.value)}
-                    onWheel={(event) => event.currentTarget.blur()}
+                    inputMode="decimal"
+                    onChange={(event) => setAmount(cleanAmountInputValue(event.target.value))}
                     placeholder="0"
-                    type="number"
-                    value={amount}
+                    type="text"
+                    value={formatAmountInputValue(amount)}
                   />
                 </div>
                 {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Enter an amount greater than zero.</p> : null}
@@ -587,10 +586,10 @@ export function AddTransactionForm({
                     <input
                       className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                       id={subscriptionBilledAmountInputId}
-                      onChange={(event) => updateSubscriptionPaymentDraft("billedAmount", event.target.value)}
-                      onWheel={(event) => event.currentTarget.blur()}
-                      type="number"
-                      value={subscriptionBilledAmount}
+                      inputMode="decimal"
+                      onChange={(event) => updateSubscriptionPaymentDraft("billedAmount", cleanAmountInputValue(event.target.value))}
+                      type="text"
+                      value={formatAmountInputValue(subscriptionBilledAmount)}
                     />
                   </div>
                   {isForeignSubscriptionPayment ? (
@@ -599,10 +598,10 @@ export function AddTransactionForm({
                       <input
                         className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                         id={subscriptionExchangeRateInputId}
-                        onChange={(event) => updateSubscriptionPaymentDraft("exchangeRate", event.target.value)}
-                        onWheel={(event) => event.currentTarget.blur()}
-                        type="number"
-                        value={subscriptionExchangeRate}
+                        inputMode="decimal"
+                        onChange={(event) => updateSubscriptionPaymentDraft("exchangeRate", cleanAmountInputValue(event.target.value))}
+                        type="text"
+                        value={formatAmountInputValue(subscriptionExchangeRate)}
                       />
                     </div>
                   ) : (

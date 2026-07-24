@@ -11,7 +11,7 @@ import {
 } from "@/app/future-planning/settings-actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { useToast } from "@/components/ui/toast-provider";
-import { formatMmk } from "@/lib/currency";
+import { cleanAmountInputValue, formatAmountInputValue, formatMmk, parseAmountInputValue } from "@/lib/currency";
 import {
   buildManualFuturePlanningTable,
   normalizePlanningYears,
@@ -155,7 +155,7 @@ function ManualPlanTable({
 
   async function persistAmount(columnId: string, monthKey: string) {
     const key = amountKey(columnId, monthKey);
-    const value = drafts[key]?.trim() ? Number(drafts[key]) : 0;
+    const value = drafts[key]?.trim() ? parseAmountInputValue(drafts[key]) : 0;
     if (!Number.isFinite(value) || value < 0) return showError("Enter a valid planned amount of zero or more.");
     setSavingKey(key);
     const result = await saveFuturePlanningAmount({ amount: value, columnId, periodMonth: `${monthKey}-01` });
@@ -196,8 +196,8 @@ function ManualPlanTable({
           <tbody className="divide-y divide-[#c6c6cd]/40">
             {rows.map((row) => (
               <tr className="hover:bg-[#f8f9ff]" key={row.monthKey}>
-                <th className="sticky left-0 z-10 bg-white px-4 py-3">{row.year}</th>
-                <td className="sticky left-[76px] z-10 bg-white px-4 py-3 font-medium">{row.monthLabel}</td>
+                <th className="sticky left-0 z-30 w-[76px] border-r border-[#c6c6cd]/60 bg-white px-4 py-3 shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]">{row.year}</th>
+                <td className="sticky left-[76px] z-30 min-w-32 border-r border-[#c6c6cd]/60 bg-white px-4 py-3 font-medium shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]">{row.monthLabel}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#047857]">{formatMmk(row.totalIncome)}{comparison(row.actualIncome, row.totalIncome)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#b42318]">{formatMmk(row.totalExpense)}{comparison(row.actualExpense, row.totalExpense)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#0058be]">{formatMmk(row.totalSaving)}{comparison(row.actualSaving, row.totalSaving)}</td>
@@ -210,12 +210,12 @@ function ManualPlanTable({
                       <input
                         aria-label={`${column.name} planned amount for ${row.monthLabel} ${row.year}`}
                         className="h-10 w-36 rounded-md border border-[#c6c6cd] bg-white px-3 text-right font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
-                        min="0"
                         onBlur={() => persistAmount(column.id, row.monthKey)}
-                        onChange={(event) => setDrafts((current) => ({ ...current, [key]: event.target.value }))}
+                        onChange={(event) => setDrafts((current) => ({ ...current, [key]: cleanAmountInputValue(event.target.value) }))}
                         placeholder="0"
-                        type="number"
-                        value={drafts[key] ?? (planned === 0 ? "" : String(planned))}
+                        inputMode="decimal"
+                        type="text"
+                        value={formatAmountInputValue(drafts[key] ?? (planned === 0 ? "" : String(planned)))}
                       />
                       {savingKey === key ? <span className="mt-1 block text-[11px] font-semibold text-[#0058be]">Saving…</span> : comparison(actual, planned)}
                     </td>
@@ -227,7 +227,7 @@ function ManualPlanTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#c6c6cd] bg-[#f8f9ff] font-bold">
-              <th className="sticky left-0 z-10 bg-[#f8f9ff] px-4 py-3" colSpan={2}>Selected total</th>
+              <th className="sticky left-0 z-30 border-r border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3 shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]" colSpan={2}>Selected total</th>
               {(["income", "expense", "saving"] as const).map((group) => (
                 <td className="whitespace-nowrap px-4 py-3 text-right" key={group}>
                   {formatMmk(plannedTotals[group])}

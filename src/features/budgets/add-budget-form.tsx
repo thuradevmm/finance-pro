@@ -178,7 +178,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
                 label="Budget Amount"
                 onChange={setBudgetAmount}
                 placeholder="800"
-                type="number"
+                type="amount"
                 value={budgetAmount}
               />
               {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Budget amount is required.</p> : null}

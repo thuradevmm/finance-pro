@@ -15,7 +15,6 @@ export function AppTopBar() {
           title="Notifications"
         >
           <Icon name="bell" />
-          <span aria-hidden="true" className="absolute right-3 top-3 size-2 rounded-full bg-[#ba1a1a]" />
         </Link>
         <Link
           aria-label="Help"
