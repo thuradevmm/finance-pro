@@ -17,6 +17,7 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
 import type { FuturePlanningTransactionOption } from "@/lib/future-planning/supabase";
+import { futurePlanningDirectionSupportsTransactionType } from "@/lib/future-planning/transaction-link";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
@@ -161,6 +162,7 @@ export function AddTransactionForm({
   const amountInputId = useId();
   const dateInputId = useId();
   const noteInputId = useId();
+  const planningAmountInputId = useId();
   const subscriptionBilledAmountInputId = useId();
   const subscriptionExchangeRateInputId = useId();
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
@@ -197,11 +199,13 @@ export function AddTransactionForm({
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
-  const availablePlanningOptions = useMemo(() => planningOptions.filter((option) => (
-    option.id === futurePlanningAmountId
-    || (option.periodMonth.slice(0, 7) === transactionDate.slice(0, 7)
-      && (option.direction === "income" ? selectedType === "Income" : selectedType === "Expense"))
-  )), [futurePlanningAmountId, planningOptions, selectedType, transactionDate]);
+  const availablePlanningOptions = useMemo(
+    () => planningOptions.filter((option) => (
+      option.id === futurePlanningAmountId
+      || futurePlanningDirectionSupportsTransactionType(option.direction, selectedType)
+    )),
+    [futurePlanningAmountId, planningOptions, selectedType],
+  );
   const selectedPlanningOption = planningOptions.find((option) => option.id === futurePlanningAmountId);
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const accountAmountTypeOptions = useMemo(() => {
@@ -292,6 +296,9 @@ export function AddTransactionForm({
 
   function handleTypeChange(type: TransactionType) {
     setSelectedType(type);
+    if (selectedPlanningOption && !futurePlanningDirectionSupportsTransactionType(selectedPlanningOption.direction, type)) {
+      setFuturePlanningAmountId("");
+    }
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
     if (type !== "Expense" && selectedRelatedOption?.type === "budget") setRelatedOptionValue("none:");
@@ -348,11 +355,10 @@ export function AddTransactionForm({
     }
   }
 
-  function handlePlanningAmountChange(label: string) {
-    if (label === "No predefined amount") return setFuturePlanningAmountId("");
-    const option = availablePlanningOptions.find((item) => item.label === label);
-    if (!option) return;
-    setFuturePlanningAmountId(option.id);
+  function handlePlanningAmountChange(optionId: string) {
+    setFuturePlanningAmountId(
+      availablePlanningOptions.some((option) => option.id === optionId) ? optionId : "",
+    );
   }
 
   function usePredefinedAmount() {
@@ -486,12 +492,23 @@ export function AddTransactionForm({
             {!isTransfer ? (
               <div className="mt-5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
                 <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                  <SelectInput
-                    label="Future planning predefined amount"
-                    onChange={handlePlanningAmountChange}
-                    options={["No predefined amount", ...availablePlanningOptions.map((option) => option.label)]}
-                    value={selectedPlanningOption?.label ?? "No predefined amount"}
-                  />
+                  <div className="min-w-0">
+                    <FieldLabel htmlFor={planningAmountInputId}>Future planning predefined amount</FieldLabel>
+                    <div className="relative">
+                      <select
+                        className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+                        id={planningAmountInputId}
+                        onChange={(event) => handlePlanningAmountChange(event.target.value)}
+                        value={futurePlanningAmountId}
+                      >
+                        <option value="">No predefined amount</option>
+                        {availablePlanningOptions.map((option) => (
+                          <option key={option.id} value={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                      <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+                    </div>
+                  </div>
                   <button
                     className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#2170e4] bg-white px-4 text-sm font-semibold text-[#0058be] disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!selectedPlanningOption}
@@ -501,7 +518,9 @@ export function AddTransactionForm({
                     Use planned amount
                   </button>
                 </div>
-                <p className="mt-2 text-xs font-semibold leading-5 text-[#45464d]">This link is only for planned-versus-actual comparison. You can keep any actual transaction amount.</p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-[#45464d]">
+                  This explicit link assigns the actual transaction to the selected planning month. You can keep any transaction date and actual amount.
+                </p>
               </div>
             ) : null}
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">

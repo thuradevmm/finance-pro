@@ -24,6 +24,7 @@ import {
   resolveStoredSavingsAmount,
   type SavingsGoalEntryInput,
 } from "@/lib/savings-goals/calculations";
+import { futurePlanningDirectionSupportsTransactionType } from "@/lib/future-planning/transaction-link";
 import type { TransactionFormData } from "@/lib/transactions/supabase";
 import {
   postedReversalSourceIds,
@@ -257,7 +258,7 @@ async function validateFuturePlanningAmount(
   if (input.type === "Transfer") return "Transfers cannot be linked to a future-planning amount.";
   const { data: amount, error } = await supabase
     .from("future_planning_amounts")
-    .select("id,column_id,period_month")
+    .select("id,column_id")
     .eq("id", input.futurePlanningAmountId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -271,11 +272,10 @@ async function validateFuturePlanningAmount(
     .maybeSingle();
   if (columnError) return columnError.message;
   if (!column || column.is_active === false) return "The selected planning type is no longer available.";
-  if (input.date.slice(0, 7) !== amount.period_month.slice(0, 7)) {
-    return "The transaction date must be in the same month as the selected predefined amount.";
-  }
   const requiredType = column.direction === "income" ? "Income" : "Expense";
-  if (input.type !== requiredType) return `${directionLabelForError(column.direction)} planning amounts require an ${requiredType} transaction.`;
+  if (!futurePlanningDirectionSupportsTransactionType(column.direction, input.type)) {
+    return `${directionLabelForError(column.direction)} planning amounts require an ${requiredType} transaction.`;
+  }
   return "";
 }
 
