@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
-import { buildEmiSchedule } from "@/lib/debts/emi";
+import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import type { DebtFormData } from "@/lib/debts/supabase";
@@ -240,7 +240,9 @@ function canonicalDebtInput(
   }
 
   const remainingAmount = schedule.remainingPrincipal;
-  const nextPaymentDate = remainingAmount <= 0.005 ? "" : schedule.nextPaymentDate;
+  const nextPaymentDate = remainingAmount <= 0.005
+    ? ""
+    : normalizeDebtRepaymentDate(input.startDate, schedule.nextPaymentDate);
   return {
     input: {
       ...input,

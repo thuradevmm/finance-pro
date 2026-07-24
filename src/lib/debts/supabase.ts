@@ -5,7 +5,7 @@ import { buildCreditCardDueBuckets } from "@/lib/accounts/credit-card-dates";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
+import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, normalizeDebtRepaymentDate, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
 import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { calculateDebtProgressPercent } from "@/lib/debts/progress";
 import { calculateDebtStatus } from "@/lib/debts/status";
@@ -326,7 +326,10 @@ function mapDebt(
     ? ""
     : isCreditCard
       ? cardDueBuckets[0]?.dueDateValue ?? ""
-      : emiSchedule?.nextPaymentDate || storedNextPaymentDateValue;
+      : normalizeDebtRepaymentDate(
+        startDate,
+        emiSchedule?.nextPaymentDate || storedNextPaymentDateValue,
+      );
   const repaidPrincipalValue = payoffSummary?.principalPaid ?? emiSchedule?.principalPaid ?? repaidAmountValue;
   const displayedRepaidAmountValue = isCreditCard ? repaidAmountValue : repaidPrincipalValue;
   // Credit-card total and progress share the same gross charge basis. This

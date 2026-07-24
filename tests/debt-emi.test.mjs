@@ -1,13 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildEmiSchedule, calculateDebtPayoffSummary } from "../src/lib/debts/emi.ts";
+import {
+  buildEmiSchedule,
+  calculateDebtPayoffSummary,
+  firstDebtRepaymentDate,
+  normalizeDebtRepaymentDate,
+} from "../src/lib/debts/emi.ts";
 
 test("EMI installments begin one month after the start and preserve month end", () => {
   const schedule = buildEmiSchedule({ interestRate: 0, interestRatePeriod: "Yearly", numberOfMonths: 3, principal: 300, startDate: "2027-01-31" });
   assert.deepEqual(schedule.payments.map((payment) => payment.dueDateValue), ["2027-02-28", "2027-03-31", "2027-04-30"]);
   assert.equal(schedule.monthlyPayment, 100);
   assert.equal(schedule.totalInterest, 0);
+});
+
+test("borrowing date is never treated as the first repayment date", () => {
+  assert.equal(firstDebtRepaymentDate("2026-07-01"), "2026-08-01");
+  assert.equal(normalizeDebtRepaymentDate("2026-07-01", "2026-07-01"), "2026-08-01");
+  assert.equal(normalizeDebtRepaymentDate("2026-07-01", "2026-06-01"), "2026-08-01");
+  assert.equal(normalizeDebtRepaymentDate("2026-07-01", "2026-09-01"), "2026-09-01");
+
+  const oneMonthDebt = buildEmiSchedule({
+    interestRate: 0,
+    interestRatePeriod: "Yearly",
+    numberOfMonths: 1,
+    principal: 1_000,
+    startDate: "2026-07-01",
+  });
+  assert.equal(oneMonthDebt.nextPaymentDate, "2026-08-01");
+  assert.equal(oneMonthDebt.payoffDate, "2026-08-01");
 });
 
 test("yearly and monthly interest schedules, partial payment, and early payoff stay finite", () => {

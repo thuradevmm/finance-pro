@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607230001",
+  "sealedThrough": "202607240001",
   "migrations": [
     {
       "version": "202606180001",
@@ -146,6 +146,11 @@
       "version": "202607230001",
       "file": "202607230001_future_planning_amounts_and_remove_salary_periods.sql",
       "sha256": "0199c53657b617569d66427e3c62cea54f9b9c8f1d9bfbb94d32ae90ea428e32"
+    },
+    {
+      "version": "202607240001",
+      "file": "202607240001_standard_debt_first_repayment_alignment.sql",
+      "sha256": "98350b2ecae6a1c01343b4020083dabef5297b70a7a96540330c4631a5247352"
     }
   ],
   "historyRepairs": [

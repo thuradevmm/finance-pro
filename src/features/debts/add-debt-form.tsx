@@ -19,7 +19,7 @@ import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { buildEmiSchedule } from "@/lib/debts/emi";
+import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { isCreditCardDebtType } from "@/lib/debts/validation";
@@ -102,7 +102,9 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const progressBasis = semanticIsCreditCard ? creditCardAppliedRepayment : repaymentSchedule.principalPaid;
   const progressPercent = total > 0 ? Math.min(Math.round((progressBasis / total) * 100), 100) : 0;
   const remaining = semanticIsCreditCard ? creditCardRemaining : repaymentSchedule.remainingPrincipal;
-  const nextPaymentDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.nextPaymentDate;
+  const nextPaymentDate = semanticIsCreditCard
+    ? creditCardDueDate
+    : normalizeDebtRepaymentDate(startDate, repaymentSchedule.nextPaymentDate);
   const status = calculateDebtStatus({ dueDate: nextPaymentDate, remainingAmount: remaining, storedStatus: debt?.status });
   const payoffDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.payoffDate;
   const monthlyPaymentValue = semanticIsCreditCard ? creditCardMinimumPayment : repaymentSchedule.monthlyPayment;
@@ -194,7 +196,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           </div>
 
           <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>
-            <TextInput label="Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
+            <TextInput label="Borrowing Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
             {!semanticIsCreditCard ? <div>
               <TextInput error={durationHasError} label="Duration (Months)" onChange={setDurationMonths} placeholder="24" type="number" value={durationMonths} />
               {durationHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Duration must be greater than 0 months.</p> : null}

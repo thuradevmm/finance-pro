@@ -112,6 +112,21 @@ export function addMonthsPreservingDay(startDate: string, monthCount: number) {
   return result;
 }
 
+export function firstDebtRepaymentDate(startDate: string) {
+  const firstDueDate = addMonthsPreservingDay(startDate, 1);
+  return firstDueDate ? formatDateInput(firstDueDate) : "";
+}
+
+export function normalizeDebtRepaymentDate(startDate: string, candidateDate: string) {
+  const borrowingDate = parseDateInput(startDate);
+  const candidate = parseDateInput(candidateDate);
+  if (!borrowingDate) return candidate ? formatDateInput(candidate) : "";
+  if (!candidate || candidate.getTime() <= borrowingDate.getTime()) {
+    return firstDebtRepaymentDate(startDate);
+  }
+  return formatDateInput(candidate);
+}
+
 function daysBetween(startDate: Date, endDate: Date) {
   return Math.max(Math.round((endDate.getTime() - startDate.getTime()) / dayMs), 0);
 }
@@ -205,7 +220,9 @@ export function calculateEmiPayment(
 }
 
 function dueDateForMonth(startDate: string, month: number) {
-  return addMonthsPreservingDay(startDate, month);
+  return month === 1
+    ? parseDateInput(firstDebtRepaymentDate(startDate))
+    : addMonthsPreservingDay(startDate, month);
 }
 
 function paymentInterestAmount(
