@@ -27,6 +27,8 @@ type FuturePlanningPageContentProps = {
 };
 
 const directionLabels = ["Income", "Expense", "Saving"];
+const stickyYearColumnWidth = 84;
+const stickyMonthColumnWidth = 144;
 
 function directionLabel(direction: FuturePlanningColumnDirection) {
   return `${direction[0].toUpperCase()}${direction.slice(1)}`;
@@ -140,7 +142,9 @@ function ManualPlanTable({
     amount.amount === 0 ? "" : String(amount.amount),
   ])), [amounts]);
   const [drafts, setDrafts] = useState<Record<string, string>>(initialDrafts);
+  const [isScrolledHorizontally, setIsScrolledHorizontally] = useState(false);
   const [savingKey, setSavingKey] = useState("");
+  const stickyColumnShadowClass = isScrolledHorizontally ? "shadow-[8px_0_12px_-12px_rgba(11,28,48,0.45)]" : "";
   const plannedTotals = {
     expense: rows.reduce((sum, row) => sum + row.totalExpense, 0),
     income: rows.reduce((sum, row) => sum + row.totalIncome, 0),
@@ -180,12 +184,19 @@ function ManualPlanTable({
         <h2 className="text-lg font-semibold text-[#0b1c30]" id="manual-plan-table-title">Planned versus actual</h2>
         <p className="mt-1 text-sm leading-6 text-[#45464d]">Edit predefined amounts directly. Actual values come only from transactions explicitly linked to that monthly amount and may be higher or lower.</p>
       </div>
-      <div className="max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="border-collapse text-left text-sm" style={{ minWidth: `${tableWidth}px`, width: "100%" }}>
+      <div
+        className="relative isolate max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]"
+        onScroll={(event) => setIsScrolledHorizontally(event.currentTarget.scrollLeft > 1)}
+      >
+        <table className="border-separate border-spacing-0 text-left text-sm" style={{ minWidth: `${tableWidth}px`, width: "100%" }}>
+          <colgroup>
+            <col style={{ width: `${stickyYearColumnWidth}px` }} />
+            <col style={{ width: `${stickyMonthColumnWidth}px` }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold uppercase text-[#45464d]">
-              <th className="sticky left-0 z-20 w-[76px] bg-[#eff4ff] px-4 py-3">Year</th>
-              <th className="sticky left-[76px] z-20 min-w-32 bg-[#eff4ff] px-4 py-3">Month</th>
+              <th className="sticky left-0 z-40 box-border border-b border-r border-[#c6c6cd]/60 bg-[#eff4ff] px-4 py-3" style={{ width: `${stickyYearColumnWidth}px`, minWidth: `${stickyYearColumnWidth}px`, maxWidth: `${stickyYearColumnWidth}px` }}>Year</th>
+              <th className={`sticky z-40 box-border border-b border-r border-[#c6c6cd]/60 bg-[#eff4ff] px-4 py-3 ${stickyColumnShadowClass}`} style={{ left: `${stickyYearColumnWidth}px`, width: `${stickyMonthColumnWidth}px`, minWidth: `${stickyMonthColumnWidth}px`, maxWidth: `${stickyMonthColumnWidth}px` }}>Month</th>
               <th className="px-4 py-3 text-right">Total income</th>
               <th className="px-4 py-3 text-right">Total expense</th>
               <th className="px-4 py-3 text-right">Total saving</th>
@@ -196,8 +207,8 @@ function ManualPlanTable({
           <tbody className="divide-y divide-[#c6c6cd]/40">
             {rows.map((row) => (
               <tr className="hover:bg-[#f8f9ff]" key={row.monthKey}>
-                <th className="sticky left-0 z-30 w-[76px] border-r border-[#c6c6cd]/60 bg-white px-4 py-3 shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]">{row.year}</th>
-                <td className="sticky left-[76px] z-30 min-w-32 border-r border-[#c6c6cd]/60 bg-white px-4 py-3 font-medium shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]">{row.monthLabel}</td>
+                <th className="sticky left-0 z-30 box-border border-r border-[#c6c6cd]/60 bg-white px-4 py-3" style={{ width: `${stickyYearColumnWidth}px`, minWidth: `${stickyYearColumnWidth}px`, maxWidth: `${stickyYearColumnWidth}px` }}>{row.year}</th>
+                <td className={`sticky z-30 box-border border-r border-[#c6c6cd]/60 bg-white px-4 py-3 font-medium ${stickyColumnShadowClass}`} style={{ left: `${stickyYearColumnWidth}px`, width: `${stickyMonthColumnWidth}px`, minWidth: `${stickyMonthColumnWidth}px`, maxWidth: `${stickyMonthColumnWidth}px` }}>{row.monthLabel}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#047857]">{formatMmk(row.totalIncome)}{comparison(row.actualIncome, row.totalIncome)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#b42318]">{formatMmk(row.totalExpense)}{comparison(row.actualExpense, row.totalExpense)}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-[#0058be]">{formatMmk(row.totalSaving)}{comparison(row.actualSaving, row.totalSaving)}</td>
@@ -227,7 +238,7 @@ function ManualPlanTable({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#c6c6cd] bg-[#f8f9ff] font-bold">
-              <th className="sticky left-0 z-30 border-r border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3 shadow-[8px_0_12px_-12px_rgba(11,28,48,0.35)]" colSpan={2}>Selected total</th>
+              <th className={`sticky left-0 z-30 box-border border-r border-t-2 border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3 ${stickyColumnShadowClass}`} colSpan={2} style={{ width: `${stickyYearColumnWidth + stickyMonthColumnWidth}px`, minWidth: `${stickyYearColumnWidth + stickyMonthColumnWidth}px` }}>Selected total</th>
               {(["income", "expense", "saving"] as const).map((group) => (
                 <td className="whitespace-nowrap px-4 py-3 text-right" key={group}>
                   {formatMmk(plannedTotals[group])}
