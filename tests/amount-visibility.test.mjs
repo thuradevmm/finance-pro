@@ -20,6 +20,19 @@ test("shared amount values wrap without hiding or abbreviating digits", async ()
   assert.doesNotMatch(amountRule, /white-space:\s*nowrap/);
 });
 
+test("global finance typography uses self-hosted Plex fonts and tabular numerals", async () => {
+  const css = await readFile(globalsPath, "utf8");
+  const bodyRule = css.match(/body\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+
+  assert.match(css, /@fontsource-variable\/ibm-plex-sans\/wght\.css/);
+  assert.match(css, /@fontsource\/ibm-plex-mono\/latin-600\.css/);
+  assert.match(css, /--font-sans:\s*var\(--font-finance-sans\)/);
+  assert.match(css, /--font-mono:\s*var\(--font-finance-mono\)/);
+  assert.match(bodyRule, /font-family:\s*var\(--font-finance-sans\)/);
+  assert.match(bodyRule, /font-variant-numeric:\s*tabular-nums/);
+  assert.doesNotMatch(css, /--font-geist/);
+});
+
 test("responsive amount primitive does not opt back into clipped overflow", async () => {
   const source = await readFile(responsiveAmountPath, "utf8");
 
