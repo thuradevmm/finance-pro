@@ -112,3 +112,42 @@ export function buildCreditCardDueBuckets(input: {
       return remaining > 0.005 ? [{ amountValue: remaining, dueDateValue }] : [];
     });
 }
+
+function nextMonthlyDueDate(value: Date, billingDay: number) {
+  return dateForBillingDay(value.getFullYear(), value.getMonth() + 1, billingDay);
+}
+
+/**
+ * Credit cards are revolving balances, not fixed installment loans. Keep the
+ * statement-cycle allocation for repayment reconciliation, but present the
+ * remaining balance as one payment. Once its due date has passed, carry the
+ * unpaid (or partially paid) balance to the next monthly due date.
+ */
+export function consolidateCreditCardDueBuckets(
+  buckets: CreditCardDueBucket[],
+  referenceDate: Date | string = new Date(),
+  paymentDueDay?: number | null,
+): CreditCardDueBucket[] {
+  const amountValue = roundCurrency(buckets.reduce((sum, bucket) => sum + Math.max(Number(bucket.amountValue) || 0, 0), 0));
+  if (amountValue <= 0.005) return [];
+
+  const parsedReferenceDate = parseDate(referenceDate);
+  const dueDate = buckets
+    .map((bucket) => parseDate(bucket.dueDateValue))
+    .filter((date): date is Date => Boolean(date))
+    .sort((first, second) => first.getTime() - second.getTime())[0];
+
+  if (!dueDate || !parsedReferenceDate) {
+    return [{ amountValue, dueDateValue: buckets.find((bucket) => bucket.dueDateValue)?.dueDateValue ?? "" }];
+  }
+
+  dueDate.setHours(0, 0, 0, 0);
+  parsedReferenceDate.setHours(0, 0, 0, 0);
+  const rolloverDay = validBillingDay(paymentDueDay) ?? dueDate.getDate();
+  let upcomingDueDate = dueDate;
+  while (upcomingDueDate < parsedReferenceDate) {
+    upcomingDueDate = nextMonthlyDueDate(upcomingDueDate, rolloverDay);
+  }
+
+  return [{ amountValue, dueDateValue: formatCreditCardDate(upcomingDueDate) }];
+}

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
-import { buildCreditCardDueBuckets } from "@/lib/accounts/credit-card-dates";
+import { buildCreditCardDueBuckets, consolidateCreditCardDueBuckets } from "@/lib/accounts/credit-card-dates";
 import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -164,30 +164,10 @@ function creditCardDueDateValue(debt: DebtRecordWithValues) {
 function upcomingInstallments(debt: DebtRecordWithValues): DebtInstallment[] {
   if (debt.isCreditCardDebt) {
     if (debt.creditCardUsedAmountValue <= 0) return [];
-    if (!debt.usesManualCreditCardTerms) return debt.creditCardDueBuckets;
-
     const dueDateValue = creditCardDueDateValue(debt);
-    const firstDueDate = parseDateInput(dueDateValue);
-    if (!firstDueDate) return [];
-    const regularPayment = debt.monthlyPaymentValue > 0
-      ? debt.monthlyPaymentValue
-      : debt.creditCardUsedAmountValue;
-    const installmentCount = Math.min(Math.max(
-      debt.durationMonths,
-      Math.ceil(debt.creditCardUsedAmountValue / regularPayment),
-      1,
-    ), 600);
-    let remaining = debt.creditCardUsedAmountValue;
-
-    return Array.from({ length: installmentCount }).flatMap((_, index): DebtInstallment[] => {
-      if (remaining <= 0.005) return [];
-      const amountValue = roundCurrencyValue(Math.min(regularPayment, remaining));
-      remaining = roundCurrencyValue(Math.max(remaining - amountValue, 0));
-      return [{
-        amountValue,
-        dueDateValue: formatDateInput(addMonths(firstDueDate, index)),
-      }];
-    });
+    return dueDateValue
+      ? [{ amountValue: debt.creditCardUsedAmountValue, dueDateValue }]
+      : [];
   }
 
   if (debt.status === "Paid" || debt.remainingBalanceValue <= 0) return [];
@@ -268,15 +248,20 @@ function mapDebt(
   const storedPayoffDate = typeof metadata.payoff_date === "string" ? metadata.payoff_date : "";
   const startDate = row.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date : "");
   const storedNextPaymentDateValue = row.next_payment_date ?? (typeof metadata.next_payment_date === "string" ? metadata.next_payment_date : "");
+  const creditPaymentDueDay = numericValue(metadata.credit_payment_due_day) || null;
   const cardDueBuckets = isCreditCard
-    ? buildCreditCardDueBuckets({
-      chargeActivity,
-      fallbackDueDate: storedNextPaymentDateValue,
-      openingChargeAmount: resolveDebtStoredNumber(row.total_amount, metadata.total_amount),
-      paymentDueDay: numericValue(metadata.credit_payment_due_day) || null,
-      repaymentAmount: grossRepaidAmountValue,
-      statementDay: numericValue(metadata.credit_statement_day) || null,
-    })
+    ? consolidateCreditCardDueBuckets(
+      buildCreditCardDueBuckets({
+        chargeActivity,
+        fallbackDueDate: storedNextPaymentDateValue,
+        openingChargeAmount: resolveDebtStoredNumber(row.total_amount, metadata.total_amount),
+        paymentDueDay: creditPaymentDueDay,
+        repaymentAmount: grossRepaidAmountValue,
+        statementDay: numericValue(metadata.credit_statement_day) || null,
+      }),
+      new Date(),
+      creditPaymentDueDay,
+    )
     : [];
   const durationMonths = isCreditCard && !manualCreditCardTerms
     ? Math.max(numericValue(metadata.duration_months, 1), 1)

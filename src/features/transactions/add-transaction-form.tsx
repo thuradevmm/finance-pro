@@ -22,6 +22,7 @@ import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOption
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
+import { calculateTransactionRemainingAmount } from "@/lib/transactions/remaining-amount";
 import { normalizeTransactionStatus, transactionStatusLabel, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
 import type { TransactionType } from "@/types/finance";
 
@@ -139,6 +140,29 @@ function editedTransactionBalanceAdjustment(transaction: TransactionRecord | und
   if (transaction.transferFromAccountId === accountId && transferFromAmountType(transaction) === amountType) return amountValue;
   if (transaction.transferToAccountId === accountId && transferToAmountType(transaction) === amountType) return -amountValue;
   return 0;
+}
+
+function accountAvailableAmount(account: AccountRecord | undefined, amountType: string) {
+  if (!account) return 0;
+  if (isCreditCardAccount(account)) return account.creditAvailableValue;
+  return account.availableBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0;
+}
+
+function RemainingAmount({
+  amountType,
+  value,
+}: {
+  amountType: string;
+  value: number;
+}) {
+  return (
+    <div className="mt-2 flex min-w-0 items-center justify-between gap-3 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs">
+      <span className="min-w-0 truncate font-semibold text-[#45464d]">Remaining amount · {amountType}</span>
+      <ResponsiveAmount className={`shrink-0 font-bold ${value < 0 ? "text-[#ba1a1a]" : "text-[#0b1c30]"}`} maxSizeRem={0.875}>
+        {formatMmkPreview(value)}
+      </ResponsiveAmount>
+    </div>
+  );
 }
 
 export function AddTransactionForm({
@@ -287,9 +311,26 @@ export function AddTransactionForm({
   const accountHasError = showErrors && !accountId;
   const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
   const categoryHasError = showErrors && !isTransfer && !effectiveCategoryId;
-  const selectedAvailableBreakdown = selectedAccount?.availableBreakdowns.find((breakdown) => breakdown.type === effectiveAccountAmountType);
-  const availableAmountValue = (selectedAvailableBreakdown?.amountValue ?? 0) + editedTransactionBalanceAdjustment(transaction, accountId, effectiveAccountAmountType);
-  const shouldValidateAvailableAmount = transactionStatusReservesWorkingBalance(status)
+  const reservesWorkingBalance = transactionStatusReservesWorkingBalance(status);
+  const availableAmountValue = accountAvailableAmount(selectedAccount, effectiveAccountAmountType)
+    + editedTransactionBalanceAdjustment(transaction, accountId, effectiveAccountAmountType);
+  const remainingAmountValue = calculateTransactionRemainingAmount({
+    amount: amountNumber,
+    availableAmount: availableAmountValue,
+    direction: selectedType === "Income" ? "inflow" : "outflow",
+    maximumAmount: isCreditCardAccount(selectedAccount) ? selectedAccount?.creditLimitValue : undefined,
+    reservesBalance: reservesWorkingBalance,
+  });
+  const transferAvailableAmountValue = accountAvailableAmount(selectedTransferAccount, effectiveTransferAccountAmountType)
+    + editedTransactionBalanceAdjustment(transaction, effectiveTransferToAccountId, effectiveTransferAccountAmountType);
+  const transferRemainingAmountValue = calculateTransactionRemainingAmount({
+    amount: amountNumber,
+    availableAmount: transferAvailableAmountValue,
+    direction: "inflow",
+    maximumAmount: isCreditCardAccount(selectedTransferAccount) ? selectedTransferAccount?.creditLimitValue : undefined,
+    reservesBalance: reservesWorkingBalance,
+  });
+  const shouldValidateAvailableAmount = reservesWorkingBalance
     && !isCreditCardAccount(selectedAccount)
     && (selectedType === "Expense" || selectedType === "Transfer");
   const availableAmountHasError = showErrors && shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
@@ -531,9 +572,15 @@ export function AddTransactionForm({
             {categoryHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Select a category.</p> : null}
 
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
+              <div>
+                <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
+                <RemainingAmount amountType={effectiveAccountAmountType} value={remainingAmountValue} />
+              </div>
               {isTransfer ? (
-                <SelectInput label="To Account Amount Type" onChange={setTransferAccountAmountType} options={transferAccountAmountTypeOptions.length > 0 ? transferAccountAmountTypeOptions : ["General"]} value={effectiveTransferAccountAmountType} />
+                <div>
+                  <SelectInput label="To Account Amount Type" onChange={setTransferAccountAmountType} options={transferAccountAmountTypeOptions.length > 0 ? transferAccountAmountTypeOptions : ["General"]} value={effectiveTransferAccountAmountType} />
+                  <RemainingAmount amountType={effectiveTransferAccountAmountType} value={transferRemainingAmountValue} />
+                </div>
               ) : (
                 <SelectInput label="Status" onChange={(value) => setStatus(normalizeTransactionStatus(value))} options={["Cleared", "Pending", "Scheduled"]} value={transactionStatusLabel(status)} />
               )}
