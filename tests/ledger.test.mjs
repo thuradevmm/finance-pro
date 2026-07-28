@@ -3,13 +3,16 @@ import test from "node:test";
 
 import {
   buildAccountLedgerActivities,
+  cashflowTransactionDelta,
   deriveCreditCardDebtMetadata,
   economicTransactionDelta,
   ledgerRelevantMetadata,
   linkedExpenseContributionDelta,
   roundCurrencyValue,
+  summarizeCashflowTransactions,
   summarizeFinancialPosition,
   summarizeLedgerTransactions,
+  summarizeTransactionCards,
 } from "../src/lib/ledger.ts";
 
 test("currency rounding is sign-symmetric and economic reversals cancel exactly", () => {
@@ -84,6 +87,13 @@ test("a linked bank expense restores the respective card utilization", () => {
   const activity = buildAccountLedgerActivities([charge, payment], accounts);
   assert.equal(activity.get("card")?.creditUsed, 0);
   assert.equal(activity.get("bank")?.deltas.get("Operation"), -1_000);
+  assert.deepEqual(summarizeTransactionCards([payment]), {
+    expenses: 1_000,
+    financingPayments: 1_000,
+    financingReceipts: 0,
+    income: 0,
+    net: -1_000,
+  });
 });
 
 test("partial, scheduled, deleted-by-omission, and overpayments reconcile safely", () => {
@@ -126,6 +136,150 @@ test("card purchases count as spending while card payments do not double-count i
     expenses: 1_000,
     income: 0,
     net: -1_000,
+  });
+});
+
+test("dashboard cashflow summaries include expense card repayments and their reversals", () => {
+  const payment = {
+    account_id: "bank",
+    amount: 1_000,
+    metadata: {
+      credit_card_account_id: "card",
+      credit_card_debt_impact: "repayment",
+      credit_card_payment: true,
+    },
+    status: "cleared",
+    type: "expense",
+  };
+  const reversal = {
+    account_id: "bank",
+    amount: 1_000,
+    metadata: {
+      reversed_credit_card_payment: true,
+      reversed_transaction_id: "payment",
+      reversed_transaction_type: "expense",
+    },
+    status: "cleared",
+    type: "income",
+  };
+
+  assert.deepEqual(cashflowTransactionDelta(payment), { expenseDelta: 1_000, incomeDelta: 0 });
+  assert.deepEqual(summarizeCashflowTransactions([payment]), { expenses: 1_000, income: 0, net: -1_000 });
+  assert.deepEqual(summarizeCashflowTransactions([payment, reversal]), { expenses: 0, income: 0, net: 0 });
+  assert.deepEqual(summarizeTransactionCards([payment]), {
+    expenses: 1_000,
+    financingPayments: 1_000,
+    financingReceipts: 0,
+    income: 0,
+    net: -1_000,
+  });
+});
+
+test("debt principal movements are financing while card purchases remain operating spending", () => {
+  const borrowingPayment = {
+    account_id: "bank",
+    amount: 600,
+    related_entity_id: "borrowing",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "expense",
+  };
+  const lendingReturn = {
+    account_id: "bank",
+    amount: 400,
+    related_entity_id: "lending",
+    related_entity_type: "Debt",
+    status: "cleared",
+    type: "income",
+  };
+  const cardPurchase = {
+    account_id: "card",
+    amount: 250,
+    metadata: {
+      credit_card_account_id: "card",
+      credit_card_debt_id: "card-debt",
+      credit_card_debt_impact: "charge",
+    },
+    related_entity_id: "card-debt",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "expense",
+  };
+
+  assert.deepEqual(summarizeTransactionCards([borrowingPayment, lendingReturn, cardPurchase]), {
+    expenses: 850,
+    financingPayments: 600,
+    financingReceipts: 400,
+    income: 400,
+    net: -450,
+  });
+});
+
+test("financing reversals subtract from their original financing bucket", () => {
+  const payment = {
+    amount: 600,
+    related_entity_id: "borrowing",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "expense",
+  };
+  const paymentReversal = {
+    amount: 600,
+    metadata: {
+      reversed_transaction_id: "payment",
+      reversed_transaction_type: "expense",
+    },
+    related_entity_id: "borrowing",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "income",
+  };
+  const receipt = {
+    amount: 400,
+    related_entity_id: "lending",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "income",
+  };
+  const receiptReversal = {
+    amount: 400,
+    metadata: {
+      reversed_transaction_id: "receipt",
+      reversed_transaction_type: "income",
+    },
+    related_entity_id: "lending",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "expense",
+  };
+
+  assert.deepEqual(summarizeTransactionCards([payment, paymentReversal, receipt, receiptReversal]), {
+    expenses: 0,
+    financingPayments: 0,
+    financingReceipts: 0,
+    income: 0,
+    net: 0,
+  });
+});
+
+test("a paired debt transfer contributes one financing payment rather than two", () => {
+  const shared = {
+    amount: 700,
+    related_entity_id: "borrowing",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "transfer",
+  };
+
+  assert.deepEqual(summarizeTransactionCards([
+    { ...shared, metadata: { transfer_direction: "debit", transfer_group_id: "pair" } },
+    { ...shared, metadata: { transfer_direction: "credit", transfer_group_id: "pair" } },
+  ]), {
+    expenses: 0,
+    financingPayments: 700,
+    financingReceipts: 0,
+    income: 0,
+    net: 0,
   });
 });
 

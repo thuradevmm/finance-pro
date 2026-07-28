@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
+import { assetPurchaseAmountMatchesRange } from "@/lib/assets/calculations";
 import { calculateUsageDuration } from "@/lib/date-duration";
 import { dateTimeSortValue } from "@/lib/date-format";
 import type { AssetRecordWithValues } from "@/lib/assets/supabase";
@@ -16,6 +17,7 @@ import { formatMmk } from "@/lib/currency";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
+import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 
 const statusStyles: Record<AssetStatus, string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
@@ -42,10 +44,6 @@ const assetSortOptions: { label: string; value: AssetSortKey }[] = [
   { label: "Condition", value: "condition" },
 ];
 
-function parseCurrency(value: string) {
-  return Number(value.replace(/[^0-9.]/g, "")) || 0;
-}
-
 function formatCurrency(value: number) {
   return formatMmk(value);
 }
@@ -58,24 +56,6 @@ function getPurchaseYear(asset: AssetRecordWithValues) {
   }
 
   return String(purchaseDate.getFullYear());
-}
-
-function matchesAmountRange(asset: AssetRecordWithValues, range: (typeof amountRanges)[number]) {
-  const purchaseAmount = parseCurrency(asset.purchaseAmount);
-
-  if (range === "Under MMK 500") {
-    return purchaseAmount < 500;
-  }
-
-  if (range === "MMK 500 - 1,500") {
-    return purchaseAmount >= 500 && purchaseAmount <= 1500;
-  }
-
-  if (range === "MMK 1,500+") {
-    return purchaseAmount > 1500;
-  }
-
-  return true;
 }
 
 function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete: (id: string) => void | Promise<void> }) {
@@ -239,20 +219,12 @@ function AssetsTable({ assets, onDelete }: { assets: AssetRecordWithValues[]; on
 }
 
 function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
-  const defaultFilters = {
+  const defaultFilters = useMemo(() => ({
     amountRange: "All amounts" as (typeof amountRanges)[number],
     category: "All categories",
     search: "",
     year: "All years",
-  };
-  const {
-    appliedFilters,
-    applyFilters,
-    draftFilters,
-    resetFilters,
-    setDraftFilters,
-  } = usePersistentFilterState("assets:history", defaultFilters);
-
+  }), []);
   const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(assets.map((asset) => asset.category)))], [assets]);
   const yearOptions = useMemo(
     () =>
@@ -262,6 +234,21 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
       ],
     [assets],
   );
+  const normalizeHistoryFilters = useMemo(() => (
+    filters: typeof defaultFilters,
+  ): typeof defaultFilters => ({
+    amountRange: amountRanges.includes(filters.amountRange) ? filters.amountRange : defaultFilters.amountRange,
+    category: categoryOptions.includes(filters.category) ? filters.category : defaultFilters.category,
+    search: filters.search,
+    year: yearOptions.includes(filters.year) ? filters.year : defaultFilters.year,
+  }), [categoryOptions, defaultFilters, yearOptions]);
+  const {
+    appliedFilters,
+    applyFilters,
+    draftFilters,
+    resetFilters,
+    setDraftFilters,
+  } = usePersistentFilterState("assets:history", defaultFilters, true, normalizeHistoryFilters);
   const filteredAssets = useMemo(() => {
     const normalizedSearch = appliedFilters.search.trim().toLowerCase();
 
@@ -271,13 +258,13 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
         const searchMatches = normalizedSearch === "" || searchTarget.includes(normalizedSearch);
         const categoryMatches = appliedFilters.category === "All categories" || asset.category === appliedFilters.category;
         const yearMatches = appliedFilters.year === "All years" || getPurchaseYear(asset) === appliedFilters.year;
-        const amountMatches = matchesAmountRange(asset, appliedFilters.amountRange);
+        const amountMatches = assetPurchaseAmountMatchesRange(asset.purchaseAmountValue, appliedFilters.amountRange);
 
         return searchMatches && categoryMatches && yearMatches && amountMatches;
       })
       .sort((firstAsset, secondAsset) => dateTimeSortValue(secondAsset.purchaseDateTimeValue) - dateTimeSortValue(firstAsset.purchaseDateTimeValue));
   }, [appliedFilters, assets]);
-  const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + parseCurrency(asset.purchaseAmount), 0);
+  const totalPurchaseCost = filteredAssets.reduce((sum, asset) => sum + asset.purchaseAmountValue, 0);
 
   function clearFilters() {
     resetFilters();
@@ -296,13 +283,19 @@ function AssetHistorySection({ assets }: { assets: AssetRecordWithValues[] }) {
         </div>
         <FilterForm className="mt-4 space-y-3" onSubmit={(event) => {
           event.preventDefault();
-          applyFilters();
+          const formData = new FormData(event.currentTarget);
+          applyFilters({
+            amountRange: String(formData.get("amountRange") ?? draftFilters.amountRange) as (typeof amountRanges)[number],
+            category: String(formData.get("category") ?? draftFilters.category),
+            search: String(formData.get("search") ?? draftFilters.search),
+            year: String(formData.get("year") ?? draftFilters.year),
+          });
         }}>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <TextInput label="Search History" onChange={(search) => setDraftFilters((filters) => ({ ...filters, search }))} placeholder="Search asset, category, note..." value={draftFilters.search} />
-            <SelectInput label="Category" onChange={(category) => setDraftFilters((filters) => ({ ...filters, category }))} options={categoryOptions} value={draftFilters.category} />
-            <SelectInput label="Purchase Year" onChange={(year) => setDraftFilters((filters) => ({ ...filters, year }))} options={yearOptions} value={draftFilters.year} />
-            <SelectInput label="Purchase Amount" onChange={(amountRange) => setDraftFilters((filters) => ({ ...filters, amountRange: amountRange as (typeof amountRanges)[number] }))} options={[...amountRanges]} value={draftFilters.amountRange} />
+            <TextInput label="Search History" name="search" onChange={(search) => setDraftFilters((filters) => ({ ...filters, search }))} placeholder="Search asset, category, note..." value={draftFilters.search} />
+            <SelectInput label="Category" name="category" onChange={(category) => setDraftFilters((filters) => ({ ...filters, category }))} options={categoryOptions} value={draftFilters.category} />
+            <SelectInput label="Purchase Year" name="year" onChange={(year) => setDraftFilters((filters) => ({ ...filters, year }))} options={yearOptions} value={draftFilters.year} />
+            <SelectInput label="Purchase Amount" name="amountRange" onChange={(amountRange) => setDraftFilters((filters) => ({ ...filters, amountRange: amountRange as (typeof amountRanges)[number] }))} options={[...amountRanges]} value={draftFilters.amountRange} />
           </div>
           <FilterActions onReset={clearFilters} resetLabel="Clear Filters" />
         </FilterForm>
@@ -420,10 +413,10 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        queryFilter.apply();
+        queryFilter.apply(readSubmittedQuery(new FormData(event.currentTarget), queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <TextInput label="Search Assets" onChange={queryFilter.setDraftValue} placeholder="Name, category, condition, status..." value={queryFilter.draftValue} />
+          <TextInput label="Search Assets" name="q" onChange={queryFilter.setDraftValue} placeholder="Name, category, condition, status..." value={queryFilter.draftValue} />
           <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
         </div>
       </FilterForm>

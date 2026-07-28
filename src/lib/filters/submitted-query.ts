@@ -3,6 +3,14 @@ export type SubmittedQueryDraftState = {
   draftValue: string;
 };
 
+export function readSubmittedQuery(
+  formData: { get(name: string): FormDataEntryValue | null },
+  fallback: string,
+  parameter = "q",
+) {
+  return String(formData.get(parameter) ?? fallback);
+}
+
 export function syncSubmittedQueryDraft(
   state: SubmittedQueryDraftState,
   appliedValue: string,

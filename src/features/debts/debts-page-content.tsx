@@ -18,6 +18,7 @@ import { getDebtListEmptyState, type DebtListEmptyState } from "@/lib/debts/visi
 import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
+import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 
 const statusStyles: Record<DebtStatus, string> = {
   Active: "bg-[#d8e2ff] text-[#004395]",
@@ -45,7 +46,7 @@ function DebtProgress({ debt }: { debt: DebtRecordWithValues }) {
   return (
     <div className="mt-3">
       <div className="mb-1 flex items-center justify-between text-xs font-semibold text-[#45464d]">
-        <span>{debt.isCreditCardDebt ? "Applied payment" : "Principal repaid"}</span>
+        <span>{debt.isCreditCardDebt ? "Applied payment" : debt.nature === "Lending" ? "Money returned" : "Principal repaid"}</span>
         <span>{debt.progressPercent}%</span>
       </div>
       <ProgressMeter ariaLabel={`${debt.name} repayment progress`} colorClassName={color} percent={debt.progressPercent} />
@@ -139,8 +140,8 @@ function DebtsTable({
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
       <div className="flex min-w-0 flex-col items-stretch gap-3 border-b border-[#c6c6cd]/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Liabilities" : "All Liabilities"}</h2>
-          <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue debts" : "Showing paid debts too"}</p>
+          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Debt & Lending" : "All Debt & Lending"}</h2>
+          <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue borrowing and lending records" : "Showing paid records too"}</p>
         </div>
       </div>
 
@@ -168,7 +169,7 @@ function DebtsTable({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-[#0b1c30]">{debt.name}</p>
-                      <p className="mt-1 text-xs font-medium text-[#45464d]">{debt.lender}</p>
+                      <p className="mt-1 text-xs font-medium text-[#45464d]">{debt.lender} · {debt.nature} · {debt.repaymentFrequency}</p>
                       <DebtProgress debt={debt} />
                     </div>
                   </div>
@@ -231,7 +232,7 @@ function DebtsTable({
                   </span>
                   <div className="min-w-0">
                     <h3 className="break-words font-semibold text-[#0b1c30]">{debt.name}</h3>
-                    <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{debt.lender}</p>
+                    <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{debt.lender} · {debt.nature} · {debt.repaymentFrequency}</p>
                   </div>
                 </div>
                 <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.status]}`}>{debt.status}</span>
@@ -285,7 +286,7 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
 
   return (
     <aside className="min-w-0 max-w-full rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-sm sm:p-5">
-      <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">Upcoming Payments</h2>
+      <h2 className="mb-5 text-lg font-semibold text-[#0b1c30] sm:text-xl">Upcoming Payments / Returns</h2>
       <div className="space-y-4">
         {currentPayments.length > 0 ? currentPayments.map((payment) => (
           <div className="grid min-w-0 gap-3 border-b border-[#c6c6cd]/40 pb-4 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] sm:items-center" key={payment.id}>
@@ -390,7 +391,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   const filteredDebts = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleDebts.filter((debt) => {
-      const searchable = `${debt.name} ${debt.lender} ${debt.totalAmount} ${debt.repaidAmount} ${debt.remainingBalance} ${debt.monthlyPayment} ${debt.status}`.toLowerCase();
+      const searchable = `${debt.name} ${debt.lender} ${debt.nature} ${debt.repaymentFrequency} ${debt.totalAmount} ${debt.repaidAmount} ${debt.remainingBalance} ${debt.monthlyPayment} ${debt.status}`.toLowerCase();
       const statusMatches = !showActiveOnly || debt.status !== "Paid";
       return statusMatches && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
@@ -422,13 +423,15 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        applyDebtStatusFilters();
-        queryFilter.apply();
+        const formData = new FormData(event.currentTarget);
+        applyDebtStatusFilters({ activeOnly: String(formData.get("debtStatus") ?? "") === "Active and overdue" });
+        queryFilter.apply(readSubmittedQuery(formData, queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)_auto] lg:items-end">
-          <SearchField label="Search debts" onChange={queryFilter.setDraftValue} placeholder="Debt, lender, amount, status..." value={queryFilter.draftValue} />
+          <SearchField label="Search debts" name="q" onChange={queryFilter.setDraftValue} placeholder="Debt, lender, amount, status..." value={queryFilter.draftValue} />
           <SelectFilter
             label="Debt status filter"
+            name="debtStatus"
             onChange={(value) => setDraftDebtStatusFilters({ activeOnly: value === "Active and overdue" })}
             options={["Active and overdue", "All debts"]}
             value={draftShowActiveOnly ? "Active and overdue" : "All debts"}

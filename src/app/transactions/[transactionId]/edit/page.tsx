@@ -46,7 +46,11 @@ function relatedOptions(
         startDate: debt.startDate,
         totalAmount: debt.totalAmountValue,
       },
+      debtRepaymentType: debt.nature === "Lending" ? "Income" as const : "Expense" as const,
       label: `Debt: ${debt.name}`,
+      oneTimeDebtPayoff: !debt.isCreditCardDebt && debt.repaymentFrequency === "One-time"
+        ? { amount: debt.remainingBalanceValue, dueDate: debt.payoffDate || debt.nextPaymentDateValue }
+        : undefined,
       type: "debt" as const,
       value: debt.id,
     })),

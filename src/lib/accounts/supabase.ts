@@ -14,6 +14,7 @@ import {
   normalizeAccountType,
   numericValue,
   roundCurrencyValue,
+  summarizeFinancialPosition,
   type LedgerAccountActivity,
 } from "@/lib/ledger";
 import type { AccountAmountType, AccountStatus, AccountType, FinancialAccount, SummaryMetric } from "@/types/finance";
@@ -357,6 +358,24 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
 export async function getAccount(supabase: SupabaseClient, userId: string, accountId: string) {
   const accounts = await getAccounts(supabase, userId);
   return accounts.find((account) => account.id === accountId) ?? null;
+}
+
+/**
+ * Canonical account position used by Account Lookup. This balance-sheet value
+ * is deliberately distinct from a filtered transaction-type Net: it includes
+ * current working balances and card liabilities, but excludes standard debts
+ * and lending receivables that are tracked on the Debts page.
+ */
+export function summarizeAccountPosition(accounts: AccountRecord[]) {
+  const currentAccounts = accounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
+  return summarizeFinancialPosition({
+    cashBalances: currentAccounts
+      .filter((account) => account.type !== "Credit Card")
+      .flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)),
+    creditCardBalances: currentAccounts
+      .filter((account) => account.type === "Credit Card")
+      .map((account) => account.creditUsedValue - account.creditBalanceValue),
+  });
 }
 
 export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] {

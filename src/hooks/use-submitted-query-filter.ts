@@ -53,7 +53,7 @@ export function useSubmittedQueryFilter(parameter = "q") {
 
   return {
     appliedValue,
-    apply: () => navigate(syncedDraftState.draftValue),
+    apply: (value = syncedDraftState.draftValue) => navigate(value),
     draftValue: syncedDraftState.draftValue,
     isPending,
     reset: () => navigate(""),

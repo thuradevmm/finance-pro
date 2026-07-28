@@ -2,18 +2,20 @@ import { Icon } from "@/components/ui/icon";
 
 type SelectFilterProps = {
   label: string;
+  name?: string;
   onChange?: (value: string) => void;
   options: string[];
   value?: string;
 };
 
-export function SelectFilter({ label, onChange, options, value }: SelectFilterProps) {
+export function SelectFilter({ label, name, onChange, options, value }: SelectFilterProps) {
   return (
     <label className="relative min-w-0 flex-1 sm:min-w-36 md:flex-none">
       <span className="sr-only">{label}</span>
       <select
         aria-label={label}
         className="min-h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-11 text-sm text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+        name={name}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         value={value}
       >

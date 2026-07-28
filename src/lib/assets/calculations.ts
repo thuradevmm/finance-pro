@@ -4,6 +4,13 @@ function presentNumber(value: unknown) {
   return Number.isFinite(number) ? number : null;
 }
 
+export function assetPurchaseAmountMatchesRange(amount: number, range: string) {
+  if (range === "Under MMK 500") return amount < 500;
+  if (range === "MMK 500 - 1,500") return amount >= 500 && amount < 1500;
+  if (range === "MMK 1,500+") return amount >= 1500;
+  return true;
+}
+
 export function resolveAssetPurchaseValue(
   storedValue: unknown,
   metadataValue: unknown,

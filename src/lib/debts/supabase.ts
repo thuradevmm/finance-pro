@@ -10,6 +10,13 @@ import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { calculateDebtProgressPercent } from "@/lib/debts/progress";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
+import { normalizeCreditCardDebtDisplayName } from "@/lib/debts/naming";
+import {
+  normalizeDebtNature,
+  normalizeDebtRepaymentFrequency,
+  type DebtNature,
+  type DebtRepaymentFrequency,
+} from "@/lib/debts/nature";
 import {
   buildDebtTransactionLedgers,
   isCreditCardDebtInput,
@@ -36,7 +43,9 @@ export type DebtFormData = {
   notes: string;
   paymentAccountId: string;
   payoffDate: string;
+  repaymentFrequency: DebtRepaymentFrequency;
   repaidAmount: number;
+  nature: DebtNature;
   startDate: string;
   status: DebtStatus;
   totalAmount: number;
@@ -55,6 +64,7 @@ export type DebtRecordWithValues = DebtRecord & {
   interestRatePeriod: DebtInterestRatePeriod;
   interestRateValue: number;
   isCreditCardDebt: boolean;
+  nature: DebtNature;
   usesManualCreditCardTerms: boolean;
   nextPaymentDateValue: string;
   notes: string;
@@ -65,6 +75,7 @@ export type DebtRecordWithValues = DebtRecord & {
   payoffQuotePrincipalAmountValue: number;
   payoffDate: string;
   repaymentActivity: DebtLedgerActivity[];
+  repaymentFrequency: DebtRepaymentFrequency;
   repaidAmountValue: number;
   remainingBalanceValue: number;
   settledAtValue: string;
@@ -172,6 +183,12 @@ function upcomingInstallments(debt: DebtRecordWithValues): DebtInstallment[] {
 
   if (debt.status === "Paid" || debt.remainingBalanceValue <= 0) return [];
 
+  if (debt.repaymentFrequency === "One-time") {
+    return debt.nextPaymentDateValue
+      ? [{ amountValue: debt.remainingBalanceValue, dueDateValue: debt.nextPaymentDateValue }]
+      : [];
+  }
+
   const schedule = buildEmiSchedule({
     interestRate: debt.interestRateValue,
     interestRatePeriod: debt.interestRatePeriod,
@@ -229,6 +246,10 @@ function mapDebt(
     ? metadataString(metadata, "credit_card_account_id") || metadataString(metadata, "auto_credit_card_account_id") || row.payment_account_id || ""
     : "";
   const manualCreditCardTerms = isCreditCard && usesManualCreditCardTerms({ ...row, metadata });
+  const nature = isCreditCard ? "Borrowing" : normalizeDebtNature(metadata.debt_nature, row.name);
+  const repaymentFrequency = isCreditCard
+    ? "Monthly"
+    : normalizeDebtRepaymentFrequency(metadata.repayment_frequency);
   const type = category?.name ?? (isCreditCard ? "Credit Card" : String(row.type ?? metadata.type ?? "Debt"));
   const appearance = category ? { bg: category.bg, icon: category.icon, tone: category.tone } : debtAppearances[type] ?? debtAppearances["Personal Loan"];
   const chargeActivity = transactionLedger?.chargeActivity ?? [];
@@ -265,8 +286,10 @@ function mapDebt(
     : [];
   const durationMonths = isCreditCard && !manualCreditCardTerms
     ? Math.max(numericValue(metadata.duration_months, 1), 1)
-    : Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, storedPayoffDate)), 0);
-  const emiSchedule = !isCreditCard && totalAmountValue > 0
+    : repaymentFrequency === "One-time"
+      ? 1
+      : Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, storedPayoffDate)), 0);
+  const emiSchedule = !isCreditCard && repaymentFrequency === "Monthly" && totalAmountValue > 0
     ? buildEmiSchedule({
       interestRate: interestRateValue,
       interestRatePeriod,
@@ -283,7 +306,7 @@ function mapDebt(
       : "";
   const hasEarlyPayoffSettlement = metadata.early_payoff === true
     || (String(row.status ?? metadata.status ?? "").toLowerCase() === "paid" && numericValue(metadata.remaining_principal) <= 0.005 && Boolean(settledAtValue));
-  const payoffSummary = !isCreditCard && totalAmountValue > 0
+  const payoffSummary = !isCreditCard && repaymentFrequency === "Monthly" && totalAmountValue > 0
     ? calculateDebtPayoffSummary({
       interestRate: interestRateValue,
       interestRatePeriod,
@@ -305,16 +328,22 @@ function mapDebt(
       ? manualCreditCardTerms
         ? Math.min(storedMonthlyPaymentValue || cardDueBuckets[0]?.amountValue || 0, cardDueBuckets[0]?.amountValue ?? creditCardUsedAmountValue)
         : cardDueBuckets[0]?.amountValue ?? 0
-      : emiSchedule ? emiSchedule.monthlyPayment : storedMonthlyPaymentValue;
-  const payoffDate = payoffSummary?.isEarlyPayoff ? payoffSummary.paidAt : emiSchedule?.payoffDate || storedPayoffDate;
+      : repaymentFrequency === "One-time"
+        ? remaining
+        : emiSchedule ? emiSchedule.monthlyPayment : storedMonthlyPaymentValue;
+  const payoffDate = repaymentFrequency === "One-time"
+    ? storedPayoffDate || storedNextPaymentDateValue
+    : payoffSummary?.isEarlyPayoff ? payoffSummary.paidAt : emiSchedule?.payoffDate || storedPayoffDate;
   const nextPaymentDateValue = isPaid
     ? ""
     : isCreditCard
       ? cardDueBuckets[0]?.dueDateValue ?? ""
-      : normalizeDebtRepaymentDate(
-        startDate,
-        emiSchedule?.nextPaymentDate || storedNextPaymentDateValue,
-      );
+      : repaymentFrequency === "One-time"
+        ? storedNextPaymentDateValue || storedPayoffDate
+        : normalizeDebtRepaymentDate(
+          startDate,
+          emiSchedule?.nextPaymentDate || storedNextPaymentDateValue,
+        );
   const repaidPrincipalValue = payoffSummary?.principalPaid ?? emiSchedule?.principalPaid ?? repaidAmountValue;
   const displayedRepaidAmountValue = isCreditCard ? repaidAmountValue : repaidPrincipalValue;
   // Credit-card total and progress share the same gross charge basis. This
@@ -341,7 +370,8 @@ function mapDebt(
     lender: row.lender ?? (typeof metadata.lender === "string" ? metadata.lender : ""),
     monthlyPayment: formatMmk(monthlyPaymentValue),
     monthlyPaymentValue,
-    name: row.name,
+    name: isCreditCard ? normalizeCreditCardDebtDisplayName(row.name) : row.name,
+    nature,
     nextPaymentDate: formatDate(nextPaymentDateValue),
     nextPaymentDateTimeValue: combineDateWithTimestampTime(nextPaymentDateValue, row.created_at),
     nextPaymentDateValue,
@@ -354,6 +384,7 @@ function mapDebt(
     payoffDate,
     progressPercent,
     repaymentActivity,
+    repaymentFrequency,
     remainingBalance: formatMmk(remaining),
     remainingBalanceValue: remaining,
     repaidAmount: formatMmk(displayedRepaidAmountValue),
@@ -400,21 +431,25 @@ export async function getDebt(supabase: SupabaseClient, userId: string, debtId: 
 }
 
 export function getDebtSummaries(debts: DebtRecordWithValues[]): SummaryMetric[] {
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.totalAmountValue, 0);
-  const repaid = debts.reduce((sum, debt) => sum + debt.repaidAmountValue, 0);
-  const remaining = debts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
+  const borrowedDebts = debts.filter((debt) => debt.nature === "Borrowing");
+  const lendingDebts = debts.filter((debt) => debt.nature === "Lending");
+  const totalDebt = borrowedDebts.reduce((sum, debt) => sum + debt.totalAmountValue, 0);
+  const repaid = borrowedDebts.reduce((sum, debt) => sum + debt.repaidAmountValue, 0);
+  const remaining = borrowedDebts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
+  const outstandingLending = lendingDebts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
   const creditCardUsed = debts.reduce((sum, debt) => sum + debt.creditCardUsedAmountValue, 0);
   const summaries: SummaryMetric[] = [
     { label: "Total Debt", value: formatMmk(totalDebt), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
     { label: "Principal / Applied", value: formatMmk(repaid), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Remaining Debt", value: formatMmk(remaining), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
-    { label: "Active Debts", value: String(debts.filter((debt) => debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Outstanding Lending", value: formatMmk(outstandingLending), icon: "account", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
+    { label: "Active Records", value: String(debts.filter((debt) => debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
   return creditCardUsed > 0 || debts.some((debt) => debt.isCreditCardDebt)
     ? [
-      ...summaries.slice(0, 3),
+      ...summaries.slice(0, 4),
       { label: "Credit Card Used", value: formatMmk(creditCardUsed), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-      summaries[3],
+      summaries[4],
     ]
     : summaries;
 }

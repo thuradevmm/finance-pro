@@ -38,8 +38,8 @@ export default async function DebtsPage() {
             Add Debt
           </Link>
         }
-        description="Manage active liabilities and track repayment progress."
-        title="Debts"
+        description="Manage borrowing, credit-card liabilities, money lent to others, and repayment progress."
+        title="Debts & Lending"
       />
 
       <SummaryCards summaries={summaries} />

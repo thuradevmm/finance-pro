@@ -5,6 +5,7 @@ import test from "node:test";
 const globalsPath = new URL("../src/app/globals.css", import.meta.url);
 const responsiveAmountPath = new URL("../src/components/ui/responsive-amount.tsx", import.meta.url);
 const summaryCardsPath = new URL("../src/components/app/summary-cards.tsx", import.meta.url);
+const transactionContentPath = new URL("../src/features/transactions/transactions-page-content.tsx", import.meta.url);
 
 test("shared amount values wrap without hiding or abbreviating digits", async () => {
   const css = await readFile(globalsPath, "utf8");
@@ -51,4 +52,14 @@ test("shared summary cards use compact spacing and a consistent prominent amount
   assert.match(source, /bg-white px-4 py-3/);
   assert.match(source, /<ResponsiveAmount[^>]*maxSizeRem=\{1\.375\}[^>]*minSizeRem=\{1\.25\}/);
   assert.doesNotMatch(source, /amount-value[^\n]*(?:overflow-hidden|truncate|whitespace-nowrap)/);
+});
+
+test("transaction income, expense, and net cards align as three equal columns", async () => {
+  const [summaryCards, transactionContent] = await Promise.all([
+    readFile(summaryCardsPath, "utf8"),
+    readFile(transactionContentPath, "utf8"),
+  ]);
+
+  assert.match(summaryCards, /columns === 3 \? "md:grid-cols-3"/);
+  assert.match(transactionContent, /<SummaryCards columns=\{3\} summaries=\{filteredSummaries\}/);
 });

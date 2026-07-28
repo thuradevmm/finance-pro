@@ -10,6 +10,7 @@ import { RecordActions } from "@/components/ui/record-actions";
 import { SearchField } from "@/components/ui/search-field";
 import { useToast } from "@/components/ui/toast-provider";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
+import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
@@ -97,10 +98,10 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        queryFilter.apply();
+        queryFilter.apply(readSubmittedQuery(new FormData(event.currentTarget), queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <SearchField label="Search savings goals" onChange={queryFilter.setDraftValue} placeholder="Goal, account, amount, health..." value={queryFilter.draftValue} />
+          <SearchField label="Search savings goals" name="q" onChange={queryFilter.setDraftValue} placeholder="Goal, account, amount, health..." value={queryFilter.draftValue} />
           <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
         </div>
       </FilterForm>
@@ -109,8 +110,14 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       {filteredGoals.length === 0 ? (
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="target" />
-          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No savings goals yet</h2>
-          <p className="mt-1 text-sm text-[#45464d]">Create your first goal to track target amount, saved amount, and remaining progress.</p>
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">
+            {visibleGoals.length > 0 && search.trim() ? "No matching savings goals" : "No savings goals yet"}
+          </h2>
+          <p className="mt-1 text-sm text-[#45464d]">
+            {visibleGoals.length > 0 && search.trim()
+              ? "Change or reset the savings-goal search to see results."
+              : "Create your first goal to track target amount, saved amount, and remaining progress."}
+          </p>
         </section>
       ) : (
         <section className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-3">

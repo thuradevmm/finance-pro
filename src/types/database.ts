@@ -1724,6 +1724,17 @@ export type Database = {
         }
         Relationships: []
       }
+      v_monthly_financing_activity: {
+        Row: {
+          month: string | null
+          net_cashflow: number | null
+          total_payments: number | null
+          total_receipts: number | null
+          transaction_count: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       v_people_payment_summary: {
         Row: {
           created_at: string | null
@@ -1776,6 +1787,39 @@ export type Database = {
           net_amount: number | null
           total_expense: number | null
           total_income: number | null
+          transaction_count: number | null
+          user_id: string | null
+          year: string | null
+        }
+        Relationships: []
+      }
+      v_transaction_financial_effects: {
+        Row: {
+          category_id: string | null
+          financial_class: string | null
+          financing_payment_delta: number | null
+          financing_receipt_delta: number | null
+          operating_expense_delta: number | null
+          operating_income_delta: number | null
+          transaction_date: string | null
+          transaction_id: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_yearly_financing_activity: {
+        Row: {
+          net_cashflow: number | null
+          total_payments: number | null
+          total_receipts: number | null
           transaction_count: number | null
           user_id: string | null
           year: string | null

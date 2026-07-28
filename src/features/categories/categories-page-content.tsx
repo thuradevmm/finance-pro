@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { CategoryMergeDialog } from "@/features/categories/category-merge-dialog";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { normalizeTransactionDate } from "@/lib/transactions/filters";
 import type { CategoryType } from "@/types/finance";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
@@ -186,12 +187,16 @@ function CategoryListItem({
 }
 
 function CategoryFilters({
+  defaultDateFrom,
+  defaultDateTo,
   initialDateFrom,
   initialDateTo,
   initialSearch,
   initialStatus,
   onSearch,
 }: {
+  defaultDateFrom: string;
+  defaultDateTo: string;
   initialDateFrom: string;
   initialDateTo: string;
   initialSearch: string;
@@ -208,13 +213,20 @@ function CategoryFilters({
       className="mb-6 grid grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] lg:grid-cols-[minmax(12rem,1fr)_minmax(20rem,1.35fr)_minmax(11rem,0.45fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        onSearch(draftSearch, draftStatus, draftDateFrom, draftDateTo);
+        const formData = new FormData(event.currentTarget);
+        onSearch(
+          String(formData.get("q") ?? draftSearch),
+          String(formData.get("categoryStatus") ?? draftStatus),
+          String(formData.get("dateFrom") ?? draftDateFrom),
+          String(formData.get("dateTo") ?? draftDateTo),
+        );
       }}
     >
-      <TextInput label="Search Categories" onChange={setDraftSearch} placeholder="Name, type, scope, status..." value={draftSearch} />
+      <TextInput label="Search Categories" name="q" onChange={setDraftSearch} placeholder="Name, type, scope, status..." value={draftSearch} />
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         <TextInput
           label="Activity Date From"
+          name="dateFrom"
           onChange={(value) => {
             setDraftDateFrom(value);
             if (value && draftDateTo && value > draftDateTo) setDraftDateTo(value);
@@ -225,6 +237,7 @@ function CategoryFilters({
         />
         <TextInput
           label="Activity Date To"
+          name="dateTo"
           onChange={(value) => {
             setDraftDateTo(value);
             if (value && draftDateFrom && value < draftDateFrom) setDraftDateFrom(value);
@@ -234,8 +247,21 @@ function CategoryFilters({
           value={draftDateTo}
         />
       </div>
-      <SelectInput label="Status" onChange={setDraftStatus} options={["All statuses", "Active", "Hidden"]} value={draftStatus} />
-      <div className="flex items-end">
+      <SelectInput label="Status" name="categoryStatus" onChange={setDraftStatus} options={["All statuses", "Active", "Hidden"]} value={draftStatus} />
+      <div className="flex items-end gap-2">
+        <button
+          className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+          onClick={() => {
+            setDraftSearch("");
+            setDraftStatus("All statuses");
+            setDraftDateFrom(defaultDateFrom);
+            setDraftDateTo(defaultDateTo);
+            onSearch("", "All statuses", defaultDateFrom, defaultDateTo);
+          }}
+          type="button"
+        >
+          Reset
+        </button>
         <button className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]" type="submit">
           <Icon className="size-4" name="search" />
           Search
@@ -247,10 +273,14 @@ function CategoryFilters({
 
 export function CategoriesPageContent({
   categories,
+  defaultDateFrom,
+  defaultDateTo,
   initialDateFrom,
   initialDateTo,
 }: {
   categories: CategoryRecord[];
+  defaultDateFrom: string;
+  defaultDateTo: string;
   initialDateFrom: string;
   initialDateTo: string;
 }) {
@@ -264,7 +294,8 @@ export function CategoriesPageContent({
   const filtersRestored = useRef(false);
   const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
   const search = searchParams.get("q") ?? "";
-  const status = searchParams.get("categoryStatus") ?? "All statuses";
+  const requestedStatus = searchParams.get("categoryStatus") ?? "All statuses";
+  const status = ["All statuses", "Active", "Hidden"].includes(requestedStatus) ? requestedStatus : "All statuses";
   const dateFrom = searchParams.get("dateFrom") ?? initialDateFrom;
   const dateTo = searchParams.get("dateTo") ?? initialDateTo;
   const filteredCategories = useMemo(() => {
@@ -275,24 +306,32 @@ export function CategoriesPageContent({
       return category.type === activeType && matchesStatus && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [activeType, search, status, visibleCategories]);
+  const hasCategoriesForActiveType = visibleCategories.some((category) => category.type === activeType);
+  const hasActiveCategoryFilters = Boolean(search.trim() || status !== "All statuses");
 
   function applyFilters(nextSearch: string, nextStatus: string, nextDateFrom: string, nextDateTo: string) {
+    const normalizedStatus = ["All statuses", "Active", "Hidden"].includes(nextStatus) ? nextStatus : "All statuses";
+    const normalizedDateFrom = nextDateFrom.trim() === "" ? "" : normalizeTransactionDate(nextDateFrom) || defaultDateFrom;
+    const normalizedDateTo = nextDateTo.trim() === "" ? "" : normalizeTransactionDate(nextDateTo) || defaultDateTo;
+    const datesAreReversed = Boolean(normalizedDateFrom && normalizedDateTo && normalizedDateFrom > normalizedDateTo);
+    const safeDateFrom = datesAreReversed ? normalizedDateTo : normalizedDateFrom;
+    const safeDateTo = datesAreReversed ? normalizedDateFrom : normalizedDateTo;
     const params = new URLSearchParams(searchParams.toString());
     if (nextSearch.trim()) params.set("q", nextSearch.trim());
     else params.delete("q");
-    if (nextStatus !== "All statuses") params.set("categoryStatus", nextStatus);
+    if (normalizedStatus !== "All statuses") params.set("categoryStatus", normalizedStatus);
     else params.delete("categoryStatus");
-    if (nextDateFrom) params.set("dateFrom", nextDateFrom);
+    if (safeDateFrom && safeDateFrom !== defaultDateFrom) params.set("dateFrom", safeDateFrom);
     else params.delete("dateFrom");
-    if (nextDateTo) params.set("dateTo", nextDateTo);
+    if (safeDateTo && safeDateTo !== defaultDateTo) params.set("dateTo", safeDateTo);
     else params.delete("dateTo");
     const query = params.toString();
     window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({
       activeTab,
-      dateFrom: nextDateFrom,
-      dateTo: nextDateTo,
+      dateFrom: safeDateFrom,
+      dateTo: safeDateTo,
       search: nextSearch.trim(),
-      status: nextStatus,
+      status: normalizedStatus,
     }));
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
@@ -379,6 +418,8 @@ export function CategoriesPageContent({
   return (
     <>
       <CategoryFilters
+        defaultDateFrom={defaultDateFrom}
+        defaultDateTo={defaultDateTo}
         initialDateFrom={dateFrom}
         initialDateTo={dateTo}
         initialSearch={search}
@@ -396,9 +437,15 @@ export function CategoriesPageContent({
       {filteredCategories.length === 0 ? (
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="category" />
-          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No {activeType.toLowerCase()} categories yet</h2>
-          <p className="mt-1 text-sm text-[#45464d]">Create categories that match how you manage your finances.</p>
-          <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/categories/add">Add Category</Link>
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">
+            {hasCategoriesForActiveType && hasActiveCategoryFilters ? "No matching categories" : `No ${activeType.toLowerCase()} categories yet`}
+          </h2>
+          <p className="mt-1 text-sm text-[#45464d]">
+            {hasCategoriesForActiveType && hasActiveCategoryFilters
+              ? "Change or reset the category filters to see results."
+              : "Create categories that match how you manage your finances."}
+          </p>
+          {!hasCategoriesForActiveType ? <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/categories/add">Add Category</Link> : null}
         </section>
       ) : null}
 

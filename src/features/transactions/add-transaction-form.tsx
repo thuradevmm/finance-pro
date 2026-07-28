@@ -280,7 +280,14 @@ export function AddTransactionForm({
       startDate: payoff.startDate,
     });
   }, [effectiveRelatedOption, transactionDate]);
-  const debtPayoffQuote = debtPayoffSummary?.currentQuote;
+  const debtPayoffQuote = effectiveRelatedOption?.oneTimeDebtPayoff
+    ? {
+      accruedInterestAmount: 0,
+      asOfDate: effectiveRelatedOption.oneTimeDebtPayoff.dueDate || transactionDate,
+      payoffAmount: effectiveRelatedOption.oneTimeDebtPayoff.amount,
+      principalOutstandingAmount: effectiveRelatedOption.oneTimeDebtPayoff.amount,
+    }
+    : debtPayoffSummary?.currentQuote;
   const subscriptionPayment = effectiveRelatedOption?.subscriptionPayment;
   const subscriptionPaymentKey = subscriptionPayment ? `${effectiveRelatedOption?.type}:${effectiveRelatedOption?.value}` : "";
   const subscriptionBilledAmount = subscriptionPayment && subscriptionPaymentDraft.key === subscriptionPaymentKey
@@ -351,6 +358,10 @@ export function AddTransactionForm({
     if (nextOption.type === "budget") {
       setSelectedType("Expense");
       setCategoryId(nextOption.categoryId ?? "");
+    } else if (nextOption.type === "debt" && nextOption.debtRepaymentType) {
+      setSelectedType(nextOption.debtRepaymentType);
+      const nextCategories = getCategoriesForScope(categories, "Transactions", nextOption.debtRepaymentType);
+      setCategoryId(nextCategories[0]?.id ?? "");
     }
   }
 

@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { dateTimeSortValue } from "@/lib/date-format";
 import type { SubscriptionPaymentStatus, SubscriptionRecord, SubscriptionStatus, UpcomingSubscriptionBilling } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
+import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 
 const statusStyles: Record<SubscriptionStatus, string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
@@ -467,10 +468,10 @@ export function SubscriptionsPageContent({
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        queryFilter.apply();
+        queryFilter.apply(readSubmittedQuery(new FormData(event.currentTarget), queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <SearchField label="Search subscriptions" onChange={queryFilter.setDraftValue} placeholder="Name, billing, payment, reminder, status..." value={queryFilter.draftValue} />
+          <SearchField label="Search subscriptions" name="q" onChange={queryFilter.setDraftValue} placeholder="Name, billing, payment, reminder, status..." value={queryFilter.draftValue} />
           <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
         </div>
       </FilterForm>

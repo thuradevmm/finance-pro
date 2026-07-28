@@ -67,3 +67,19 @@ test("manual card overpayment remains credit for a later charge", () => {
   assert.equal(opening + ledger.charges, -300);
   assert.equal(Math.max(1_000 + ledger.charges - 1_500, 0), 0);
 });
+
+test("lending records use posted income as returned money", () => {
+  const lending = {
+    id: "dad",
+    metadata: { debt_nature: "lending" },
+    name: "Lending Dad",
+    type: "Personal Loan",
+  };
+  const ledger = debtTransactionLedgerFor([
+    { amount: 300, related_entity_id: "dad", related_entity_type: "debt", status: "cleared", transaction_date: "2026-08-30", type: "income" },
+    { amount: 200, related_entity_id: "dad", related_entity_type: "debt", status: "cleared", transaction_date: "2026-08-30", type: "expense" },
+  ], lending);
+
+  assert.equal(ledger.repayments, 300);
+  assert.deepEqual(ledger.repaymentActivity, [{ amountValue: 300, dateValue: "2026-08-30" }]);
+});

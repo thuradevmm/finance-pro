@@ -10,6 +10,8 @@ import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { SYSTEM_CURRENCY, formatMmk } from "@/lib/currency";
 import { calculateDebtPayoffSummary, type DebtDatedRepayment, type DebtInterestRatePeriod } from "@/lib/debts/emi";
+import { creditCardDebtName } from "@/lib/debts/naming";
+import { normalizeDebtNature, normalizeDebtRepaymentFrequency } from "@/lib/debts/nature";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import {
@@ -77,6 +79,7 @@ type DebtRow = {
   interest_rate?: number | string | null;
   metadata: unknown;
   monthly_payment?: number | string | null;
+  name?: string | null;
   next_payment_date?: string | null;
   payment_account_id: string | null;
   repaid_amount?: number | string | null;
@@ -141,6 +144,7 @@ type RelatedReferenceRow = {
   account_id?: string | null;
   id: string;
   metadata: unknown;
+  name?: string | null;
   payment_account_id?: string | null;
   status?: string | null;
   type?: string | null;
@@ -471,7 +475,7 @@ async function validateAndResolveTransactionReferences(
   let savingsGoalRecord: SavingsGoalReferenceRow | null = null;
   let relatedError: { message: string } | null = null;
   if (input.relatedEntityType === "debt") {
-    const result = await supabase.from("debts").select("id,status,metadata,type,payment_account_id").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await supabase.from("debts").select("id,name,status,metadata,type,payment_account_id").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
     relatedRecord = result.data as RelatedReferenceRow | null;
     relatedError = result.error;
   } else if (input.relatedEntityType === "savings_goal") {
@@ -506,15 +510,19 @@ async function validateAndResolveTransactionReferences(
   if (input.relatedEntityType === "savings_goal" && input.type === "Transfer" && input.transferAccountId !== relatedRecord.account_id) {
     return { error: "A savings-goal transfer must move money into the account assigned to that goal.", input };
   }
-  if (input.relatedEntityType === "debt" && input.type === "Income") {
+  if (input.relatedEntityType === "debt") {
     const relatedMetadata = metadataRecord(relatedRecord.metadata);
+    const debtNature = normalizeDebtNature(relatedMetadata.debt_nature, relatedRecord.name ?? "");
     const cardAccountId = typeof relatedMetadata.credit_card_account_id === "string"
       ? relatedMetadata.credit_card_account_id
       : typeof relatedMetadata.auto_credit_card_account_id === "string"
         ? relatedMetadata.auto_credit_card_account_id
         : relatedRecord.payment_account_id;
     const isCardDebt = normalizeDebtType(relatedRecord.type ?? relatedMetadata.type) === "creditcard";
-    if (!isCardDebt || input.accountId !== cardAccountId) {
+    if (debtNature === "Lending" && input.type !== "Income") {
+      return { error: "Money returned for a lending record must be recorded as Income.", input };
+    }
+    if (debtNature !== "Lending" && input.type === "Income" && (!isCardDebt || input.accountId !== cardAccountId)) {
       return { error: "Income can only link to a credit card debt when it is a credit posted directly to that card account.", input };
     }
   }
@@ -1098,7 +1106,7 @@ async function reconcileStandardDebt(
 
   const { data: debtData, error: debtError } = await supabase
     .from("debts")
-    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata,type,interest_rate,start_date,next_payment_date,monthly_payment")
+    .select("id,name,status,payment_account_id,total_amount,repaid_amount,metadata,type,interest_rate,start_date,next_payment_date,monthly_payment")
     .eq("id", debtId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -1119,6 +1127,40 @@ async function reconcileStandardDebt(
   if (repaymentsResult.error) return repaymentsResult.error;
 
   const payoffDate = metadataString(metadata, "payoff_date");
+  if (normalizeDebtRepaymentFrequency(metadata.repayment_frequency) === "One-time") {
+    const grossPaid = roundCurrencyValue(
+      resolveDebtStoredNumber(debt.repaid_amount, metadata.repaid_amount)
+      + repaymentsResult.repayments.reduce((sum, repayment) => sum + repayment.amountValue, 0),
+    );
+    const remainingPrincipal = roundCurrencyValue(Math.max(principal - grossPaid, 0));
+    const paidAt = remainingPrincipal <= 0.005
+      ? repaymentsResult.repayments.at(-1)?.dateValue || metadataString(metadata, "paid_at").slice(0, 10) || formatDateInput(new Date())
+      : "";
+    const nextStatus = calculateDebtStatus({
+      dueDate: debt.next_payment_date ?? (metadataString(metadata, "next_payment_date") || payoffDate),
+      remainingAmount: remainingPrincipal,
+      storedStatus: debtStatusKey(debt),
+    }).toLowerCase();
+    const { error } = await supabase
+      .from("debts")
+      .update({
+        metadata: {
+          ...metadata,
+          last_debt_reconciled_at: new Date().toISOString(),
+          paid_at: paidAt ? `${paidAt}T00:00:00.000Z` : null,
+          principal_paid: Math.min(grossPaid, principal),
+          remaining_principal: remainingPrincipal,
+          status: nextStatus,
+        },
+        monthly_payment: remainingPrincipal <= 0.005 ? 0 : remainingPrincipal,
+        next_payment_date: remainingPrincipal <= 0.005 ? null : debt.next_payment_date ?? (payoffDate || null),
+        status: nextStatus,
+      })
+      .eq("id", debtId)
+      .eq("user_id", userId);
+    return error?.message ?? null;
+  }
+
   const durationMonths = Math.max(numericValue(metadata.duration_months, wholeMonthsBetween(startDate, payoffDate)), 0);
   const currentStatus = debtStatusKey(debt);
   const settledAt = metadataString(metadata, "early_payoff_date") || metadataString(metadata, "paid_at").slice(0, 10);
@@ -1382,7 +1424,7 @@ async function findCreditCardDebtId(
       ...(creditLimit > 0 ? { credit_limit: creditLimit } : {}),
     },
     monthly_payment: monthlyPayment,
-    name: `${account.name ?? "Credit Card"} Credit Card Debt`,
+    name: creditCardDebtName(account.name),
     next_payment_date: nextPaymentDateValue,
     payment_account_id: account.id,
     repaid_amount: 0,

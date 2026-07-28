@@ -12,9 +12,8 @@ import {
   deriveCreditCardDebtMetadata,
   isCreditCardPayment,
   ledgerRelevantMetadata,
-  summarizeLedgerTransactions,
+  summarizeTransactionCards,
 } from "@/lib/ledger";
-import { effectiveTransferVolume } from "@/lib/transactions/summary";
 import { normalizeTransactionStatus, transactionStatusFilterLabels, transactionStatusIsFinalized } from "@/lib/transactions/status";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
@@ -76,7 +75,12 @@ export type TransactionRelatedOption = {
     startDate: string;
     totalAmount: number;
   };
+  debtRepaymentType?: "Expense" | "Income";
   label: string;
+  oneTimeDebtPayoff?: {
+    amount: number;
+    dueDate: string;
+  };
   subscriptionPayment?: {
     amount: number;
     billedAmount: number;
@@ -395,23 +399,25 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
   };
 }
 
-export function getTransactionSummaries(transactions: TransactionRecord[]): SummaryMetric[] {
-  const { expenses, income, net } = summarizeLedgerTransactions(
-    transactions.map((transaction) => ({
+export function getTransactionSummaryValues(transactions: TransactionRecord[]) {
+  const ledgerTransactions = transactions.map((transaction) => ({
       account_id: transaction.accountId || null,
       amount: transaction.amountValue ?? 0,
       metadata: transaction.ledgerMetadata,
+      related_entity_id: transaction.relatedEntityId || null,
+      related_entity_type: transaction.relatedEntityType || null,
       status: transaction.status,
       transfer_account_id: transaction.transferAccountId || null,
       type: transaction.type.toLowerCase(),
-    })),
-  );
+  }));
+  return summarizeTransactionCards(ledgerTransactions);
+}
 
-  const transfers = effectiveTransferVolume(transactions);
+export function getTransactionSummaries(transactions: TransactionRecord[]): SummaryMetric[] {
+  const { expenses, income, net } = getTransactionSummaryValues(transactions);
   return [
     { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Transfers", value: formatMmk(transfers), icon: "sync", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
     { label: "Net", value: formatMmk(net), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
   ];
 }

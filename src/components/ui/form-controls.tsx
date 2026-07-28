@@ -21,6 +21,7 @@ export function TextInput({
   error,
   id,
   label,
+  name,
   onChange,
   placeholder,
   value,
@@ -29,6 +30,7 @@ export function TextInput({
   error?: boolean;
   id?: string;
   label: string;
+  name?: string;
   onChange?: (value: string) => void;
   placeholder: string;
   value?: string;
@@ -43,12 +45,13 @@ export function TextInput({
     <div className="min-w-0">
       <FieldLabel htmlFor={inputId}>{label}</FieldLabel>
       {isDate ? (
-        <DateInput error={error} id={inputId} label={label} onChange={onChange} placeholder={placeholder} value={value} />
+        <DateInput error={error} id={inputId} label={label} name={name} onChange={onChange} placeholder={placeholder} value={value} />
       ) : (
         <input
           aria-invalid={error}
           className={`h-12 w-full rounded-lg border bg-white px-4 text-sm font-medium text-[#0b1c30] outline-none transition placeholder:text-[#6b7280] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${error ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
           inputMode={isAmount ? "decimal" : undefined}
+          name={name}
           onChange={(event) => onChange?.(isAmount ? cleanAmountInputValue(event.target.value) : event.target.value)}
           onWheel={type === "number" ? (event) => event.currentTarget.blur() : undefined}
           id={inputId}
@@ -64,12 +67,14 @@ export function TextInput({
 export function SelectInput({
   id,
   label,
+  name,
   onChange,
   options,
   value,
 }: {
   id?: string;
   label: string;
+  name?: string;
   onChange?: (value: string) => void;
   options: string[];
   value?: string;
@@ -84,6 +89,7 @@ export function SelectInput({
         <select
           className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
           id={inputId}
+          name={name}
           onChange={(event) => onChange?.(event.target.value)}
           value={value}
         >

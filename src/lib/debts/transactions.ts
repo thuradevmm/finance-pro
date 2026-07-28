@@ -1,4 +1,5 @@
 import { transactionStatusIsFinalized } from "../transactions/status.ts";
+import { normalizeDebtNature } from "./nature.ts";
 
 function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
@@ -27,6 +28,7 @@ function transferDirection(metadata: Record<string, unknown>) {
 export type DebtLedgerDebtInput = {
   id: string;
   metadata?: unknown;
+  name?: string | null;
   payment_account_id?: string | null;
   repaid_amount?: number | string | null;
   total_amount?: number | string | null;
@@ -222,10 +224,14 @@ function creditCardImpact(transaction: DebtLedgerTransactionInput, debtId: strin
   return "";
 }
 
-function standardDebtImpact(transaction: DebtLedgerTransactionInput) {
+function standardDebtImpact(transaction: DebtLedgerTransactionInput, debt: DebtLedgerDebtInput) {
   const type = String(transaction.type ?? "").toLowerCase();
-  const direction = transferDirection(metadataRecord(transaction.metadata));
+  const metadata = metadataRecord(transaction.metadata);
+  if (metadata.standalone_debt_payment === true) return "repayment";
+  const direction = transferDirection(metadata);
   if (type === "transfer" && direction === "credit") return "";
+  const nature = normalizeDebtNature(metadataRecord(debt.metadata).debt_nature, debt.name ?? "");
+  if (nature === "Lending") return type === "income" ? "repayment" : "";
   if (type === "expense" || type === "transfer") return "repayment";
   return "";
 }
@@ -274,7 +280,7 @@ export function buildDebtTransactionLedgers(
       if (debt) {
         const impact = isCreditCardDebtInput(debt)
           ? creditCardImpact(transaction, debt.id, creditCardAccountIdForDebt(debt))
-          : standardDebtImpact(transaction);
+          : standardDebtImpact(transaction, debt);
         applyImpact(ledgerFor(debt.id), impact, transaction);
       }
     }

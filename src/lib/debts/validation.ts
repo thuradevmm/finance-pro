@@ -6,6 +6,7 @@ export type ValidatableDebtInput = {
   monthlyPayment: number;
   name: string;
   nextPaymentDate: string;
+  repaymentFrequency?: "Monthly" | "One-time";
   payoffDate: string;
   repaidAmount: number;
   startDate: string;
@@ -33,7 +34,7 @@ export function validateDebtInput(input: ValidatableDebtInput) {
   if (!Number.isFinite(input.repaidAmount) || input.repaidAmount < 0) return "Repaid amount cannot be negative.";
   if (!Number.isFinite(input.interestRate) || input.interestRate < 0) return "Interest rate cannot be negative.";
   if (!Number.isFinite(input.monthlyPayment) || input.monthlyPayment < 0) return "Monthly payment cannot be negative.";
-  if (!Number.isInteger(input.durationMonths) || input.durationMonths <= 0) return "Duration must be a whole number greater than zero.";
+  if (input.repaymentFrequency !== "One-time" && (!Number.isInteger(input.durationMonths) || input.durationMonths <= 0)) return "Duration must be a whole number greater than zero.";
   if (!validDateInput(input.startDate)) return "Choose a valid debt start date.";
   if (input.nextPaymentDate && !validDateInput(input.nextPaymentDate)) return "Choose a valid next payment date.";
   if (input.payoffDate && !validDateInput(input.payoffDate)) return "Choose a valid payoff date.";

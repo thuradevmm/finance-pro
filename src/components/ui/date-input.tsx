@@ -9,6 +9,7 @@ type DateInputProps = {
   error?: boolean;
   id?: string;
   label: string;
+  name?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
   readOnly?: boolean;
@@ -45,6 +46,7 @@ export function DateInput({
   error,
   id,
   label,
+  name,
   onChange,
   placeholder = "",
   readOnly = false,
@@ -79,6 +81,7 @@ export function DateInput({
         aria-label={label}
         className={`absolute inset-0 z-10 h-full w-full opacity-0 ${readOnly ? "cursor-default" : "cursor-pointer"}`}
         id={inputId}
+        name={name}
         onChange={(event) => onChange?.(event.target.value)}
         readOnly={readOnly}
         type="date"

@@ -55,7 +55,9 @@ test("account retirement is distinct from deletion in actions and every record a
 test("accounts default to Lookup and only apply draft filters on Search submit", () => {
   assert.match(accountPage, /viewParam === "Card" \|\| viewParam === "List" \? viewParam : "Lookup"/);
   assert.match(accountPage, /options=\{\["Lookup", "List", "Card"\]\}/);
-  assert.match(accountPage, /onSubmit=\{\(event\) => \{\s*event\.preventDefault\(\);\s*onSearch\(draft\);/s);
+  assert.match(accountPage, /onSubmit=\{\(event\) => \{\s*event\.preventDefault\(\);\s*const formData = new FormData\(event\.currentTarget\);/s);
+  assert.match(accountPage, /name="accountCategory"/);
+  assert.match(accountPage, /onSearch\(\{\s*accountCategory:/s);
   assert.match(accountPage, />\s*Search\s*<\/button>/s);
 });
 

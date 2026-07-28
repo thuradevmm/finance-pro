@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607240001",
+  "sealedThrough": "202607280003",
   "migrations": [
     {
       "version": "202606180001",
@@ -151,6 +151,21 @@
       "version": "202607240001",
       "file": "202607240001_standard_debt_first_repayment_alignment.sql",
       "sha256": "98350b2ecae6a1c01343b4020083dabef5297b70a7a96540330c4631a5247352"
+    },
+    {
+      "version": "202607280001",
+      "file": "202607280001_debt_lending_one_time_and_dashboard_cashflow.sql",
+      "sha256": "3d813d38ca480a2b0ffe9e951bedb7c7a4d074165159bff53fb7232b922e56d6"
+    },
+    {
+      "version": "202607280002",
+      "file": "202607280002_legacy_lending_name_inference_correction.sql",
+      "sha256": "5cd97d455bbc268072a156bf421085a8a44aba04e141695c18dbfaca2a9e87e2"
+    },
+    {
+      "version": "202607280003",
+      "file": "202607280003_standard_financial_event_reconciliation.sql",
+      "sha256": "a2cd0adae0ae90d2681747e719832bd42605403b1864839d7d6b02999205018b"
     }
   ],
   "historyRepairs": [

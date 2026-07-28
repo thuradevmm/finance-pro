@@ -263,6 +263,8 @@ export async function getFuturePlanningData(
     const delta = economicTransactionDelta({
       amount: transaction.amountValue,
       metadata: transaction.ledgerMetadata,
+      related_entity_id: transaction.relatedEntityId || null,
+      related_entity_type: transaction.relatedEntityType || null,
       status: transaction.status,
       type: transaction.type,
     });
@@ -360,6 +362,8 @@ export async function getManualFuturePlanningData(
     const delta = economicTransactionDelta({
       amount: transaction.amountValue,
       metadata: transaction.ledgerMetadata,
+      related_entity_id: transaction.relatedEntityId || null,
+      related_entity_type: transaction.relatedEntityType || null,
       status: transaction.status,
       type: transaction.type,
     });

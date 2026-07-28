@@ -46,6 +46,16 @@ export type EconomicTransactionDelta = {
   incomeDelta: number;
 };
 
+export type FinancingTransactionDelta = {
+  paymentDelta: number;
+  receiptDelta: number;
+};
+
+export type TransactionCardSummary = LedgerSummary & {
+  financingPayments: number;
+  financingReceipts: number;
+};
+
 export type FinancialPositionSummary = {
   cardCredit: number;
   cardLiability: number;
@@ -207,11 +217,68 @@ export function reversedTransactionType(transaction: Pick<LedgerTransactionInput
   return "";
 }
 
+function debtFinancingMovement(transaction: LedgerTransactionInput, metadata: Record<string, unknown>) {
+  if (isCreditCardPayment(metadata) || metadata.reversed_credit_card_payment === true) return true;
+  if (String(transaction.related_entity_type ?? "").trim().toLowerCase() !== "debt" || !transaction.related_entity_id) return false;
+
+  const primaryDebtId = transaction.related_entity_id;
+  const creditDebtId = typeof metadata.credit_card_debt_id === "string" ? metadata.credit_card_debt_id : "";
+  // Paying a standard debt with a credit card has a primary standard-debt
+  // settlement plus a secondary card charge. It remains financing activity.
+  if (creditDebtId && creditDebtId !== primaryDebtId) return true;
+
+  const impact = creditCardDebtImpact(metadata);
+  if (impact === "charge") return false;
+  // A purchase reversal stores the inverse card impact ("repayment"), but it
+  // reverses operating spending rather than representing a card settlement.
+  if (
+    reversedTransactionType(transaction) === "expense"
+    && metadata.financial_event === "credit_card_activity_reversal"
+    && metadata.reversed_credit_card_payment !== true
+  ) return false;
+  return true;
+}
+
+/**
+ * Separates liability/receivable movements from operating income and expense.
+ * Positive values are posted financing activity; reversals subtract from the
+ * original bucket. This works for current metadata and legacy debt links that
+ * only persisted related_entity_type/id.
+ */
+export function financingTransactionDelta(transaction: LedgerTransactionInput): FinancingTransactionDelta {
+  const empty = { paymentDelta: 0, receiptDelta: 0 };
+  if (!transactionStatusIsFinalized(transaction.status)) return empty;
+
+  const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
+  if (amount <= 0) return empty;
+
+  const metadata = metadataRecord(transaction.metadata);
+  if (!debtFinancingMovement(transaction, metadata)) return empty;
+
+  const reversalType = reversedTransactionType(transaction);
+  if (reversalType === "expense") return { paymentDelta: -amount, receiptDelta: 0 };
+  if (reversalType === "transfer") {
+    return transferDirection(metadata) === "credit" ? empty : { paymentDelta: -amount, receiptDelta: 0 };
+  }
+  if (reversalType === "income") return { paymentDelta: 0, receiptDelta: -amount };
+  if (reversalType) return empty;
+
+  const transactionType = String(transaction.type ?? "").trim().toLowerCase();
+  if (transactionType === "transfer") {
+    // Paired transfers copy the related record to both rows. Only the debit
+    // half is the principal payment; counting the credit half would double it.
+    return transferDirection(metadata) === "credit" ? empty : { paymentDelta: amount, receiptDelta: 0 };
+  }
+  if (transactionType === "expense") return { paymentDelta: amount, receiptDelta: 0 };
+  if (transactionType === "income") return { paymentDelta: 0, receiptDelta: amount };
+  return empty;
+}
+
 /**
  * Returns signed economic income and expense deltas for reports, categories,
  * budgets, and forecasts. Reversal rows reduce the original economic bucket;
- * credit-card settlements are liability movements and therefore contribute to
- * neither income nor spending.
+ * debt/card settlements and receivable returns are financing movements and
+ * therefore contribute to neither operating income nor spending.
  */
 export function economicTransactionDelta(transaction: LedgerTransactionInput): EconomicTransactionDelta {
   const empty = { expenseDelta: 0, incomeDelta: 0 };
@@ -220,9 +287,9 @@ export function economicTransactionDelta(transaction: LedgerTransactionInput): E
   const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
   if (amount <= 0) return empty;
 
-  const metadata = metadataRecord(transaction.metadata);
   const reversalType = reversedTransactionType(transaction);
-  if (isCreditCardPayment(metadata) || (reversalType && metadata.reversed_credit_card_payment === true)) return empty;
+  const financing = financingTransactionDelta(transaction);
+  if (financing.paymentDelta !== 0 || financing.receiptDelta !== 0) return empty;
 
   if (reversalType === "expense") return { expenseDelta: -amount, incomeDelta: 0 };
   if (reversalType === "income") return { expenseDelta: 0, incomeDelta: -amount };
@@ -232,6 +299,27 @@ export function economicTransactionDelta(transaction: LedgerTransactionInput): E
   if (transactionType === "expense") return { expenseDelta: amount, incomeDelta: 0 };
   if (transactionType === "income") return { expenseDelta: 0, incomeDelta: amount };
   return empty;
+}
+
+/**
+ * Returns literal posted transaction-type totals for the Transactions page.
+ * Every finalized Income or Expense row contributes to its displayed type,
+ * including debt/card activity. A reversal subtracts from the original type.
+ */
+export function cashflowTransactionDelta(transaction: LedgerTransactionInput): EconomicTransactionDelta {
+  if (!transactionStatusIsFinalized(transaction.status)) return { expenseDelta: 0, incomeDelta: 0 };
+  const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
+  if (amount <= 0) return { expenseDelta: 0, incomeDelta: 0 };
+
+  const reversalType = reversedTransactionType(transaction);
+  if (reversalType === "expense") return { expenseDelta: -amount, incomeDelta: 0 };
+  if (reversalType === "income") return { expenseDelta: 0, incomeDelta: -amount };
+  if (reversalType) return { expenseDelta: 0, incomeDelta: 0 };
+
+  const transactionType = String(transaction.type ?? "").trim().toLowerCase();
+  if (transactionType === "expense") return { expenseDelta: amount, incomeDelta: 0 };
+  if (transactionType === "income") return { expenseDelta: 0, incomeDelta: amount };
+  return { expenseDelta: 0, incomeDelta: 0 };
 }
 
 /**
@@ -480,4 +568,44 @@ export function summarizeLedgerTransactions(
   }
 
   return summary;
+}
+
+export function summarizeCashflowTransactions(
+  transactions: LedgerTransactionInput[],
+): LedgerSummary {
+  const summary: LedgerSummary = { expenses: 0, income: 0, net: 0 };
+
+  for (const transaction of transactions) {
+    const delta = cashflowTransactionDelta(transaction);
+    summary.expenses = roundCurrencyValue(summary.expenses + delta.expenseDelta);
+    summary.income = roundCurrencyValue(summary.income + delta.incomeDelta);
+    summary.net = roundCurrencyValue(summary.income - summary.expenses);
+  }
+
+  return summary;
+}
+
+/**
+ * Transaction cards show literal Income and Expense transaction-type totals.
+ * Financing detail remains available to reconciliation consumers, while the
+ * displayed arithmetic invariant is always Net = Income - Expenses.
+ */
+export function summarizeTransactionCards(
+  transactions: LedgerTransactionInput[],
+): TransactionCardSummary {
+  const typeTotals = summarizeCashflowTransactions(transactions);
+  let financingPayments = 0;
+  let financingReceipts = 0;
+  for (const transaction of transactions) {
+    const financing = financingTransactionDelta(transaction);
+    financingPayments = roundCurrencyValue(financingPayments + financing.paymentDelta);
+    financingReceipts = roundCurrencyValue(financingReceipts + financing.receiptDelta);
+  }
+  return {
+    expenses: typeTotals.expenses,
+    financingPayments,
+    financingReceipts,
+    income: typeTotals.income,
+    net: roundCurrencyValue(typeTotals.income - typeTotals.expenses),
+  };
 }

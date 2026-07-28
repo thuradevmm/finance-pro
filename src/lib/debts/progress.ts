@@ -12,5 +12,6 @@ export function calculateDebtProgressPercent(repaidAmount: number, amountOwed: n
   if (total <= 0) return 0;
 
   const repaid = finiteAmount(repaidAmount);
-  return Math.min(Math.round((repaid / total) * 100), 100);
+  if (total - repaid <= 0.005) return 100;
+  return Math.min(Math.round((repaid / total) * 100), 99);
 }

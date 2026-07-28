@@ -17,6 +17,7 @@ import { formatMmk } from "@/lib/currency";
 import { getBudgetSummaries, type BudgetRecord } from "@/lib/budgets/supabase";
 import type { BudgetCategory, BudgetPeriod, BudgetStatus } from "@/types/finance";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
+import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 
 const periods: BudgetPeriod[] = ["Monthly", "Yearly"];
 type BudgetSortKey = "actual" | "budget" | "category" | "remaining" | "status" | "usage";
@@ -376,10 +377,10 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
       <SummaryCards summaries={summaries} />
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
         event.preventDefault();
-        queryFilter.apply();
+        queryFilter.apply(readSubmittedQuery(new FormData(event.currentTarget), queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <SearchField label="Search budgets" onChange={queryFilter.setDraftValue} placeholder="Category, lifecycle, usage status..." value={queryFilter.draftValue} />
+          <SearchField label="Search budgets" name="q" onChange={queryFilter.setDraftValue} placeholder="Category, lifecycle, usage status..." value={queryFilter.draftValue} />
           <FilterActions isPending={queryFilter.isPending} onReset={queryFilter.reset} />
         </div>
       </FilterForm>
@@ -388,9 +389,15 @@ export function BudgetsPageContent({ budgets }: { budgets: BudgetRecord[] }) {
       {filteredBudgets.length > 0 ? <BudgetBreakdownTable budgets={filteredBudgets} onDelete={handleDelete} /> : (
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="savings" />
-          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">No {activePeriod.toLowerCase()} budgets yet</h2>
-          <p className="mt-1 text-sm text-[#45464d]">Create a budget to start tracking spending limits.</p>
-          <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/budgets/add">Create Budget</Link>
+          <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">
+            {periodBudgets.length > 0 && search.trim() ? "No matching budgets" : `No ${activePeriod.toLowerCase()} budgets yet`}
+          </h2>
+          <p className="mt-1 text-sm text-[#45464d]">
+            {periodBudgets.length > 0 && search.trim()
+              ? "Change or reset the budget search to see results."
+              : "Create a budget to start tracking spending limits."}
+          </p>
+          {periodBudgets.length === 0 ? <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/budgets/add">Create Budget</Link> : null}
         </section>
       )}
     </>

@@ -3,12 +3,13 @@ import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import type { SummaryMetric } from "@/types/finance";
 
 type SummaryCardsProps = {
+  columns?: 3 | 4;
   summaries: SummaryMetric[];
 };
 
-export function SummaryCards({ summaries }: SummaryCardsProps) {
+export function SummaryCards({ columns = 4, summaries }: SummaryCardsProps) {
   return (
-    <section className="mb-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section className={`mb-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 ${columns === 3 ? "md:grid-cols-3" : "xl:grid-cols-4"}`}>
       {summaries.map((summary) => (
         <div className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white px-4 py-3 shadow-sm" key={summary.label}>
           <div className="flex items-start justify-between gap-3">

@@ -20,6 +20,8 @@ import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOption
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
+import type { DebtNature, DebtRepaymentFrequency } from "@/lib/debts/nature";
+import { calculateDebtProgressPercent } from "@/lib/debts/progress";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { isCreditCardDebtType } from "@/lib/debts/validation";
@@ -34,6 +36,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const beginLoading = useInteractionLoading();
   const nextPaymentDateInputId = useId();
   const [name, setName] = useState(debt?.name ?? "");
+  const [nature, setNature] = useState<DebtNature>(debt?.nature ?? "Borrowing");
   const [lender, setLender] = useState(debt?.lender ?? "");
   const [totalAmount, setTotalAmount] = useState(debt ? String(debt.totalAmountValue) : "");
   const [repaidAmount, setRepaidAmount] = useState(debt ? String(debt.grossRepaidAmountValue) : "");
@@ -41,6 +44,12 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const [interestRatePeriod, setInterestRatePeriod] = useState<DebtInterestRatePeriod>(debt?.interestRatePeriod ?? "Yearly");
   const [startDate, setStartDate] = useState(debt?.startDate ?? "2026-06-01");
   const [durationMonths, setDurationMonths] = useState(debt?.durationMonths ? String(debt.durationMonths) : "12");
+  const [repaymentFrequency, setRepaymentFrequency] = useState<DebtRepaymentFrequency>(debt?.repaymentFrequency ?? "Monthly");
+  const [oneTimeRepaymentDate, setOneTimeRepaymentDate] = useState(
+    debt?.repaymentFrequency === "One-time"
+      ? debt.nextPaymentDateValue || debt.payoffDate
+      : "",
+  );
   const debtCategories = useMemo(() => getCategoriesForScope(categories, "Debts", "Debt"), [categories]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(debt?.categoryId ?? (!debt ? debtCategories[0]?.id ?? "" : ""));
   const selectedCategory = debtCategories.find((category) => category.id === selectedCategoryId)
@@ -52,6 +61,9 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
     accountStatusContributesToCurrentTotals(account.status) || account.id === debt?.paymentAccountId
   )), [accounts, debt?.paymentAccountId]);
   const semanticIsCreditCard = debt?.isCreditCardDebt ?? isCreditCardDebtType(selectedCategory?.name);
+  const effectiveNature: DebtNature = semanticIsCreditCard ? "Borrowing" : nature;
+  const effectiveRepaymentFrequency: DebtRepaymentFrequency = semanticIsCreditCard ? "Monthly" : repaymentFrequency;
+  const isOneTime = effectiveRepaymentFrequency === "One-time";
   const paymentAccounts = semanticIsCreditCard
     ? availableAccounts.filter((account) => account.type === "Credit Card")
     : availableAccounts;
@@ -72,7 +84,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const totalHasError = showErrors && totalAmount.trim() === "";
   const durationValue = Number(durationMonths);
   const normalizedDurationMonths = Number.isFinite(durationValue) ? Math.trunc(durationValue) : 0;
-  const durationHasError = showErrors && (durationMonths.trim() === "" || normalizedDurationMonths <= 0);
+  const durationHasError = showErrors && !isOneTime && (durationMonths.trim() === "" || normalizedDurationMonths <= 0);
+  const oneTimeDateHasError = showErrors && isOneTime && (!oneTimeRepaymentDate || oneTimeRepaymentDate < startDate);
   const categoryHasError = showErrors && !debt && !selectedCategory;
   const total = parseAmount(totalAmount);
   const repaid = parseAmount(repaidAmount);
@@ -82,7 +95,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const repaymentSchedule = buildEmiSchedule({
     interestRate: parsedInterestRate,
     interestRatePeriod,
-    numberOfMonths: normalizedDurationMonths,
+    numberOfMonths: isOneTime ? 1 : normalizedDurationMonths,
     principal: total,
     repaidAmount: repaid,
     startDate,
@@ -99,20 +112,23 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const creditCardMinimumPayment = creditCardRemaining > 0
     ? Math.min(selectedPaymentAccount?.creditMinimumPaymentValue || creditCardRemaining, creditCardRemaining)
     : 0;
-  const progressBasis = semanticIsCreditCard ? creditCardAppliedRepayment : repaymentSchedule.principalPaid;
-  const progressPercent = total > 0 ? Math.min(Math.round((progressBasis / total) * 100), 100) : 0;
-  const remaining = semanticIsCreditCard ? creditCardRemaining : repaymentSchedule.remainingPrincipal;
+  const oneTimeAppliedRepayment = Math.min(Math.max(repaid, 0), Math.max(total, 0));
+  const progressBasis = semanticIsCreditCard ? creditCardAppliedRepayment : isOneTime ? oneTimeAppliedRepayment : repaymentSchedule.principalPaid;
+  const progressPercent = calculateDebtProgressPercent(progressBasis, total);
+  const remaining = semanticIsCreditCard ? creditCardRemaining : isOneTime ? Math.max(total - repaid, 0) : repaymentSchedule.remainingPrincipal;
   const nextPaymentDate = semanticIsCreditCard
     ? creditCardDueDate
-    : normalizeDebtRepaymentDate(startDate, repaymentSchedule.nextPaymentDate);
+    : isOneTime
+      ? remaining > 0 ? oneTimeRepaymentDate : ""
+      : normalizeDebtRepaymentDate(startDate, repaymentSchedule.nextPaymentDate);
   const status = calculateDebtStatus({ dueDate: nextPaymentDate, remainingAmount: remaining, storedStatus: debt?.status });
-  const payoffDate = semanticIsCreditCard ? creditCardDueDate : repaymentSchedule.payoffDate;
-  const monthlyPaymentValue = semanticIsCreditCard ? creditCardMinimumPayment : repaymentSchedule.monthlyPayment;
-  const totalRepaymentValue = semanticIsCreditCard ? total : repaymentSchedule.totalRepayment;
-  const totalInterestValue = semanticIsCreditCard ? 0 : repaymentSchedule.totalInterest;
+  const payoffDate = semanticIsCreditCard ? creditCardDueDate : isOneTime ? oneTimeRepaymentDate : repaymentSchedule.payoffDate;
+  const monthlyPaymentValue = semanticIsCreditCard ? creditCardMinimumPayment : isOneTime ? remaining : repaymentSchedule.monthlyPayment;
+  const totalRepaymentValue = semanticIsCreditCard || isOneTime ? total : repaymentSchedule.totalRepayment;
+  const totalInterestValue = semanticIsCreditCard || isOneTime ? 0 : repaymentSchedule.totalInterest;
 
   async function handleSaveDebt(addAnother = false) {
-    const hasErrors = name.trim() === "" || lender.trim() === "" || !Number.isFinite(total) || total <= 0 || !Number.isFinite(repaid) || repaid < 0 || parsedInterestRate < 0 || durationMonths.trim() === "" || normalizedDurationMonths <= 0 || (!debt && !selectedCategory) || (semanticIsCreditCard && !selectedPaymentAccount);
+    const hasErrors = name.trim() === "" || lender.trim() === "" || !Number.isFinite(total) || total <= 0 || !Number.isFinite(repaid) || repaid < 0 || parsedInterestRate < 0 || (!isOneTime && (durationMonths.trim() === "" || normalizedDurationMonths <= 0)) || (isOneTime && (!oneTimeRepaymentDate || oneTimeRepaymentDate < startDate)) || (!debt && !selectedCategory) || (semanticIsCreditCard && !selectedPaymentAccount);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -127,8 +143,10 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       name,
       nextPaymentDate,
       notes,
+      nature: effectiveNature,
       paymentAccountId,
       payoffDate,
+      repaymentFrequency: effectiveRepaymentFrequency,
       repaidAmount: repaidAmount.trim() ? parseAmountInputValue(repaidAmount) : 0,
       startDate,
       status,
@@ -170,34 +188,45 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Debt name is required.</p> : null}
             </div>
             <div>
-              <TextInput error={lenderHasError} label="Lender" onChange={setLender} placeholder="Chase Bank" value={lender} />
-              {lenderHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Lender is required.</p> : null}
+              <TextInput error={lenderHasError} label={effectiveNature === "Lending" ? "Borrower / Recipient" : "Lender"} onChange={setLender} placeholder={effectiveNature === "Lending" ? "Dad" : "Chase Bank"} value={lender} />
+              {lenderHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{effectiveNature === "Lending" ? "Borrower / recipient" : "Lender"} is required.</p> : null}
             </div>
           </div>
+
+          {!semanticIsCreditCard ? (
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <SelectInput label="Debt Nature" onChange={(value) => setNature(value as DebtNature)} options={["Borrowing", "Lending"]} value={effectiveNature} />
+              <SelectInput label="Repayment Plan" onChange={(value) => setRepaymentFrequency(value as DebtRepaymentFrequency)} options={["Monthly", "One-time"]} value={effectiveRepaymentFrequency} />
+            </div>
+          ) : null}
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <TextInput error={totalHasError} label="Total Amount" onChange={setTotalAmount} placeholder="350000" type="amount" value={totalAmount} />
+              <TextInput error={totalHasError} label={effectiveNature === "Lending" ? "Total Lent" : "Total Amount"} onChange={setTotalAmount} placeholder="350000" type="amount" value={totalAmount} />
               {totalHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Total amount is required.</p> : null}
             </div>
-            <TextInput label={semanticIsCreditCard ? "Payments / Credits" : "Payments Made (Including Interest)"} onChange={setRepaidAmount} placeholder="0" type="amount" value={repaidAmount} />
+            <TextInput label={semanticIsCreditCard ? "Payments / Credits" : effectiveNature === "Lending" ? "Money Returned" : isOneTime ? "Amount Repaid" : "Payments Made (Including Interest)"} onChange={setRepaidAmount} placeholder="0" type="amount" value={repaidAmount} />
           </div>
 
-          <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>
+          <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard || isOneTime ? "" : "md:grid-cols-2"}`}>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
-              <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Configured Minimum Payment" : "Calculated Monthly Payment"}</span>
+              <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Configured Minimum Payment" : isOneTime ? "One-time Amount Due" : "Calculated Monthly Payment"}</span>
               <ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(monthlyPaymentValue)}</ResponsiveAmount>
-              <span className="mt-1 block text-xs font-semibold text-[#45464d]">{semanticIsCreditCard ? "From the linked card account" : normalizedDurationMonths > 0 ? `${normalizedDurationMonths} months` : "Set a valid duration"}</span>
+              <span className="mt-1 block text-xs font-semibold text-[#45464d]">{semanticIsCreditCard ? "From the linked card account" : isOneTime ? "Due in full on the selected repayment date" : normalizedDurationMonths > 0 ? `${normalizedDurationMonths} months` : "Set a valid duration"}</span>
             </div>
-            {!semanticIsCreditCard ? <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+            {!semanticIsCreditCard && !isOneTime ? <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <TextInput label="Interest Rate" onChange={setInterestRate} placeholder="5.85" type="number" value={interestRate} />
               <SelectInput label="Rate Type" onChange={(value) => setInterestRatePeriod(value as DebtInterestRatePeriod)} options={["Yearly", "Monthly"]} value={interestRatePeriod} />
             </div> : null}
           </div>
 
           <div className={`mt-5 grid grid-cols-1 gap-4 ${semanticIsCreditCard ? "" : "md:grid-cols-2"}`}>
-            <TextInput label="Borrowing Start Date" onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
-            {!semanticIsCreditCard ? <div>
+            <TextInput label={effectiveNature === "Lending" ? "Lending Date" : "Borrowing Start Date"} onChange={setStartDate} placeholder="2026-06-01" type="date" value={startDate} />
+            {!semanticIsCreditCard && isOneTime ? <div>
+              <TextInput error={oneTimeDateHasError} label={effectiveNature === "Lending" ? "Getting Money Back Date" : "Full Repayment Date"} onChange={setOneTimeRepaymentDate} placeholder="2026-08-30" type="date" value={oneTimeRepaymentDate} />
+              {oneTimeDateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Choose a repayment date on or after the start date.</p> : null}
+            </div> : null}
+            {!semanticIsCreditCard && !isOneTime ? <div>
               <TextInput error={durationHasError} label="Duration (Months)" onChange={setDurationMonths} placeholder="24" type="number" value={durationMonths} />
               {durationHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Duration must be greater than 0 months.</p> : null}
             </div> : null}
@@ -210,7 +239,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
             </div>
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
               <span className="block text-xs font-bold uppercase text-[#45464d]">{semanticIsCreditCard ? "Payment Due Date" : "Payoff Date"}</span>
-              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{payoffDate || (semanticIsCreditCard ? "Configure statement and due days on the card account" : "Set start date and duration")}</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{payoffDate || (semanticIsCreditCard ? "Configure statement and due days on the card account" : isOneTime ? "Choose a repayment date" : "Set start date and duration")}</span>
             </div>
           </div>
         </FormCard>
@@ -220,7 +249,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
               <span className="block text-xs font-bold uppercase text-[#45464d]">Calculated Status</span>
               <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{status}</span>
-              <span className="mt-1 block text-xs font-medium text-[#45464d]">Based on remaining balance and the next payment date.</span>
+              <span className="mt-1 block text-xs font-medium text-[#45464d]">Based on remaining balance and the {isOneTime ? "one-time repayment" : "next payment"} date.</span>
             </div>
             <div>
               <SelectInput label="Debt Category" onChange={(name) => {

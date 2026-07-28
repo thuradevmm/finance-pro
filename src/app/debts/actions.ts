@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
+import { normalizeDebtNature } from "@/lib/debts/nature";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import type { DebtFormData } from "@/lib/debts/supabase";
@@ -24,6 +25,7 @@ type DebtRow = {
   id: string;
   metadata: unknown;
   monthly_payment: number | string | null;
+  name: string;
   next_payment_date: string | null;
   payment_account_id: string | null;
   repaid_amount: number | string | null;
@@ -119,6 +121,7 @@ function payload(input: DebtFormData, cardTerms: DebtCardTerms = {}): DebtPayloa
       category_id: input.categoryId || null,
       ...creditCardMetadata,
       duration_months: input.durationMonths,
+      debt_nature: input.nature.toLowerCase(),
       interest_rate: input.interestRate,
       interest_rate_period: input.interestRatePeriod.toLowerCase(),
       lender: input.lender.trim(),
@@ -127,6 +130,7 @@ function payload(input: DebtFormData, cardTerms: DebtCardTerms = {}): DebtPayloa
       notes: input.notes.trim(),
       payment_account_id: input.paymentAccountId || null,
       payoff_date: input.payoffDate || null,
+      repayment_frequency: input.repaymentFrequency === "One-time" ? "one_time" : "monthly",
       principal_paid: installmentSchedule?.principalPaid ?? null,
       repaid_amount: input.repaidAmount,
       remaining_principal: installmentSchedule?.remainingPrincipal ?? null,
@@ -223,6 +227,33 @@ function canonicalDebtInput(
         nextPaymentDate,
         payoffDate: nextPaymentDate,
         status: calculateDebtStatus({ dueDate: nextPaymentDate, remainingAmount, storedStatus: input.status }),
+      },
+    };
+  }
+
+  if (input.repaymentFrequency === "One-time") {
+    const remainingAmount = Math.max(input.totalAmount - input.repaidAmount, 0);
+    const repaymentDate = input.payoffDate || input.nextPaymentDate;
+    if (!repaymentDate) return { error: "Choose the one-time repayment date.", input };
+    if (repaymentDate < input.startDate) {
+      return { error: "The one-time repayment date cannot be before the debt start date.", input };
+    }
+    if (input.repaidAmount > input.totalAmount + 0.005) {
+      return { error: "Repaid amount cannot exceed the total amount for a one-time debt.", input };
+    }
+    const nextPaymentDate = remainingAmount <= 0.005 ? "" : repaymentDate;
+    return {
+      input: {
+        ...input,
+        durationMonths: 1,
+        monthlyPayment: remainingAmount <= 0.005 ? 0 : remainingAmount,
+        nextPaymentDate,
+        payoffDate: repaymentDate,
+        status: calculateDebtStatus({
+          dueDate: nextPaymentDate,
+          remainingAmount,
+          storedStatus: input.status,
+        }),
       },
     };
   }
@@ -359,7 +390,7 @@ async function fetchExistingDebtForUpdate(
 ) {
   const { data, error } = await supabase
     .from("debts")
-    .select("id,category_id,metadata,monthly_payment,next_payment_date,payment_account_id,repaid_amount,start_date,status,total_amount,type")
+    .select("id,name,category_id,metadata,monthly_payment,next_payment_date,payment_account_id,repaid_amount,start_date,status,total_amount,type")
     .eq("id", debtId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -524,6 +555,10 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   }
   if (input.repaidAmount + 0.005 < ledgerTotals.repayments) {
     return { error: "Repaid amount cannot be lower than the posted repayment history linked to this debt." };
+  }
+  const existingNature = normalizeDebtNature(existingMetadata.debt_nature, existingDebt.name);
+  if (existingNature !== input.nature && ledgerTotals.repayments > 0.005) {
+    return { error: "Debt nature cannot be changed after repayment transactions have been posted." };
   }
   if (input.isCreditCardDebt && input.totalAmount + 0.005 < ledgerTotals.charges) {
     return { error: "Total amount cannot be lower than the posted credit card charges linked to this debt." };

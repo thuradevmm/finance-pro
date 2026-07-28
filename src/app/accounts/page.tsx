@@ -20,9 +20,8 @@ import { compareSortValues, SortHeader, type SortDirection } from "@/components/
 import { useToast } from "@/components/ui/toast-provider";
 import { AccountRecordActions } from "@/features/accounts/account-record-actions";
 import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
-import { getAccountOptionLabel, getAccounts, getAccountSummaries, type AccountRecord } from "@/lib/accounts/supabase";
+import { getAccountOptionLabel, getAccounts, getAccountSummaries, summarizeAccountPosition, type AccountRecord } from "@/lib/accounts/supabase";
 import { formatMmk, parseCurrency } from "@/lib/currency";
-import { summarizeFinancialPosition } from "@/lib/ledger";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
 import type { AccountStatus } from "@/types/finance";
@@ -51,6 +50,14 @@ type AccountFilterValues = {
   view: AccountViewMode;
 };
 
+const defaultAccountFilters: AccountFilterValues = {
+  accountCategory: "All categories",
+  accountStatus: "All statuses",
+  accountType: "All types",
+  q: "",
+  view: "Lookup",
+};
+
 function AccountFilters({
   categoryOptions,
   initialValues,
@@ -69,15 +76,32 @@ function AccountFilters({
       className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(15rem,1.4fr)_repeat(4,minmax(9rem,1fr))_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        onSearch(draft);
+        const formData = new FormData(event.currentTarget);
+        onSearch({
+          accountCategory: String(formData.get("accountCategory") ?? draft.accountCategory),
+          accountStatus: String(formData.get("accountStatus") ?? draft.accountStatus),
+          accountType: String(formData.get("accountType") ?? draft.accountType),
+          q: String(formData.get("q") ?? draft.q),
+          view: String(formData.get("view") ?? draft.view) as AccountViewMode,
+        });
       }}
     >
-      <TextInput label="Search Accounts" onChange={(value) => setDraft((current) => ({ ...current, q: value }))} placeholder="Name, category, type, number..." value={draft.q} />
-      <SelectInput label="View Mode" onChange={(value) => setDraft((current) => ({ ...current, view: value as AccountViewMode }))} options={["Lookup", "List", "Card"]} value={draft.view} />
-      <SelectInput label="Category" onChange={(value) => setDraft((current) => ({ ...current, accountCategory: value }))} options={categoryOptions} value={draft.accountCategory} />
-      <SelectInput label="Type" onChange={(value) => setDraft((current) => ({ ...current, accountType: value }))} options={typeOptions} value={draft.accountType} />
-      <SelectInput label="Status" onChange={(value) => setDraft((current) => ({ ...current, accountStatus: value }))} options={["All statuses", "Active", "Needs Review", "Archived"]} value={draft.accountStatus} />
+      <TextInput label="Search Accounts" name="q" onChange={(value) => setDraft((current) => ({ ...current, q: value }))} placeholder="Name, category, type, number..." value={draft.q} />
+      <SelectInput label="View Mode" name="view" onChange={(value) => setDraft((current) => ({ ...current, view: value as AccountViewMode }))} options={["Lookup", "List", "Card"]} value={draft.view} />
+      <SelectInput label="Category" name="accountCategory" onChange={(value) => setDraft((current) => ({ ...current, accountCategory: value }))} options={categoryOptions} value={draft.accountCategory} />
+      <SelectInput label="Type" name="accountType" onChange={(value) => setDraft((current) => ({ ...current, accountType: value }))} options={typeOptions} value={draft.accountType} />
+      <SelectInput label="Status" name="accountStatus" onChange={(value) => setDraft((current) => ({ ...current, accountStatus: value }))} options={["All statuses", "Active", "Needs Review", "Archived"]} value={draft.accountStatus} />
       <div className="flex items-end gap-2">
+        <button
+          className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff]"
+          onClick={() => {
+            setDraft(defaultAccountFilters);
+            onSearch(defaultAccountFilters);
+          }}
+          type="button"
+        >
+          Reset
+        </button>
         <button
           className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
           type="submit"
@@ -395,10 +419,7 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
     amountType,
     total: sumScaledAmounts(ledgerAccounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
   }));
-  const position = summarizeFinancialPosition({
-    cashBalances: ledgerAccounts.flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)),
-    creditCardBalances: creditAccounts.map((account) => account.creditUsedValue - account.creditBalanceValue),
-  });
+  const position = summarizeAccountPosition(accounts);
   const cardTotals = summarizeCreditCardLookup(creditAccounts.map((account) => ({
     available: account.creditAvailableValue,
     cardCredit: account.creditBalanceValue,
@@ -530,7 +551,7 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
 
       <section className="min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
         <div>
-          <h2 className="text-sm font-bold uppercase text-[#45464d]">Financial Position Reconciliation</h2>
+          <h2 className="text-sm font-bold uppercase text-[#45464d]">Account Position Reconciliation</h2>
           <p className="mt-1 text-xs font-medium text-[#45464d]">Net position = cash balances + card credits − outstanding card liabilities. Credit limits and available credit are excluded.</p>
         </div>
         <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -547,11 +568,13 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
             <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={1}>{formatMmk(-position.cardLiability)}</ResponsiveAmount></dd>
           </div>
           <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4">
-            <dt className="text-xs font-bold uppercase text-[#0058be]">Net Position</dt>
+            <dt className="text-xs font-bold uppercase text-[#0058be]">Account Net Position</dt>
             <dd><ResponsiveAmount className={`mt-1 font-bold ${position.net < 0 ? "text-[#b42318]" : "text-[#0058be]"}`} maxSizeRem={1}>{formatMmk(position.net)}</ResponsiveAmount></dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs font-medium text-[#45464d]">Net Position reconciles posted all-time transaction activity plus any stored manual credit-card opening balance.</p>
+        <p className="mt-3 text-xs font-medium leading-5 text-[#45464d]">
+          Account Net Position uses current working account balances, including pending reservations, plus any manual card opening balance. It is not the Transactions-page Net: the selected period, transfers, card liabilities, and standard debt or lending balances tracked on the Debts page explain the difference.
+        </p>
       </section>
       {creditAccounts.length > 0 ? (
         <section className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
@@ -994,10 +1017,15 @@ export default function AccountsPage() {
   const addAccountHref = `/accounts/add?returnTo=${encodeURIComponent(returnTo)}`;
   const categoryOptions = useMemo(() => ["All categories", ...Array.from(new Set(visibleAccounts.map((account) => account.category || "Uncategorized")))], [visibleAccounts]);
   const typeOptions = useMemo(() => ["All types", ...Array.from(new Set(visibleAccounts.map((account) => account.type)))], [visibleAccounts]);
+  const effectiveCategoryFilter = categoryOptions.includes(categoryFilter) ? categoryFilter : defaultAccountFilters.accountCategory;
+  const effectiveTypeFilter = typeOptions.includes(typeFilter) ? typeFilter : defaultAccountFilters.accountType;
+  const effectiveStatusFilter = ["All statuses", "Active", "Needs Review", "Archived"].includes(statusFilter)
+    ? statusFilter
+    : defaultAccountFilters.accountStatus;
   const appliedFilters: AccountFilterValues = {
-    accountCategory: categoryFilter,
-    accountStatus: statusFilter,
-    accountType: typeFilter,
+    accountCategory: effectiveCategoryFilter,
+    accountStatus: effectiveStatusFilter,
+    accountType: effectiveTypeFilter,
     q: search,
     view: viewMode,
   };
@@ -1030,13 +1058,13 @@ export default function AccountsPage() {
         ...account.availableBreakdowns.map((item) => `${item.type} ${item.amount}`),
       ].join(" ").toLowerCase();
       const matchesSearch = normalizedSearch === "" || searchable.includes(normalizedSearch);
-      const matchesCategory = categoryFilter === "All categories" || (account.category || "Uncategorized") === categoryFilter;
-      const matchesType = typeFilter === "All types" || account.type === typeFilter;
-      const matchesStatus = statusFilter === "All statuses" || account.status === statusFilter;
+      const matchesCategory = effectiveCategoryFilter === "All categories" || (account.category || "Uncategorized") === effectiveCategoryFilter;
+      const matchesType = effectiveTypeFilter === "All types" || account.type === effectiveTypeFilter;
+      const matchesStatus = effectiveStatusFilter === "All statuses" || account.status === effectiveStatusFilter;
 
       return matchesSearch && matchesCategory && matchesType && matchesStatus;
     });
-  }, [categoryFilter, search, statusFilter, typeFilter, visibleAccounts]);
+  }, [effectiveCategoryFilter, effectiveStatusFilter, effectiveTypeFilter, search, visibleAccounts]);
   const filteredCreditCards = filteredAccounts.filter(isCreditCardAccount);
   const filteredNonCardAccounts = filteredAccounts.filter((account) => !isCreditCardAccount(account));
   const accountSummaries = getAccountSummaries(visibleAccounts);

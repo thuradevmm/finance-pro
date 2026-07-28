@@ -14,6 +14,11 @@ test("debt progress handles completion, overpayment, and empty balances", () => 
   assert.equal(calculateDebtProgressPercent(0, 0), 0);
 });
 
+test("an almost-paid debt cannot display 100 percent while it is still active", () => {
+  assert.equal(calculateDebtProgressPercent(999.5, 1_000), 99);
+  assert.equal(calculateDebtProgressPercent(999.996, 1_000), 100);
+});
+
 test("debt progress does not expose invalid or negative values", () => {
   assert.equal(calculateDebtProgressPercent(Number.NaN, 1_000), 0);
   assert.equal(calculateDebtProgressPercent(-100, 1_000), 0);

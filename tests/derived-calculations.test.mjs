@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveAssetCurrentValue, resolveAssetPurchaseValue } from "../src/lib/assets/calculations.ts";
+import { assetPurchaseAmountMatchesRange, resolveAssetCurrentValue, resolveAssetPurchaseValue } from "../src/lib/assets/calculations.ts";
 import { currentBudgetRecords, inferBudgetEndDate, linkedBudgetEditError } from "../src/lib/budgets/calculations.ts";
 import { calculateUsageDuration } from "../src/lib/date-duration.ts";
 import { getBudgetComparisons } from "../src/lib/future-planning/budget-comparisons.ts";
@@ -13,6 +13,14 @@ test("asset zero values remain authoritative while legacy rows can use linked ev
   assert.equal(resolveAssetPurchaseValue(0, 0, 500), 0);
   assert.equal(resolveAssetPurchaseValue(0, undefined, 500), 500);
   assert.equal(resolveAssetCurrentValue(0, 700, 1_000), 0);
+});
+
+test("asset history amount ranges are non-overlapping and include the 1,500+ boundary", () => {
+  assert.equal(assetPurchaseAmountMatchesRange(499.99, "Under MMK 500"), true);
+  assert.equal(assetPurchaseAmountMatchesRange(500, "MMK 500 - 1,500"), true);
+  assert.equal(assetPurchaseAmountMatchesRange(1499.99, "MMK 500 - 1,500"), true);
+  assert.equal(assetPurchaseAmountMatchesRange(1500, "MMK 500 - 1,500"), false);
+  assert.equal(assetPurchaseAmountMatchesRange(1500, "MMK 1,500+"), true);
 });
 
 test("budget ranges infer leap month ends and current totals de-duplicate overlapping legacy plans", () => {

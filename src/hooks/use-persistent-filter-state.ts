@@ -26,17 +26,27 @@ export function usePersistentFilterState<T extends FilterValue>(
   key: string,
   defaultValue: T,
   restore = true,
+  normalize: (value: T) => T = (value) => value,
 ) {
   const [draftFilters, setDraftFilters] = useState<T>(defaultValue);
   const [appliedFilters, setAppliedFilters] = useState<T>(defaultValue);
   const defaultValueRef = useRef(defaultValue);
+  const normalizeRef = useRef(normalize);
+
+  useEffect(() => {
+    defaultValueRef.current = defaultValue;
+    normalizeRef.current = normalize;
+  }, [defaultValue, normalize]);
 
   useEffect(() => {
     if (!restore) {
-      storeFilters(key, defaultValueRef.current);
+      const nextValue = normalizeRef.current(defaultValueRef.current);
+      setDraftFilters(nextValue);
+      setAppliedFilters(nextValue);
+      storeFilters(key, nextValue);
       return;
     }
-    const stored = readStoredFilters(key, defaultValueRef.current);
+    const stored = normalizeRef.current(readStoredFilters(key, defaultValueRef.current));
     queueMicrotask(() => {
       setDraftFilters(stored);
       setAppliedFilters(stored);
@@ -44,15 +54,17 @@ export function usePersistentFilterState<T extends FilterValue>(
   }, [key, restore]);
 
   function applyFilters(value = draftFilters) {
-    setDraftFilters(value);
-    setAppliedFilters(value);
-    storeFilters(key, value);
+    const nextValue = normalizeRef.current(value);
+    setDraftFilters(nextValue);
+    setAppliedFilters(nextValue);
+    storeFilters(key, nextValue);
   }
 
   function resetFilters() {
-    setDraftFilters(defaultValueRef.current);
-    setAppliedFilters(defaultValueRef.current);
-    storeFilters(key, defaultValueRef.current);
+    const nextValue = normalizeRef.current(defaultValueRef.current);
+    setDraftFilters(nextValue);
+    setAppliedFilters(nextValue);
+    storeFilters(key, nextValue);
   }
 
   return { appliedFilters, applyFilters, draftFilters, resetFilters, setDraftFilters };
