@@ -3,11 +3,10 @@
 import { useMemo } from "react";
 
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
-import { SummaryCards } from "@/components/app/summary-cards";
 import { TransactionsFilters } from "@/features/transactions/transactions-filters";
 import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
 import { TransactionsTable } from "@/features/transactions/transactions-table";
-import { getTransactionSummaries, type TransactionRecord } from "@/lib/transactions/supabase";
+import type { TransactionRecord } from "@/lib/transactions/supabase";
 import {
   filterTransactions,
   normalizeTransactionDate,
@@ -24,7 +23,6 @@ type TransactionsPageContentProps = {
   defaultDateTo: string;
   filterOptions: TransactionFilterOptions;
   initialAccountFilter?: string;
-  initialAmountFilter?: string;
   initialCategoryFilter?: string;
   initialDateFrom: string;
   initialDateTo: string;
@@ -42,7 +40,6 @@ const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer
 function getInitialFilters(
   filterOptions: TransactionFilterOptions,
   initialAccountFilter?: string,
-  initialAmountFilter?: string,
   initialCategoryFilter?: string,
   initialDateFrom = "",
   initialDateTo = "",
@@ -59,7 +56,6 @@ function getInitialFilters(
 
   return {
     account: accountFilter,
-    amount: initialAmountFilter && filterOptions.amount.includes(initialAmountFilter) ? initialAmountFilter : filterOptions.amount[0],
     category: categoryFilter,
     dateFrom: normalizeTransactionDate(initialDateFrom),
     dateTo: normalizeTransactionDate(initialDateTo),
@@ -78,7 +74,6 @@ export function TransactionsPageContent({
   defaultDateTo,
   filterOptions,
   initialAccountFilter,
-  initialAmountFilter,
   initialCategoryFilter,
   initialDateFrom,
   initialDateTo,
@@ -97,11 +92,11 @@ export function TransactionsPageContent({
       : filterOptions.category,
   }), [filterOptions, initialCategoryFilter]);
   const initialFilters = useMemo(
-    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialAmountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialFromAccountFilter, initialSearchFilter, initialStatusFilter, initialToAccountFilter, initialTypeFilter),
-    [effectiveFilterOptions, initialAccountFilter, initialAmountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialFromAccountFilter, initialSearchFilter, initialStatusFilter, initialToAccountFilter, initialTypeFilter],
+    () => getInitialFilters(effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialFromAccountFilter, initialSearchFilter, initialStatusFilter, initialToAccountFilter, initialTypeFilter),
+    [effectiveFilterOptions, initialAccountFilter, initialCategoryFilter, initialDateFrom, initialDateTo, initialFromAccountFilter, initialSearchFilter, initialStatusFilter, initialToAccountFilter, initialTypeFilter],
   );
   const defaultFilters = useMemo(
-    () => getInitialFilters(effectiveFilterOptions, undefined, undefined, undefined, defaultDateFrom, defaultDateTo),
+    () => getInitialFilters(effectiveFilterOptions, undefined, undefined, defaultDateFrom, defaultDateTo),
     [defaultDateFrom, defaultDateTo, effectiveFilterOptions],
   );
   const normalizeFilters = useMemo(
@@ -117,7 +112,6 @@ export function TransactionsPageContent({
   const activeTab: TransactionTab = filters.type === "Type" ? "All" : filters.type as TransactionTab;
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
-  const filteredSummaries = useMemo(() => getTransactionSummaries(filteredTransactions), [filteredTransactions]);
 
   function updateDraftFilter(key: keyof TransactionFiltersState, value: string) {
     const normalizedValue = key === "dateFrom" || key === "dateTo" ? normalizeTransactionDate(value) : value;
@@ -184,7 +178,6 @@ export function TransactionsPageContent({
   return (
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={transactionTabs} />
-      <SummaryCards columns={6} summaries={filteredSummaries} />
       <TransactionsFilters
         filterOptions={effectiveFilterOptions}
         filters={draftFilters}

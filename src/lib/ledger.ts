@@ -525,8 +525,12 @@ function accountTypeById(accounts: LedgerAccountInput[]) {
   return new Map(accounts.map((account) => [account.id, account.type ?? null]));
 }
 
-function ledgerEffects(transaction: LedgerTransactionInput, accountTypes: Map<string, string | null>): LedgerEffect[] {
-  if (!transactionStatusAffectsBalance(transaction.status)) return [];
+function ledgerEffects(
+  transaction: LedgerTransactionInput,
+  accountTypes: Map<string, string | null>,
+  includeNonBalanceStatuses = false,
+): LedgerEffect[] {
+  if (!includeNonBalanceStatuses && !transactionStatusAffectsBalance(transaction.status)) return [];
 
   const amount = Math.abs(numericValue(transaction.amount));
   if (amount <= 0) return [];
@@ -605,13 +609,21 @@ export function buildAccountLedgerActivities(
   }
 
   for (const transaction of transactions) {
+    const countedAccountIds = new Set<string>();
+    for (const effect of ledgerEffects(transaction, accountTypes, true)) {
+      if (countedAccountIds.has(effect.accountId)) continue;
+      countedAccountIds.add(effect.accountId);
+      getActivity(effect.accountId).transactionCount += 1;
+    }
+
     for (const effect of ledgerEffects(transaction, accountTypes)) {
       const activity = getActivity(effect.accountId);
-      activity.transactionCount += 1;
-      if (effect.flow === "inflow") {
-        activity.inflow = roundCurrencyValue(activity.inflow + effect.amount);
-      } else {
-        activity.outflow = roundCurrencyValue(activity.outflow + effect.amount);
+      if (transactionStatusIsFinalized(transaction.status)) {
+        if (effect.flow === "inflow") {
+          activity.inflow = roundCurrencyValue(activity.inflow + effect.amount);
+        } else {
+          activity.outflow = roundCurrencyValue(activity.outflow + effect.amount);
+        }
       }
       if (effect.isCreditCard) {
         activity.creditUsed = roundCurrencyValue(activity.creditUsed + effect.creditUsedDelta);

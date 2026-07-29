@@ -12,7 +12,6 @@ import { summarizeTransactionCards } from "../src/lib/ledger.ts";
 
 const options = {
   account: ["Account", "Cash", "Bank"],
-  amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
   category: ["Category", "Food", "Salary", "Transfer"],
   status: ["Status", "Cleared", "Pending"],
   type: ["Type", "Income", "Expense", "Transfer"],
@@ -20,7 +19,6 @@ const options = {
 
 const defaults = {
   account: "Account",
-  amount: "Amount",
   category: "Category",
   dateFrom: "2025-07-28",
   dateTo: "2026-07-28",
@@ -99,14 +97,12 @@ test("supports either date boundary being cleared for an open-ended range", () =
   assert.deepEqual(ids({ dateFrom: "2026-02-01", dateTo: "" }), ["income", "transfer"]);
 });
 
-test("applies search, category, account, type, status, and amount filters", () => {
+test("applies search, category, account, type, and status filters", () => {
   assert.deepEqual(ids({ search: "team meal" }), ["expense"]);
   assert.deepEqual(ids({ category: "Salary" }), ["income"]);
   assert.deepEqual(ids({ account: "Bank" }), ["income"]);
   assert.deepEqual(ids({ type: "Transfer" }), ["transfer"]);
   assert.deepEqual(ids({ status: "Pending" }), ["income"]);
-  assert.deepEqual(ids({ amount: "< MMK 100" }), ["expense"]);
-  assert.deepEqual(ids({ amount: "MMK 500+" }), ["income", "transfer"]);
 });
 
 test("applies transfer from/to filters and searches transfer account names", () => {
@@ -117,7 +113,6 @@ test("applies transfer from/to filters and searches transfer account names", () 
 test("applies all selected filters together rather than allowing any single match", () => {
   assert.deepEqual(ids({
     account: "Cash",
-    amount: "< MMK 100",
     category: "Food",
     dateFrom: "2026-01-01",
     dateTo: "2026-01-31",
@@ -127,8 +122,7 @@ test("applies all selected filters together rather than allowing any single matc
   }), ["expense"]);
   assert.deepEqual(ids({
     account: "Cash",
-    amount: "MMK 500+",
-    category: "Food",
+    category: "Salary",
     dateFrom: "2026-01-01",
     dateTo: "2026-01-31",
     search: "lunch",
@@ -142,7 +136,6 @@ test("repairs invalid persisted options and reversed or invalid date ranges", ()
     sanitizeTransactionFilters({
       ...defaults,
       account: "Deleted account",
-      amount: "Old threshold",
       dateFrom: "not-a-date",
       status: "Removed status",
     }, options, defaults),
@@ -167,7 +160,6 @@ test("repairs invalid persisted options and reversed or invalid date ranges", ()
 test("reads every submitted control and retains hidden conditional filter values", () => {
   const submitted = new Map([
     ["account", "Cash"],
-    ["amount", "< MMK 100"],
     ["category", "Food"],
     ["dateFrom", "2026-01-01"],
     ["dateTo", "2026-01-31"],
@@ -181,7 +173,6 @@ test("reads every submitted control and retains hidden conditional filter values
     {
       ...defaults,
       account: "Cash",
-      amount: "< MMK 100",
       category: "Food",
       dateFrom: "2026-01-01",
       dateTo: "2026-01-31",
@@ -195,7 +186,6 @@ test("reads every submitted control and retains hidden conditional filter values
 test("stores every non-default filter in the URL and removes all filters on reset", () => {
   const activeFilters = {
     account: "Cash",
-    amount: "< MMK 100",
     category: "Food",
     dateFrom: "2026-01-01",
     dateTo: "2026-01-31",
@@ -206,14 +196,13 @@ test("stores every non-default filter in the URL and removes all filters on rese
     type: "Transfer",
   };
   const activeParams = updateTransactionFilterSearchParams(
-    new URLSearchParams("unrelated=keep"),
+    new URLSearchParams("unrelated=keep&amount=MMK+500%2B"),
     activeFilters,
     defaults,
   );
 
   assert.deepEqual(Object.fromEntries(activeParams), {
     account: "Cash",
-    amount: "< MMK 100",
     category: "Food",
     dateFrom: "2026-01-01",
     dateTo: "2026-01-31",

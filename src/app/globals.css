@@ -50,15 +50,8 @@ textarea {
 }
 
 :where(button:not(:disabled), a[href].inline-flex, a[href].grid, a[href].flex):active {
-  filter: brightness(0.92);
-  transform: translateY(1px) scale(0.98);
+  filter: brightness(0.84) saturate(1.12);
   transition-duration: 60ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :where(button:not(:disabled), a[href].inline-flex, a[href].grid, a[href].flex):active {
-    transform: none;
-  }
 }
 
 h1,

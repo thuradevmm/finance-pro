@@ -3,7 +3,6 @@ import type { TransactionFilterOptions } from "@/types/finance";
 
 export type TransactionFiltersState = {
   account: string;
-  amount: string;
   category: string;
   dateFrom: string;
   dateTo: string;
@@ -28,7 +27,6 @@ export function transactionFiltersFromFormData(
 
   return {
     account: value("account"),
-    amount: value("amount"),
     category: value("category"),
     dateFrom: value("dateFrom"),
     dateTo: value("dateTo"),
@@ -46,9 +44,10 @@ export function updateTransactionFilterSearchParams(
   defaults: TransactionFiltersState,
 ) {
   const params = new URLSearchParams(currentParams);
+  // Remove the retired amount filter from old bookmarks and persisted URLs.
+  params.delete("amount");
   const values: Array<[string, string, string]> = [
     ["account", filters.account, defaults.account],
-    ["amount", filters.amount, defaults.amount],
     ["category", filters.category, defaults.category],
     ["dateFrom", filters.dateFrom, defaults.dateFrom],
     ["dateTo", filters.dateTo, defaults.dateTo],
@@ -91,19 +90,6 @@ export function normalizeTransactionDate(value: string | undefined) {
     : "";
 }
 
-function parseAmount(value: string) {
-  return Number(value.replace(/[^0-9.-]/g, ""));
-}
-
-function matchesAmountFilter(transaction: TransactionRecord, amountFilter: string) {
-  const amount = Math.abs(transaction.amountValue ?? parseAmount(transaction.amount));
-
-  if (amountFilter === "> MMK 100") return amount > 100;
-  if (amountFilter === "< MMK 100") return amount < 100;
-  if (amountFilter === "MMK 500+") return amount >= 500;
-  return true;
-}
-
 function matchesDateFilter(transaction: TransactionRecord, dateFrom: string, dateTo: string) {
   const transactionDate = normalizeTransactionDate(transaction.dateValue ?? transaction.date);
   if (!transactionDate) return false;
@@ -111,6 +97,14 @@ function matchesDateFilter(transaction: TransactionRecord, dateFrom: string, dat
   const fromDate = normalizeTransactionDate(dateFrom);
   const toDate = normalizeTransactionDate(dateTo);
   return (!fromDate || transactionDate >= fromDate) && (!toDate || transactionDate <= toDate);
+}
+
+export function filterTransactionsByDateRange(
+  transactions: TransactionRecord[],
+  dateFrom: string,
+  dateTo: string,
+) {
+  return transactions.filter((transaction) => matchesDateFilter(transaction, dateFrom, dateTo));
 }
 
 function matchesAffectedAccount(transaction: TransactionRecord, accountFilter: string) {
@@ -149,7 +143,6 @@ export function filterTransactions(transactions: TransactionRecord[], filters: T
         || (transaction.type === "Transfer" && transaction.transferToAccount === filters.toAccount))
       && (filters.type === "Type" || transaction.type === filters.type)
       && matchesDateFilter(transaction, filters.dateFrom, filters.dateTo)
-      && matchesAmountFilter(transaction, filters.amount)
     );
   });
 }
@@ -173,7 +166,6 @@ export function sanitizeTransactionFilters(
 
   return {
     account: validOption(filters.account, filterOptions.account, fallback.account),
-    amount: validOption(filters.amount, filterOptions.amount, fallback.amount),
     category: validOption(filters.category, filterOptions.category, fallback.category),
     dateFrom: datesAreReversed ? dateTo : dateFrom,
     dateTo: datesAreReversed ? dateFrom : dateTo,

@@ -1,4 +1,5 @@
 import { roundCurrencyValue, type FinancialPositionSummary, type LedgerSummary } from "./ledger.ts";
+import { normalizeTransactionDate } from "./transactions/filters.ts";
 
 export type ReconciliationDebtInput = {
   isCreditCardDebt?: boolean;
@@ -22,6 +23,23 @@ export type FinancialReconciliation = NetWorthSummary & LedgerSummary & {
   openingPositionAndAdjustments: number;
   reconciledClosingNetWorth: number;
 };
+
+export type ReconciliationDateRange = {
+  dateFrom: string;
+  dateTo: string;
+};
+
+export function normalizeReconciliationDateRange(
+  input: Partial<ReconciliationDateRange>,
+  defaults: ReconciliationDateRange,
+): ReconciliationDateRange {
+  const dateFrom = normalizeTransactionDate(input.dateFrom) || defaults.dateFrom;
+  const dateTo = normalizeTransactionDate(input.dateTo) || defaults.dateTo;
+
+  return dateFrom <= dateTo
+    ? { dateFrom, dateTo }
+    : { dateFrom: dateTo, dateTo: dateFrom };
+}
 
 function numericValue(value: unknown) {
   const number = Number(value);

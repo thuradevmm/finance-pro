@@ -393,7 +393,6 @@ export async function getTransaction(supabase: SupabaseClient, userId: string, t
 export function getTransactionFilterOptions(transactions: TransactionRecord[], accounts: AccountRecord[], categories: CategoryRecord[]): TransactionFilterOptions {
   return {
     account: ["Account", ...getAccountOptionLabels(accounts)],
-    amount: ["Amount", "> MMK 100", "< MMK 100", "MMK 500+"],
     category: ["Category", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     status: ["Status", ...transactionStatusFilterLabels()],
     type: ["Type", "Income", "Expense", "Transfer"],

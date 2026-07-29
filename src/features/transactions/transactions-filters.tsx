@@ -45,7 +45,6 @@ export function TransactionsFilters({ filterOptions, filters, onFilterChange, on
         ) : null}
         <SelectFilter label="Type filter" name="type" onChange={(value) => onFilterChange("type", value)} options={filterOptions.type} value={filters.type} />
         <SelectFilter label="Status filter" name="status" onChange={(value) => onFilterChange("status", value)} options={filterOptions.status} value={filters.status} />
-        <SelectFilter label="Amount filter" name="amount" onChange={(value) => onFilterChange("amount", value)} options={filterOptions.amount} value={filters.amount} />
         {isTransferFilter ? (
           <>
             <SelectFilter label="From account filter" name="fromAccount" onChange={(value) => onFilterChange("fromAccount", value === "From Account" ? "Account" : value)} options={fromAccountOptions} value={filters.fromAccount === "Account" ? "From Account" : filters.fromAccount} />

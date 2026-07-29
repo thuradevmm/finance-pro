@@ -131,15 +131,18 @@ type AccountTransactionRow = {
   related_entity_id: string | null;
   related_entity_type: string | null;
   status: string | null;
+  transaction_date: string | null;
   transfer_account_id: string | null;
   type: string;
 };
 
 type AccountDebtRow = {
+  created_at: string | null;
   id: string;
   metadata: unknown;
   payment_account_id: string | null;
   repaid_amount: number | string | null;
+  start_date: string | null;
   total_amount: number | string | null;
   type: string | null;
 };
@@ -302,33 +305,47 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   };
 }
 
-export async function getAccounts(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}) {
+export async function getAccounts(
+  supabase: SupabaseClient,
+  userId: string,
+  options: { asOfDate?: string; limit?: number } = {},
+) {
+  const asOfTimestamp = options.asOfDate ? `${options.asOfDate}T23:59:59.999Z` : "";
   const [accountRows, transactionRows, debtRows, categoryRows] = await Promise.all([
     fetchSupabaseRows<AccountRow>(
-      (from, to) => supabase
-        .from("accounts")
-        .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true })
-        .range(from, to),
+      (from, to) => {
+        const query = supabase
+          .from("accounts")
+          .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true })
+          .range(from, to);
+        return asOfTimestamp ? query.lte("created_at", asOfTimestamp) : query;
+      },
       { limit: options.limit },
     ),
-    fetchSupabaseRows<AccountTransactionRow>((from, to) => supabase
-      .from("transactions")
-      .select("account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-      .range(from, to)),
-    fetchSupabaseRows<AccountDebtRow>((from, to) => supabase
-      .from("debts")
-      .select("id,payment_account_id,total_amount,repaid_amount,type,metadata")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-      .range(from, to)),
+    fetchSupabaseRows<AccountTransactionRow>((from, to) => {
+      const query = supabase
+        .from("transactions")
+        .select("account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type,transaction_date")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .range(from, to);
+      return options.asOfDate ? query.lte("transaction_date", options.asOfDate) : query;
+    }),
+    fetchSupabaseRows<AccountDebtRow>((from, to) => {
+      const query = supabase
+        .from("debts")
+        .select("id,payment_account_id,total_amount,repaid_amount,type,metadata,start_date,created_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .range(from, to);
+      return asOfTimestamp ? query.lte("created_at", asOfTimestamp) : query;
+    }),
     fetchSupabaseRows<{ id: string; name: string }>((from, to) => supabase
       .from("categories")
       .select("id,name")
@@ -338,13 +355,20 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
       .range(from, to)),
   ]);
 
+  const datedDebtRows = options.asOfDate
+    ? debtRows.filter((debt) => {
+      const metadata = metadataRecord(debt.metadata);
+      const startDate = debt.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date.slice(0, 10) : "");
+      return !startDate || startDate <= options.asOfDate!;
+    })
+    : debtRows;
   const transactions = transactionRows.map((transaction) => ({
     ...transaction,
-    metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
+    metadata: deriveCreditCardDebtMetadata(transaction, datedDebtRows, accountRows),
   }));
   const activities = buildAccountLedgerActivities(transactions, accountRows);
   const accountById = new Map(accountRows.map((account) => [account.id, account]));
-  for (const [accountId, openingBalance] of creditCardOpeningBalancesByAccount(debtRows)) {
+  for (const [accountId, openingBalance] of creditCardOpeningBalancesByAccount(datedDebtRows)) {
     const account = accountById.get(accountId);
     if (!account || normalizeTypeKey(account.type) !== "credit_card") continue;
     const activity = activities.get(accountId) ?? emptyActivity();

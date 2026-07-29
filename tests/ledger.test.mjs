@@ -38,6 +38,19 @@ test("pending rows reserve working balance without becoming finalized actuals", 
   assert.equal(linkedExpenseContributionDelta(pending), 0);
 });
 
+test("account activity keeps working balances, posted amounts, and all history counts distinct", () => {
+  const activity = buildAccountLedgerActivities([
+    { account_id: "bank", amount: 100, status: "cleared", type: "income" },
+    { account_id: "bank", amount: 25, status: "pending", type: "expense" },
+    { account_id: "bank", amount: 50, status: "scheduled", type: "expense" },
+  ], [{ id: "bank", type: "bank_account" }]).get("bank");
+
+  assert.equal(activity?.deltas.get("General"), 75);
+  assert.equal(activity?.inflow, 100);
+  assert.equal(activity?.outflow, 0);
+  assert.equal(activity?.transactionCount, 3);
+});
+
 const accounts = [
   { id: "bank", type: "bank_account" },
   { id: "card", type: "credit_card" },

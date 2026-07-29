@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  normalizeReconciliationDateRange,
   reconcileFinancialPosition,
   summarizeNetWorth,
 } from "../src/lib/reconciliation.ts";
@@ -19,6 +20,20 @@ const debts = [
   { isCreditCardDebt: false, nature: "Lending", remainingBalanceValue: 1_200, status: "Active" },
   { isCreditCardDebt: false, nature: "Borrowing", remainingBalanceValue: 900, status: "Archived" },
 ];
+
+test("dashboard reconciliation dates default safely and normalize reversed ranges", () => {
+  const defaults = { dateFrom: "2025-07-29", dateTo: "2026-07-29" };
+
+  assert.deepEqual(normalizeReconciliationDateRange({}, defaults), defaults);
+  assert.deepEqual(
+    normalizeReconciliationDateRange({ dateFrom: "2026-08-30", dateTo: "2026-07-28" }, defaults),
+    { dateFrom: "2026-07-28", dateTo: "2026-08-30" },
+  );
+  assert.deepEqual(
+    normalizeReconciliationDateRange({ dateFrom: "invalid", dateTo: "2026-07-20" }, defaults),
+    { dateFrom: "2025-07-29", dateTo: "2026-07-20" },
+  );
+});
 
 test("net worth includes lending receivables and standard debts without double-counting cards", () => {
   assert.deepEqual(summarizeNetWorth(accountPosition, debts), {

@@ -238,6 +238,7 @@ function mapDebt(
   row: DebtRow,
   categories: Map<string, CategoryRecord>,
   transactionLedger?: DebtTransactionLedger,
+  referenceDate = formatDateInput(new Date()),
 ): DebtRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
@@ -281,7 +282,7 @@ function mapDebt(
         repaymentAmount: grossRepaidAmountValue,
         statementDay: numericValue(metadata.credit_statement_day) || null,
       }),
-      new Date(),
+      parseDateInput(referenceDate) ?? new Date(),
       creditPaymentDueDay,
     )
     : [];
@@ -314,7 +315,7 @@ function mapDebt(
       numberOfMonths: durationMonths,
       openingRepaidAmount: storedRepaidAmountValue,
       principal: totalAmountValue,
-      referenceDate: formatDateInput(new Date()),
+      referenceDate,
       repayments: repaymentActivity,
       settledAt: settledAtValue,
       settledEarly: hasEarlyPayoffSettlement,
@@ -404,39 +405,61 @@ function mapDebt(
   };
 }
 
-export async function getDebts(supabase: SupabaseClient, userId: string, categories: CategoryRecord[], options: { limit?: number } = {}) {
+export async function getDebts(
+  supabase: SupabaseClient,
+  userId: string,
+  categories: CategoryRecord[],
+  options: { asOfDate?: string; limit?: number } = {},
+) {
+  const asOfTimestamp = options.asOfDate ? `${options.asOfDate}T23:59:59.999Z` : "";
   const [debtRows, transactionRows, debtPaymentRows] = await Promise.all([
     fetchSupabaseRows<DebtRow>(
-      (from, to) => supabase
-        .from("debts")
-        .select("*")
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .range(from, to),
+      (from, to) => {
+        const query = supabase
+          .from("debts")
+          .select("*")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .range(from, to);
+        return asOfTimestamp ? query.lte("created_at", asOfTimestamp) : query;
+      },
       { limit: options.limit },
     ),
-    fetchSupabaseRows<LinkedTransactionRow>((from, to) => supabase
-      .from("transactions")
-      .select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-      .range(from, to)),
-    fetchSupabaseRows<Parameters<typeof standaloneDebtPaymentTransactions>[0][number]>((from, to) => supabase
-      .from("debt_payments")
-      .select("id,debt_id,transaction_id,amount,payment_date")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: true })
-      .range(from, to)),
+    fetchSupabaseRows<LinkedTransactionRow>((from, to) => {
+      const query = supabase
+        .from("transactions")
+        .select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true })
+        .range(from, to);
+      return options.asOfDate ? query.lte("transaction_date", options.asOfDate) : query;
+    }),
+    fetchSupabaseRows<Parameters<typeof standaloneDebtPaymentTransactions>[0][number]>((from, to) => {
+      const query = supabase
+        .from("debt_payments")
+        .select("id,debt_id,transaction_id,amount,payment_date")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true })
+        .range(from, to);
+      return options.asOfDate ? query.lte("payment_date", options.asOfDate) : query;
+    }),
   ]);
+  const datedDebtRows = options.asOfDate
+    ? debtRows.filter((row) => {
+      const metadata = metadataRecord(row.metadata);
+      const startDate = row.start_date ?? (typeof metadata.start_date === "string" ? metadata.start_date.slice(0, 10) : "");
+      return !startDate || startDate <= options.asOfDate!;
+    })
+    : debtRows;
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const transactionLedgers = buildDebtTransactionLedgers([
     ...transactionRows,
     ...standaloneDebtPaymentTransactions(debtPaymentRows),
-  ], debtRows);
-  return debtRows
-    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id)))
+  ], datedDebtRows);
+  return datedDebtRows
+    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id), options.asOfDate))
     .sort((first, second) => dateTimeSortValue(first.nextPaymentDateTimeValue ?? "") - dateTimeSortValue(second.nextPaymentDateTimeValue ?? ""));
 }
 

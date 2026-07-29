@@ -16,7 +16,6 @@ export default async function TransactionsPage({
 }: {
   searchParams: Promise<{
     account?: string | string[];
-    amount?: string | string[];
     category?: string | string[];
     dateFrom?: string | string[];
     dateTo?: string | string[];
@@ -29,7 +28,6 @@ export default async function TransactionsPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const requestedAccount = Array.isArray(resolvedSearchParams.account) ? resolvedSearchParams.account[0] : resolvedSearchParams.account;
-  const requestedAmount = Array.isArray(resolvedSearchParams.amount) ? resolvedSearchParams.amount[0] : resolvedSearchParams.amount;
   const requestedCategory = Array.isArray(resolvedSearchParams.category) ? resolvedSearchParams.category[0] : resolvedSearchParams.category;
   const requestedSearch = Array.isArray(resolvedSearchParams.q) ? resolvedSearchParams.q[0] : resolvedSearchParams.q;
   const requestedStatus = Array.isArray(resolvedSearchParams.status) ? resolvedSearchParams.status[0] : resolvedSearchParams.status;
@@ -86,7 +84,6 @@ export default async function TransactionsPage({
         defaultDateFrom={defaultDateRange.dateFrom}
         defaultDateTo={defaultDateRange.dateTo}
         initialAccountFilter={requestedAccount}
-        initialAmountFilter={requestedAmount}
         initialCategoryFilter={requestedCategory}
         initialDateFrom={requestedDateFrom ?? defaultDateRange.dateFrom}
         initialDateTo={requestedDateTo ?? defaultDateRange.dateTo}

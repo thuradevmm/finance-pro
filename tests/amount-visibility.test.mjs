@@ -6,6 +6,7 @@ const globalsPath = new URL("../src/app/globals.css", import.meta.url);
 const responsiveAmountPath = new URL("../src/components/ui/responsive-amount.tsx", import.meta.url);
 const summaryCardsPath = new URL("../src/components/app/summary-cards.tsx", import.meta.url);
 const transactionContentPath = new URL("../src/features/transactions/transactions-page-content.tsx", import.meta.url);
+const transactionFiltersPath = new URL("../src/features/transactions/transactions-filters.tsx", import.meta.url);
 
 test("shared amount values wrap without hiding or abbreviating digits", async () => {
   const css = await readFile(globalsPath, "utf8");
@@ -54,13 +55,20 @@ test("shared summary cards use compact spacing and a consistent prominent amount
   assert.doesNotMatch(source, /amount-value[^\n]*(?:overflow-hidden|truncate|whitespace-nowrap)/);
 });
 
-test("transaction operating and financing cards align as six responsive columns", async () => {
-  const [summaryCards, transactionContent] = await Promise.all([
-    readFile(summaryCardsPath, "utf8"),
+test("transaction page omits summary cards and the amount filter", async () => {
+  const [transactionContent, transactionFilters] = await Promise.all([
     readFile(transactionContentPath, "utf8"),
+    readFile(transactionFiltersPath, "utf8"),
   ]);
 
-  assert.match(summaryCards, /columns === 6/);
-  assert.match(summaryCards, /lg:grid-cols-3 2xl:grid-cols-6/);
-  assert.match(transactionContent, /<SummaryCards columns=\{6\} summaries=\{filteredSummaries\}/);
+  assert.doesNotMatch(transactionContent, /SummaryCards|filteredSummaries|getTransactionSummaries/);
+  assert.doesNotMatch(transactionFilters, /Amount filter|name="amount"|filters\.amount/);
+});
+
+test("button press feedback changes color without moving or resizing controls", async () => {
+  const css = await readFile(globalsPath, "utf8");
+  const activeRule = css.match(/:where\(button:not\(:disabled\), a\[href\]\.inline-flex, a\[href\]\.grid, a\[href\]\.flex\):active\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+
+  assert.match(activeRule, /filter:\s*brightness/);
+  assert.doesNotMatch(activeRule, /transform|scale|translate/);
 });

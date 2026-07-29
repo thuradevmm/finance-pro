@@ -256,6 +256,5 @@ export type TransactionFilterOptions = {
   category: string[];
   account: string[];
   type: string[];
-  amount: string[];
   status: string[];
 };
