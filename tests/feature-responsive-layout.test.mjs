@@ -30,9 +30,10 @@ test("responsive register cards preserve interactive sorting below xl", async ()
 
   for (const { feature, file, type } of configurations) {
     const source = await readFile(file, "utf8");
-    const sortControlStart = source.indexOf(`aria-label="Sort ${feature} cards by"`);
+    const accessibleFeature = feature === "debt" ? "borrowing and lending" : feature;
+    const sortControlStart = source.indexOf(`aria-label="Sort ${accessibleFeature} cards by"`);
     const cardLayoutStart = source.indexOf("xl:hidden", sortControlStart);
-    const directionAction = 'aria-label={`Sort ' + feature + ' cards ${sortDirection === "asc" ? "descending" : "ascending"}`}';
+    const directionAction = 'aria-label={`Sort ' + accessibleFeature + ' cards ${sortDirection === "asc" ? "descending" : "ascending"}`}';
 
     assert.ok(sortControlStart >= 0, `${feature} cards should expose a sort-key selector`);
     assert.ok(cardLayoutStart >= 0, `${feature} sort controls should be available below xl`);

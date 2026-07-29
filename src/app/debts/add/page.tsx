@@ -14,14 +14,14 @@ export default async function AddDebtPage() {
 
   return (
     <AppShell
-      activeNavLabel="Debts"
-      mobileSearchLabel="Search debts on mobile"
-      mobileSearchPlaceholder="Search debts..."
-      mobileSubtitle="Add Debt"
-      topSearchLabel="Search debts"
-      topSearchPlaceholder="Search debts..."
+      activeNavLabel="Borrowing & Lending"
+      mobileSearchLabel="Search borrowing and lending on mobile"
+      mobileSearchPlaceholder="Search borrowing and lending..."
+      mobileSubtitle="Add Borrowing / Lending"
+      topSearchLabel="Search borrowing and lending"
+      topSearchPlaceholder="Search borrowing and lending..."
     >
-      <PageHeader description="Record a liability, repayment schedule, and progress baseline." title="Add Debt" />
+      <PageHeader description="Record money borrowed or lent, choose the affected account amount type, and set the payment or return schedule." title="Add Borrowing or Lending" />
       <AddDebtForm accounts={accounts} categories={categories} />
     </AppShell>
   );

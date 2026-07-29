@@ -45,7 +45,7 @@ const transactionTypes: TransactionTypeOption[] = [
 ];
 
 const automaticCreditCardDebtOption: TransactionRelatedOption = {
-  label: "Automatic Credit Card Debt",
+  label: "Automatic Credit Card Borrowing",
   type: "debt",
   value: "",
 };
@@ -427,7 +427,7 @@ export function AddTransactionForm({
     if (selectedType !== "Expense") handleTypeChange("Expense");
     setAmount(String(debtPayoffQuote.payoffAmount));
     if (!note.trim() && effectiveRelatedOption?.label) {
-      setNote(`${effectiveRelatedOption.label.replace(/^Debt:\s*/, "")} payoff`);
+      setNote(`${effectiveRelatedOption.label.replace(/^(?:Debt|Borrowing|Lending|Credit Card Borrowing):\s*/, "")} ${effectiveRelatedOption.label.startsWith("Lending:") ? "return" : "payoff"}`);
     }
   }
 
@@ -663,7 +663,7 @@ export function AddTransactionForm({
 
           <FormCard title="Transaction Impact">
             <SelectInput
-              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt || isCreditCardDebtPayment ? "Credit Card Debt" : "Reflect To Page"}
+              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt || isCreditCardDebtPayment ? "Credit Card Borrowing" : "Reflect To Page"}
               onChange={handleRelatedOptionChange}
               options={impactOptions.map((option) => option.label)}
               value={effectiveRelatedOption?.label ?? "No linked record"}
@@ -676,7 +676,7 @@ export function AddTransactionForm({
                 <div className="min-w-0">
                   <p className="text-xs font-bold uppercase text-[#0058be]">Credit Card Payment</p>
                   <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Restores available credit on {effectiveRelatedOption?.creditCardDebt?.accountName || "the linked card"}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This reduces the payment account and card debt. It does not change the configured credit limit or count as new spending.</p>
+                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This reduces the payment account and outstanding card borrowing. It does not change the configured credit limit or count as new spending.</p>
                 </div>
               </div>
             ) : null}
@@ -687,8 +687,8 @@ export function AddTransactionForm({
                 </span>
                 <div className="min-w-0">
                   <p className="text-xs font-bold uppercase text-[#b42318]">Additional Impact</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Automatic Credit Card Debt</p>
-                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This credit card charge will keep the selected primary impact and increase the card debt balance.</p>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Automatic Credit Card Borrowing</p>
+                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This credit card charge will keep the selected primary impact and increase the outstanding card borrowing.</p>
                 </div>
               </div>
             ) : null}
@@ -759,7 +759,7 @@ export function AddTransactionForm({
               <div className="mt-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase text-[#0058be]">Debt Payoff</p>
+                    <p className="text-xs font-bold uppercase text-[#0058be]">{effectiveRelatedOption?.label.startsWith("Lending:") ? "Lending Return" : "Borrowing Payoff"}</p>
                     <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(debtPayoffQuote.asOfDate)}</p>
                   </div>
                   <button

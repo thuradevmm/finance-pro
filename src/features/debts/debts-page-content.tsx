@@ -28,13 +28,17 @@ const statusStyles: Record<DebtStatus, string> = {
 type DebtSortKey = "monthlyPayment" | "name" | "remainingBalance" | "repaidAmount" | "status" | "totalAmount";
 
 const debtSortOptions: { label: string; value: DebtSortKey }[] = [
-  { label: "Debt Name", value: "name" },
+  { label: "Record Name", value: "name" },
   { label: "Total Amount", value: "totalAmount" },
-  { label: "Principal / Applied", value: "repaidAmount" },
+  { label: "Paid / Returned", value: "repaidAmount" },
   { label: "Remaining Balance", value: "remainingBalance" },
-  { label: "Payment Due", value: "monthlyPayment" },
+  { label: "Payment / Return Due", value: "monthlyPayment" },
   { label: "Status", value: "status" },
 ];
+
+function recordLabelForDebt(debt: DebtRecordWithValues) {
+  return debt.isCreditCardDebt ? "credit card borrowing" : debt.nature.toLowerCase();
+}
 
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.-]/g, "")) || 0;
@@ -49,7 +53,7 @@ function DebtProgress({ debt }: { debt: DebtRecordWithValues }) {
         <span>{debt.isCreditCardDebt ? "Applied payment" : debt.nature === "Lending" ? "Money returned" : "Principal repaid"}</span>
         <span>{debt.progressPercent}%</span>
       </div>
-      <ProgressMeter ariaLabel={`${debt.name} repayment progress`} colorClassName={color} percent={debt.progressPercent} />
+      <ProgressMeter ariaLabel={`${debt.name} ${debt.nature === "Lending" ? "return" : "repayment"} progress`} colorClassName={color} percent={debt.progressPercent} />
     </div>
   );
 }
@@ -140,7 +144,7 @@ function DebtsTable({
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm">
       <div className="flex min-w-0 flex-col items-stretch gap-3 border-b border-[#c6c6cd]/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Debt & Lending" : "All Debt & Lending"}</h2>
+          <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Borrowing & Lending" : "All Borrowing & Lending"}</h2>
           <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue borrowing and lending records" : "Showing paid records too"}</p>
         </div>
       </div>
@@ -150,11 +154,11 @@ function DebtsTable({
         <table className="w-full min-w-[1120px] border-collapse text-left">
           <thead>
             <tr className="bg-[#f8f9ff] text-xs font-semibold uppercase text-[#45464d]">
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Debt Name</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Record Name</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("totalAmount")} sortDirection={sortKey === "totalAmount" ? sortDirection : undefined}>Total Amount</SortHeader></th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("repaidAmount")} sortDirection={sortKey === "repaidAmount" ? sortDirection : undefined}>Principal / Applied</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("repaidAmount")} sortDirection={sortKey === "repaidAmount" ? sortDirection : undefined}>Paid / Returned</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("remainingBalance")} sortDirection={sortKey === "remainingBalance" ? sortDirection : undefined}>Remaining Balance</SortHeader></th>
-              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Payment Due</SortHeader></th>
+              <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("monthlyPayment")} sortDirection={sortKey === "monthlyPayment" ? sortDirection : undefined}>Payment / Return Due</SortHeader></th>
               <th className="border-b border-[#c6c6cd]/60 px-4 py-3 text-center"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="w-36 border-b border-[#c6c6cd]/60 px-4 py-3 text-right">Actions</th>
             </tr>
@@ -186,9 +190,9 @@ function DebtsTable({
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
-                      <span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card debt is managed from Accounts">Managed in Accounts</span>
+                      <span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span>
                     ) : (
-                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
                     )}
                   </div>
                 </td>
@@ -202,7 +206,7 @@ function DebtsTable({
             <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">Sort by</span>
             <span className="relative block min-w-0">
               <select
-                aria-label="Sort debt cards by"
+                aria-label="Sort borrowing and lending cards by"
                 className="h-11 w-full appearance-none rounded-md border border-[#c6c6cd] bg-white px-3 pr-10 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                 onChange={(event) => handleSort(event.target.value as DebtSortKey)}
                 value={sortKey}
@@ -213,7 +217,7 @@ function DebtsTable({
             </span>
           </label>
           <button
-            aria-label={`Sort debt cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
+            aria-label={`Sort borrowing and lending cards ${sortDirection === "asc" ? "descending" : "ascending"}`}
             className="inline-flex min-h-11 w-full items-center justify-center gap-2 self-end rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 min-[420px]:w-auto"
             onClick={() => handleSort(sortKey)}
             type="button"
@@ -246,7 +250,7 @@ function DebtsTable({
                   <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={debt.totalAmount}>{debt.totalAmount}</dd>
                 </div>
                 <div className="min-w-0 rounded-md bg-[#f0fdf4] p-3">
-                  <dt className="text-xs font-bold uppercase text-[#166534]">Principal / Applied</dt>
+                  <dt className="text-xs font-bold uppercase text-[#166534]">{debt.isCreditCardDebt ? "Applied Payment" : debt.nature === "Lending" ? "Money Returned" : "Principal Repaid"}</dt>
                   <dd className="amount-value mt-1 font-semibold text-[#047857]" title={debt.repaidAmount}>{debt.repaidAmount}</dd>
                 </div>
                 <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
@@ -254,16 +258,16 @@ function DebtsTable({
                   <dd className={`amount-value mt-1 font-semibold ${debt.remainingBalance === "MMK 0.00" ? "text-[#047857]" : "text-[#0b1c30]"}`} title={debt.remainingBalance}>{debt.remainingBalance}</dd>
                 </div>
                 <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3">
-                  <dt className="text-xs font-bold uppercase text-[#45464d]">Payment Due</dt>
+                  <dt className="text-xs font-bold uppercase text-[#45464d]">{debt.nature === "Lending" ? "Return Due" : "Payment Due"}</dt>
                   <dd className="amount-value mt-1 font-semibold text-[#0b1c30]" title={debt.monthlyPayment}>{debt.monthlyPayment}</dd>
                 </div>
               </dl>
 
               <div className="mt-4 flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-[#c6c6cd]/40 pt-3">
                 {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
-                  <span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card debt is managed from Accounts">Managed in Accounts</span>
+                  <span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span>
                 ) : (
-                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this debt from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
                 )}
               </div>
             </article>
@@ -298,7 +302,7 @@ function UpcomingPayments({ onViewCalendar, payments }: { onViewCalendar: () => 
           </div>
         )) : (
           <div className="rounded-lg border border-dashed border-[#c6c6cd] bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
-            No scheduled debt payments yet.
+            No scheduled borrowing payments or lending returns yet.
           </div>
         )}
       </div>
@@ -334,8 +338,8 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
       isOpen={isOpen}
       maxWidthClassName="sm:max-w-3xl"
       onClose={onClose}
-      subtitle={`${entries.length} scheduled payment${entries.length === 1 ? "" : "s"}`}
-      title="Debt Payment Calendar"
+      subtitle={`${entries.length} scheduled payment or return ${entries.length === 1 ? "entry" : "entries"}`}
+      title="Payment & Return Calendar"
     >
       {groupedEntries.length > 0 ? (
         <div className="space-y-5">
@@ -364,8 +368,8 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
       ) : (
         <div className="rounded-lg border border-dashed border-[#c6c6cd] bg-[#f8f9ff] p-8 text-center">
           <Icon className="mx-auto size-8 text-[#76777d]" name="calendar" />
-          <h3 className="mt-3 text-base font-semibold text-[#0b1c30]">No scheduled payments</h3>
-          <p className="mt-1 text-sm text-[#45464d]">Add a next payment date and duration to a debt to see it on the calendar.</p>
+          <h3 className="mt-3 text-base font-semibold text-[#0b1c30]">No scheduled payments or returns</h3>
+          <p className="mt-1 text-sm text-[#45464d]">Add a payment or return date and duration to a borrowing or lending record to see it here.</p>
         </div>
       )}
     </ModalShell>
@@ -408,6 +412,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
   const calendarEntries = useMemo(() => buildCalendarEntries(filteredPayments), [filteredPayments]);
 
   async function handleDelete(debtId: string) {
+    const deletedDebt = visibleDebts.find((debt) => debt.id === debtId);
     setIsPending(true);
     const result = await deleteDebt(debtId);
     setIsPending(false);
@@ -416,7 +421,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
       return;
     }
     setVisibleDebts((items) => items.filter((item) => item.id !== debtId));
-    showSuccess("Debt deleted successfully.");
+    showSuccess(`${deletedDebt?.isCreditCardDebt ? "Credit card borrowing" : deletedDebt?.nature ?? "Record"} deleted successfully.`);
   }
 
   return (
@@ -428,13 +433,13 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
         queryFilter.apply(readSubmittedQuery(formData, queryFilter.draftValue));
       }}>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)_auto] lg:items-end">
-          <SearchField label="Search debts" name="q" onChange={queryFilter.setDraftValue} placeholder="Debt, lender, amount, status..." value={queryFilter.draftValue} />
+          <SearchField label="Search borrowing and lending" name="q" onChange={queryFilter.setDraftValue} placeholder="Name, lender, borrower, amount, status..." value={queryFilter.draftValue} />
           <SelectFilter
-            label="Debt status filter"
+            label="Record status filter"
             name="debtStatus"
             onChange={(value) => setDraftDebtStatusFilters({ activeOnly: value === "Active and overdue" })}
-            options={["Active and overdue", "All debts"]}
-            value={draftShowActiveOnly ? "Active and overdue" : "All debts"}
+            options={["Active and overdue", "All records"]}
+            value={draftShowActiveOnly ? "Active and overdue" : "All records"}
           />
           <FilterActions isPending={queryFilter.isPending} onReset={() => {
             resetDebtStatusFilters();
@@ -444,7 +449,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
       </FilterForm>
       <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="min-w-0 xl:col-span-9">
-        {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating debts…</p> : null}
+        {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating borrowing and lending records…</p> : null}
         <DebtsTable
           debts={filteredDebts}
           emptyState={emptyState}

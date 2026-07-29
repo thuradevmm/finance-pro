@@ -5,14 +5,14 @@ import { getDebtListEmptyState, getDebtVisibilityToggleState } from "../src/lib/
 
 test("paid-debt toggle pressed state means paid debts are included", () => {
   assert.deepEqual(getDebtVisibilityToggleState(true), {
-    ariaLabel: "Include paid debts",
+    ariaLabel: "Include completed borrowing and lending records",
     isPressed: false,
-    label: "Show paid debts",
+    label: "Show completed records",
   });
   assert.deepEqual(getDebtVisibilityToggleState(false), {
-    ariaLabel: "Include paid debts",
+    ariaLabel: "Include completed borrowing and lending records",
     isPressed: true,
-    label: "Hide paid debts",
+    label: "Hide completed records",
   });
 });
 
@@ -22,8 +22,8 @@ test("distinguishes an all-paid list from a user with no debts", () => {
     search: "",
     showActiveOnly: true,
   }), {
-    description: "All liabilities are paid. Show paid debts to review their repayment history.",
-    title: "No active debts",
+    description: "All borrowing and lending records are completed. Show completed records to review their history.",
+    title: "No active borrowing or lending",
   });
 
   assert.deepEqual(getDebtListEmptyState({
@@ -31,8 +31,8 @@ test("distinguishes an all-paid list from a user with no debts", () => {
     search: "",
     showActiveOnly: true,
   }), {
-    description: "Add a debt to track repayment progress.",
-    title: "No debts yet",
+    description: "Add borrowing or lending to track payments, returns, and progress.",
+    title: "No borrowing or lending yet",
   });
 });
 
@@ -41,11 +41,11 @@ test("explains empty search results according to the active filter", () => {
     hasAnyDebt: true,
     search: "visa",
     showActiveOnly: true,
-  }).title, "No matching active debts");
+  }).title, "No matching active records");
 
   assert.equal(getDebtListEmptyState({
     hasAnyDebt: true,
     search: "visa",
     showActiveOnly: false,
-  }).title, "No matching debts");
+  }).title, "No matching records");
 });

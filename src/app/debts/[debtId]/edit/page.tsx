@@ -21,10 +21,11 @@ export default async function EditDebtPage({ params }: { params: Promise<{ debtI
   if (!debt) {
     notFound();
   }
+  const recordLabel = debt.isCreditCardDebt ? "Credit Card Borrowing" : debt.nature;
 
   return (
-    <AppShell activeNavLabel="Debts" mobileSearchLabel="Search debts on mobile" mobileSearchPlaceholder="Search debts..." mobileSubtitle="Edit Debt" topSearchLabel="Search debts" topSearchPlaceholder="Search debts...">
-      <PageHeader description={`Update debt record for ${debt.name}.`} title="Edit Debt" />
+    <AppShell activeNavLabel="Borrowing & Lending" mobileSearchLabel="Search borrowing and lending on mobile" mobileSearchPlaceholder="Search borrowing and lending..." mobileSubtitle={`Edit ${recordLabel}`} topSearchLabel="Search borrowing and lending" topSearchPlaceholder="Search borrowing and lending...">
+      <PageHeader description={`Update the ${recordLabel.toLowerCase()} record, linked account amount type, and ${debt.nature === "Lending" ? "return" : "repayment"} plan for ${debt.name}.`} title={`Edit ${recordLabel}`} />
       <AddDebtForm accounts={accounts} categories={categories} debt={debt} />
     </AppShell>
   );

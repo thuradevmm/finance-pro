@@ -37,7 +37,7 @@ export function transactionMutationIntegrityError(
     return "The Credit side of a card purchase is system-managed. Edit, delete, or reverse its linked Debit purchase instead.";
   }
   if (metadata.system_managed === true && metadata.financial_event === "debt_origination") {
-    return "Debt origination transactions are managed from the linked Debt record and cannot be edited, deleted, or reversed here.";
+    return "Borrowing and lending origination transactions are managed from the linked record and cannot be edited, deleted, or reversed here.";
   }
   if (transactionReversalSourceId(transaction)) {
     return "Reversal transactions cannot be edited, deleted, or reversed. Record a new correcting transaction if another adjustment is needed.";

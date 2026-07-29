@@ -4,10 +4,14 @@ import test from "node:test";
 
 const debtFormPath = new URL("../src/features/debts/add-debt-form.tsx", import.meta.url);
 
-test("optional standard-debt account selector displays the saved empty state", async () => {
+test("borrowing and lending require an account amount type and preview the linked transaction", async () => {
   const source = await readFile(debtFormPath, "utf8");
 
-  assert.match(source, /semanticIsCreditCard[\s\S]*:\s*\["No account", \.\.\.getAccountOptionLabels\(paymentAccounts\)\]/);
-  assert.match(source, /semanticIsCreditCard \? "No accounts" : "No account"/);
-  assert.match(source, /options=\{paymentAccountOptions\} value=\{paymentAccountValue\}/);
+  assert.match(source, /const paymentAccountHasError = showErrors && !selectedPaymentAccount/);
+  assert.match(source, /!selectedPaymentAccount \|\| !accountAmountTypeOptions\.includes\(accountAmountType\)/);
+  assert.match(source, /accountAmountType,/);
+  assert.match(source, /Receiving \/ Payment Account/);
+  assert.match(source, /Funding Amount Type/);
+  assert.match(source, /Current Linked Transaction/);
+  assert.match(source, /Projected After Save/);
 });

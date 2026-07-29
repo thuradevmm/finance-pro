@@ -89,6 +89,10 @@ function revalidateDebtViews(debtId?: string) {
   if (debtId) revalidatePath(`/debts/${debtId}/edit`);
 }
 
+function recordLabel(input: Pick<DebtFormData, "isCreditCardDebt" | "nature">) {
+  return input.isCreditCardDebt ? "Credit card borrowing" : input.nature;
+}
+
 async function authenticatedClient() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
@@ -131,6 +135,7 @@ function payload(input: DebtFormData, cardTerms: DebtCardTerms = {}): DebtPayloa
       monthly_payment: input.monthlyPayment,
       next_payment_date: input.nextPaymentDate || null,
       notes: input.notes.trim(),
+      origination_account_amount_type: input.accountAmountType,
       payment_account_id: input.paymentAccountId || null,
       payoff_date: input.payoffDate || null,
       repayment_frequency: input.repaymentFrequency === "One-time" ? "one_time" : "monthly",
@@ -160,14 +165,14 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
-function firstAccountAmountType(metadataValue: unknown) {
+function accountAmountTypes(metadataValue: unknown) {
   const metadata = metadataRecord(metadataValue);
-  if (!Array.isArray(metadata.amount_types)) return "Operation";
-  for (const value of metadata.amount_types) {
-    const type = metadataRecord(value).type;
-    if (typeof type === "string" && type.trim()) return type.trim();
-  }
-  return "Operation";
+  if (!Array.isArray(metadata.amount_types)) return ["Operation"];
+  const amountTypes = metadata.amount_types
+    .map((value) => metadataRecord(value).type)
+    .filter((type): type is string => typeof type === "string" && Boolean(type.trim()))
+    .map((type) => type.trim());
+  return amountTypes.length > 0 ? amountTypes : ["Operation"];
 }
 
 async function syncDebtOriginationTransaction(
@@ -207,7 +212,7 @@ async function syncDebtOriginationTransaction(
     deleted_at: null,
     description: `${isLending ? "Money lent" : "Borrowed money received"} · ${input.name.trim()}`,
     metadata: {
-      account_amount_type: firstAccountAmountType(account.metadata),
+      account_amount_type: input.accountAmountType,
       accounting_class: isLending ? "financing_payment" : "financing_receipt",
       accounting_version: 1,
       cash_flow_treatment: isLending ? "explicit_funding" : "borrowing_receipt",
@@ -320,12 +325,12 @@ function canonicalDebtInput(
   if (input.repaymentFrequency === "One-time") {
     const remainingAmount = Math.max(input.totalAmount - input.repaidAmount, 0);
     const repaymentDate = input.payoffDate || input.nextPaymentDate;
-    if (!repaymentDate) return { error: "Choose the one-time repayment date.", input };
+    if (!repaymentDate) return { error: `Choose the one-time ${input.nature === "Lending" ? "return" : "repayment"} date.`, input };
     if (repaymentDate < input.startDate) {
-      return { error: "The one-time repayment date cannot be before the debt start date.", input };
+      return { error: `The one-time ${input.nature === "Lending" ? "return" : "repayment"} date cannot be before the ${input.nature === "Lending" ? "lending" : "borrowing"} date.`, input };
     }
     if (input.repaidAmount > input.totalAmount + 0.005) {
-      return { error: "Repaid amount cannot exceed the total amount for a one-time debt.", input };
+      return { error: `${input.nature === "Lending" ? "Returned" : "Repaid"} amount cannot exceed the total amount for a one-time ${input.nature.toLowerCase()} record.`, input };
     }
     const nextPaymentDate = remainingAmount <= 0.005 ? "" : repaymentDate;
     return {
@@ -353,7 +358,7 @@ function canonicalDebtInput(
     startDate: input.startDate,
   });
   if (input.repaidAmount > schedule.totalRepayment + 0.005) {
-    return { error: "Repaid amount cannot exceed the scheduled total repayment.", input };
+    return { error: `${input.nature === "Lending" ? "Returned" : "Repaid"} amount cannot exceed the scheduled total ${input.nature === "Lending" ? "return" : "repayment"}.`, input };
   }
 
   const remainingAmount = schedule.remainingPrincipal;
@@ -383,12 +388,12 @@ async function validatePaymentAccount(
 ) {
   if (!input.paymentAccountId) {
     if (input.isCreditCardDebt) {
-      return { error: "A credit card debt must be linked to a credit card account." };
+      return { error: "Select the credit card account for this credit card borrowing." };
     }
     if (input.nature === "Lending") {
       return { error: "Select the account that funds this lending record." };
     }
-    return { account: null as DebtPaymentAccountRow | null };
+    return { error: "Select the account that receives the borrowed money." };
   }
   const { data, error } = await supabase
     .from("accounts")
@@ -398,13 +403,22 @@ async function validatePaymentAccount(
     .is("deleted_at", null)
     .maybeSingle();
   if (error) return { error: error.message };
-  if (!data) return { error: "The selected payment account does not exist." };
+  if (!data) return { error: "The selected account does not exist." };
   const account = data as DebtPaymentAccountRow;
   if (account.id !== allowedArchivedAccountId && (account.is_active === false || recordStatus(account.metadata) === "archived")) {
-    return { error: "Archived accounts cannot be assigned to new debt activity." };
+    return { error: "Archived accounts cannot be assigned to new borrowing or lending activity." };
   }
   if (input.isCreditCardDebt && normalizeAccountType(account.type) !== "credit_card") {
-    return { error: "A credit card debt must be linked to a credit card account, not a bank or wallet account." };
+    return { error: "Credit card borrowing must be linked to a credit card account, not a bank or wallet account." };
+  }
+  const supportedAmountTypes = normalizeAccountType(account.type) === "credit_card"
+    ? ["Credit Card"]
+    : accountAmountTypes(account.metadata);
+  if (!input.accountAmountType.trim()) {
+    return { error: `Select the account amount type that ${input.nature === "Lending" ? "funds the lending" : "receives the borrowing"}.` };
+  }
+  if (!supportedAmountTypes.some((type) => type.toLowerCase() === input.accountAmountType.trim().toLowerCase())) {
+    return { error: "The selected amount type is not available on this account." };
   }
   return { account };
 }
@@ -419,7 +433,7 @@ async function validateDebtCategory(
   if (!input.categoryId) {
     return allowUncategorized
       ? { input }
-      : { error: "Select an active debt category." };
+      : { error: "Select an active borrowing / lending category." };
   }
   let { data, error } = await supabase
     .from("categories")
@@ -438,13 +452,13 @@ async function validateDebtCategory(
       .maybeSingle());
   }
   if (error) return { error: error.message };
-  if (!data) return { error: "The selected debt category does not exist." };
+  if (!data) return { error: "The selected borrowing / lending category does not exist." };
   const category = data as DebtCategoryRow;
-  if (category.id !== allowedExistingCategoryId && category.is_active === false) return { error: "Select an active debt category." };
+  if (category.id !== allowedExistingCategoryId && category.is_active === false) return { error: "Select an active borrowing / lending category." };
   const metadata = metadataRecord(category.metadata);
   const categoryType = String(category.category_type ?? metadata.category_type ?? category.type ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   const scopes = Array.isArray(metadata.scopes) ? metadata.scopes.map((scope) => String(scope).toLowerCase()) : [];
-  if (categoryType !== "debt" && !scopes.includes("debts")) return { error: "The selected category is not available for debts." };
+  if (categoryType !== "debt" && !scopes.includes("debts")) return { error: "The selected category is not available for borrowing or lending." };
   return {
     input: {
       ...input,
@@ -564,7 +578,7 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
       .select("id")
       .maybeSingle();
     if (!error) {
-      if (!data?.id) return { error: "Debt was saved without a reconciliation identifier." };
+      if (!data?.id) return { error: `${recordLabel(canonical.input)} was saved without a reconciliation identifier.` };
       const originationError = await syncDebtOriginationTransaction(
         supabase,
         user.id,
@@ -574,7 +588,7 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
       );
       if (originationError) {
         await supabase.from("debts").delete().eq("id", data.id).eq("user_id", user.id);
-        return { error: `Debt origination could not be reconciled: ${originationError}` };
+        return { error: `${recordLabel(canonical.input)} origination could not be reconciled: ${originationError}` };
       }
       revalidateDebtViews();
       return {};
@@ -585,7 +599,7 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
     delete debtPayload[column];
   }
 
-  return { error: "Debt could not be saved because the database schema is not aligned with the debt form." };
+  return { error: `${recordLabel(input)} could not be saved because the database schema is not aligned with this form.` };
 }
 
 async function updateDebtPayload(
@@ -603,7 +617,7 @@ async function updateDebtPayload(
     delete debtPayload[column];
   }
 
-  return { data: null, error: { message: "Debt could not be updated because the database schema is not aligned with the debt form." } };
+  return { data: null, error: { message: "The borrowing / lending record could not be updated because the database schema is not aligned with this form." } };
 }
 
 async function archiveDebtPayload(
@@ -621,7 +635,7 @@ async function archiveDebtPayload(
     delete archivePayload[column];
   }
 
-  return { data: null, error: { message: "Debt could not be deleted because the database schema is not aligned with the debt form." } };
+  return { data: null, error: { message: "The borrowing / lending record could not be deleted because the database schema is not aligned with this form." } };
 }
 
 export async function updateDebt(debtId: string, input: DebtFormData): Promise<ActionResult> {
@@ -631,17 +645,17 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   try {
     existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Unable to load debt." };
+    return { error: error instanceof Error ? error.message : "Unable to load the borrowing / lending record." };
   }
-  if (!existingDebt) return { error: "Debt not found." };
+  if (!existingDebt) return { error: "Borrowing / lending record not found." };
   const existingMetadata = metadataRecord(existingDebt.metadata);
   if (isCreditCardDebtRow(existingDebt)
     && existingMetadata.auto_credit_card_terms === true
     && existingMetadata.manual_credit_card_terms !== true) {
-    return { error: "Automatic credit card debt is managed from the linked Accounts card details and cannot be edited directly." };
+    return { error: "Automatic credit card borrowing is managed from the linked account details and cannot be edited directly." };
   }
   if (isCreditCardDebtRow(existingDebt) !== input.isCreditCardDebt) {
-    return { error: "A debt cannot be changed between credit-card and installment-loan accounting after creation." };
+    return { error: "A borrowing or lending record cannot be changed between credit-card and installment accounting after creation." };
   }
   const categoryResult = await validateDebtCategory(
     supabase,
@@ -656,18 +670,18 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
     try {
       ledgerTotals = await getDebtLedgerTotals(supabase, debtId, user.id, existingDebt);
     } catch (error) {
-      return { error: error instanceof Error ? error.message : "Unable to load linked debt transactions." };
+      return { error: error instanceof Error ? error.message : "Unable to load linked borrowing / lending transactions." };
     }
   }
   if (input.repaidAmount + 0.005 < ledgerTotals.repayments) {
-    return { error: "Repaid amount cannot be lower than the posted repayment history linked to this debt." };
+    return { error: `${input.nature === "Lending" ? "Returned" : "Repaid"} amount cannot be lower than the posted ${input.nature === "Lending" ? "return" : "repayment"} history linked to this record.` };
   }
   const existingNature = normalizeDebtNature(existingMetadata.debt_nature, existingDebt.name);
   if (existingNature !== input.nature && ledgerTotals.repayments > 0.005) {
-    return { error: "Debt nature cannot be changed after repayment transactions have been posted." };
+    return { error: "Financial nature cannot be changed after linked payment or return transactions have been posted." };
   }
   if (input.isCreditCardDebt && input.totalAmount + 0.005 < ledgerTotals.charges) {
-    return { error: "Total amount cannot be lower than the posted credit card charges linked to this debt." };
+    return { error: "Total amount cannot be lower than the posted charges linked to this credit card borrowing." };
   }
   const accountResult = await validatePaymentAccount(
     supabase,
@@ -697,7 +711,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
     ),
   );
   if (error) return { error: error.message };
-  if (!data) return { error: "Debt not found." };
+  if (!data) return { error: "Borrowing / lending record not found." };
   const originationError = await syncDebtOriginationTransaction(
     supabase,
     user.id,
@@ -706,7 +720,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
     accountResult.account,
   );
   if (originationError) {
-    return { error: `Debt was updated, but its origination transaction could not be reconciled: ${originationError}` };
+    return { error: `${recordLabel(canonicalCategoryInput.input)} was updated, but its origination transaction could not be reconciled: ${originationError}` };
   }
   revalidateDebtViews(debtId);
   return {};
@@ -719,9 +733,9 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
   try {
     existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Unable to load debt." };
+    return { error: error instanceof Error ? error.message : "Unable to load the borrowing / lending record." };
   }
-  if (!existingDebt) return { error: "Debt not found." };
+  if (!existingDebt) return { error: "Borrowing / lending record not found." };
   const [transactionsResult, paymentsResult] = await Promise.all([
     supabase
       .from("transactions")
@@ -751,11 +765,14 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
       - resolveDebtStoredNumber(existingDebt.repaid_amount, existingMetadata.repaid_amount),
     ) > 0.005;
   if (hasLinkedHistory || (paymentsResult.data?.length ?? 0) > 0 || hasStoredRepayment || hasCardOpeningBalance) {
-    return { error: "This debt has linked financial history and cannot be deleted without breaking account and repayment calculations. Keep the record for reconciliation." };
+    const nature = isCreditCardDebtRow(existingDebt)
+      ? "credit card borrowing"
+      : normalizeDebtNature(existingMetadata.debt_nature, existingDebt.name).toLowerCase();
+    return { error: `This ${nature} record has linked financial history and cannot be deleted without breaking account and ${nature === "lending" ? "return" : "repayment"} calculations. Keep the record for reconciliation.` };
   }
   const { data, error } = await archiveDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };
-  if (!data) return { error: "Debt not found." };
+  if (!data) return { error: "Borrowing / lending record not found." };
   revalidateDebtViews();
   return {};
 }

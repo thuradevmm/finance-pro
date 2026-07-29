@@ -573,7 +573,7 @@ async function validateAndResolveTransactionReferences(
   if (!relatedRecord) return { error: "The selected linked record does not exist.", input };
   const status = recordStatus(relatedRecord.metadata, relatedRecord.status);
   if (!preservesExistingRelated && input.relatedEntityType === "debt" && ["archived", "paid"].includes(status)) {
-    return { error: "Paid or archived debts cannot receive new repayment activity.", input };
+    return { error: "Completed or archived borrowing / lending records cannot receive new payment or return activity.", input };
   }
   if (!preservesExistingRelated && input.relatedEntityType === "savings_goal" && status === "completed") {
     return { error: "Completed savings goals cannot receive new contributions.", input };
@@ -600,7 +600,7 @@ async function validateAndResolveTransactionReferences(
       return { error: "Money returned for a lending record must be recorded as a Credit.", input };
     }
     if (debtNature !== "Lending" && input.type === "Income" && (!isCardDebt || input.accountId !== cardAccountId)) {
-      return { error: "A Credit can only link to credit-card debt when it is posted directly to that card account.", input };
+      return { error: "A Credit can only link to credit card borrowing when it is posted directly to that card account.", input };
     }
   }
   if (["asset", "subscription"].includes(input.relatedEntityType) && input.type !== "Expense") {
@@ -1702,13 +1702,13 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
 
         if (selectedCardError) return { error: selectedCardError.message };
         if (!selectedCardAccount || !isCreditCardAccount(selectedCardAccount as AccountRow)) {
-          return { error: "The selected credit card debt is not linked to an active credit card account." };
+          return { error: "The selected credit card borrowing is not linked to an active credit card account." };
         }
 
         const involvedCardResult = await getCreditCardAccountForTransaction(input, userId);
         if ("error" in involvedCardResult) return { error: involvedCardResult.error ?? "Unable to validate the credit card account." };
         if (involvedCardResult.account && involvedCardResult.account.id !== selectedCardAccountId) {
-          return { error: "A credit card cannot be used to pay a different credit card debt. Record the payment from a bank or wallet account instead." };
+          return { error: "A credit card cannot be used to pay different credit card borrowing. Record the payment from a bank or wallet account instead." };
         }
 
         const physicallyTouchesCard = input.accountId === selectedCardAccountId
@@ -1718,7 +1718,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
           : input.type === "Expense" ? "repayment" : "";
 
         if (!impact) {
-          return { error: "Settle a credit card debt with a Debit from the payment account or a Transfer to the credit card." };
+          return { error: "Settle credit card borrowing with a Debit from the payment account or a Transfer to the credit card." };
         }
 
         const isExternalPayment = impact === "repayment" && !physicallyTouchesCard;
@@ -1743,7 +1743,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
   if ("error" in accountResult) return { error: accountResult.error ?? "Unable to load credit card account." };
   if (!accountResult.account) {
     return input.relatedEntityType === "debt" && !input.relatedEntityId
-      ? { error: "Automatic credit card debt is only available when the transaction uses a credit card account." }
+      ? { error: "Automatic credit card borrowing is only available when the transaction uses a credit card account." }
       : { debtId: "", input, metadata: {} };
   }
 
@@ -1754,7 +1754,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
     createIfMissing: true,
     initialChargeAmount: impact === "charge" ? input.amount : 0,
   });
-  if ("error" in debtResult) return { error: debtResult.error ?? "Unable to load credit card debt." };
+  if ("error" in debtResult) return { error: debtResult.error ?? "Unable to load credit card borrowing." };
   if (!debtResult.debtId) {
     return {
       debtId: "",

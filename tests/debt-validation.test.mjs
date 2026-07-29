@@ -8,7 +8,8 @@ const valid = { durationMonths: 12, interestRate: 5, lender: "Bank", monthlyPaym
 test("debt validation rejects impossible amounts and dates", () => {
   assert.match(validateDebtInput({ ...valid, totalAmount: -1 }), /greater than zero/i);
   assert.match(validateDebtInput({ ...valid, repaidAmount: -1 }), /cannot be negative/i);
-  assert.match(validateDebtInput({ ...valid, startDate: "2026-02-30" }), /valid debt start date/i);
+  assert.match(validateDebtInput({ ...valid, startDate: "2026-02-30" }), /valid borrowing date/i);
+  assert.match(validateDebtInput({ ...valid, nature: "Lending", lender: "" }), /borrower \/ recipient is required/i);
   assert.equal(validateDebtInput(valid), "");
   assert.equal(isCreditCardDebtType("credit_card"), true);
   assert.equal(isCreditCardDebtType("Credit Card Debt"), true);

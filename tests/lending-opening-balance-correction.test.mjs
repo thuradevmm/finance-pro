@@ -18,8 +18,11 @@ test("new lending setup requires explicit funding and creates a managed financin
   assert.match(action, /cash_flow_treatment: isLending \? "explicit_funding"/);
   assert.match(action, /lending_funding_confirmed: isLending/);
   assert.match(action, /Select the account that funds this lending record/);
+  assert.match(action, /origination_account_amount_type: input\.accountAmountType/);
+  assert.match(action, /account_amount_type: input\.accountAmountType/);
   assert.match(form, /Funding \/ Return Account/);
-  assert.match(form, /Saving creates a cleared Debit from this account on the lending date/);
+  assert.match(form, /Saving creates a cleared \{originationTransactionType\}/);
+  assert.match(form, /Current Linked Transaction/);
 });
 
 test("corrective migration retires only inferred system-managed lending originations", async () => {

@@ -20,13 +20,13 @@ export default async function DebtsPage() {
 
   return (
     <AppShell
-      activeNavLabel="Debts"
-      mobileAction={{ label: "Add debt", icon: "plus", href: "/debts/add", title: "Add debt" }}
-      mobileSearchLabel="Search debts on mobile"
-      mobileSearchPlaceholder="Search debts..."
-      mobileSubtitle="Debts"
-      topSearchLabel="Search debts"
-      topSearchPlaceholder="Search debts..."
+      activeNavLabel="Borrowing & Lending"
+      mobileAction={{ label: "Add record", icon: "plus", href: "/debts/add", title: "Add borrowing or lending" }}
+      mobileSearchLabel="Search borrowing and lending on mobile"
+      mobileSearchPlaceholder="Search borrowing and lending..."
+      mobileSubtitle="Borrowing & Lending"
+      topSearchLabel="Search borrowing and lending"
+      topSearchPlaceholder="Search borrowing and lending..."
     >
       <PageHeader
         actions={
@@ -35,11 +35,11 @@ export default async function DebtsPage() {
             href="/debts/add"
           >
             <Icon className="size-4" name="plus" />
-            Add Debt
+            Add Borrowing / Lending
           </Link>
         }
         description="Manage borrowing, credit-card liabilities, money lent to others, and repayment progress."
-        title="Debts & Lending"
+        title="Borrowing & Lending"
       />
 
       <SummaryCards summaries={summaries} />

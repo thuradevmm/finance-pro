@@ -18,7 +18,7 @@ export const navGroups: NavItem[][] = [
     { label: "Future Planning", icon: "timeline", href: "/future-planning" },
     { label: "Scenario Budgeting", icon: "chart", href: "/scenario-budgeting" },
     { label: "Savings Goals", icon: "target", href: "/savings-goals" },
-    { label: "Debts", icon: "credit", href: "/debts" },
+    { label: "Borrowing & Lending", icon: "credit", href: "/debts" },
   ],
   [
     { label: "Subscriptions", icon: "subscriptions", href: "/subscriptions" },

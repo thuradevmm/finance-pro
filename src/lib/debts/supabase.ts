@@ -32,6 +32,7 @@ import type { DebtRecord, DebtStatus, SummaryMetric, UpcomingDebtPayment } from 
 export type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 
 export type DebtFormData = {
+  accountAmountType: string;
   categoryId: string;
   durationMonths: number;
   interestRate: number;
@@ -54,6 +55,7 @@ export type DebtFormData = {
 };
 
 export type DebtRecordWithValues = DebtRecord & {
+  accountAmountType: string;
   chargeActivity: DebtLedgerActivity[];
   categoryId: string;
   createdAtValue: string;
@@ -355,6 +357,7 @@ function mapDebt(
 
   return {
     ...appearance,
+    accountAmountType: metadataString(metadata, "origination_account_amount_type"),
     chargeActivity,
     categoryId,
     createdAtValue: row.created_at ?? "",
@@ -477,9 +480,9 @@ export function getDebtSummaries(debts: DebtRecordWithValues[]): SummaryMetric[]
   const outstandingLending = lendingDebts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
   const creditCardUsed = debts.reduce((sum, debt) => sum + debt.creditCardUsedAmountValue, 0);
   const summaries: SummaryMetric[] = [
-    { label: "Total Debt", value: formatMmk(totalDebt), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Principal / Applied", value: formatMmk(repaid), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Remaining Debt", value: formatMmk(remaining), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Total Borrowing", value: formatMmk(totalDebt), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Borrowing Repaid", value: formatMmk(repaid), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Remaining Borrowing", value: formatMmk(remaining), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Outstanding Lending", value: formatMmk(outstandingLending), icon: "account", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
     { label: "Active Records", value: String(debts.filter((debt) => debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];

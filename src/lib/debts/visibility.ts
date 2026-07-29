@@ -6,14 +6,14 @@ export type DebtListEmptyState = {
 export function getDebtVisibilityToggleState(showActiveOnly: boolean) {
   return showActiveOnly
     ? {
-      ariaLabel: "Include paid debts",
+      ariaLabel: "Include completed borrowing and lending records",
       isPressed: false,
-      label: "Show paid debts",
+      label: "Show completed records",
     }
     : {
-      ariaLabel: "Include paid debts",
+      ariaLabel: "Include completed borrowing and lending records",
       isPressed: true,
-      label: "Hide paid debts",
+      label: "Hide completed records",
     };
 }
 
@@ -28,29 +28,29 @@ export function getDebtListEmptyState({
 }): DebtListEmptyState {
   if (!hasAnyDebt) {
     return {
-      description: "Add a debt to track repayment progress.",
-      title: "No debts yet",
+      description: "Add borrowing or lending to track payments, returns, and progress.",
+      title: "No borrowing or lending yet",
     };
   }
 
   if (search.trim() !== "") {
     return {
       description: showActiveOnly
-        ? "Try another search or show paid debts too."
-        : "Try another search to find a liability.",
-      title: showActiveOnly ? "No matching active debts" : "No matching debts",
+        ? "Try another search or show completed records too."
+        : "Try another search to find a borrowing or lending record.",
+      title: showActiveOnly ? "No matching active records" : "No matching records",
     };
   }
 
   if (showActiveOnly) {
     return {
-      description: "All liabilities are paid. Show paid debts to review their repayment history.",
-      title: "No active debts",
+      description: "All borrowing and lending records are completed. Show completed records to review their history.",
+      title: "No active borrowing or lending",
     };
   }
 
   return {
-    description: "Add a debt to track repayment progress.",
-    title: "No debts yet",
+    description: "Add borrowing or lending to track payments, returns, and progress.",
+    title: "No borrowing or lending yet",
   };
 }

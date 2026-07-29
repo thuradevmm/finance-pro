@@ -15,7 +15,7 @@ test("posted reversals are unique and immutable", () => {
   assert.match(transactionReversalIntegrityError({ status: "pending" }, false), /Mark a pending transaction as cleared/i);
 });
 
-test("debt origination transactions stay managed by their debt record", () => {
+test("borrowing and lending origination transactions stay managed by their linked record", () => {
   const managed = {
     metadata: {
       financial_event: "debt_origination",
@@ -23,6 +23,6 @@ test("debt origination transactions stay managed by their debt record", () => {
     },
     status: "cleared",
   };
-  assert.match(transactionMutationIntegrityError(managed, false), /managed from the linked Debt record/i);
-  assert.match(transactionReversalIntegrityError(managed, false), /managed from the linked Debt record/i);
+  assert.match(transactionMutationIntegrityError(managed, false), /managed from the linked record/i);
+  assert.match(transactionReversalIntegrityError(managed, false), /managed from the linked record/i);
 });
