@@ -28,6 +28,7 @@
     "db:remote:verify": "node scripts/check-linked-migrations.mjs --require-synced",
     "db:deploy": "node scripts/deploy-supabase-migrations.mjs",
     "db:start": "npx supabase start",
+    "db:start:ci": "npx supabase start --debug --exclude analytics,edge-runtime,functions,imgproxy,inbucket,kong,meta,realtime,rest,storage,studio,vector",
     "db:stop": "npx supabase stop",
     "db:new": "npx supabase migration new",
     "db:diff": "npx supabase db diff",

@@ -40,7 +40,7 @@ jobs:
         run: npm run build
 
       - name: Start isolated Supabase
-        run: npm run db:start
+        run: npm run db:start:ci
 
       - name: Replay all migrations from zero
         run: npm run db:local:reset:ci
