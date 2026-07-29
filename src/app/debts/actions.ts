@@ -77,12 +77,14 @@ type DebtCardTerms = {
 
 function revalidateDebtViews(debtId?: string) {
   for (const path of [
+    "/accounts",
     "/debts",
     "/categories",
     "/dashboard",
     "/reports",
     "/future-planning",
     "/scenario-budgeting",
+    "/transactions",
   ]) revalidatePath(path);
   if (debtId) revalidatePath(`/debts/${debtId}/edit`);
 }
@@ -155,6 +157,86 @@ function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
     : {};
+}
+
+function firstAccountAmountType(metadataValue: unknown) {
+  const metadata = metadataRecord(metadataValue);
+  if (!Array.isArray(metadata.amount_types)) return "Operation";
+  for (const value of metadata.amount_types) {
+    const type = metadataRecord(value).type;
+    if (typeof type === "string" && type.trim()) return type.trim();
+  }
+  return "Operation";
+}
+
+async function syncDebtOriginationTransaction(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  debtId: string,
+  input: DebtFormData,
+  account: DebtPaymentAccountRow | null,
+) {
+  const { data: existingRows, error: existingError } = await supabase
+    .from("transactions")
+    .select("id,metadata")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "debt")
+    .eq("related_entity_id", debtId);
+  if (existingError) return existingError.message;
+
+  const existing = (existingRows ?? []).find((transaction) => {
+    return metadataRecord(transaction.metadata).financial_event === "debt_origination";
+  });
+  if (input.isCreditCardDebt || !account || input.totalAmount <= 0) {
+    if (!existing) return null;
+    const { error } = await supabase
+      .from("transactions")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", existing.id)
+      .eq("user_id", userId);
+    return error?.message ?? null;
+  }
+
+  const isLending = input.nature === "Lending";
+  const transactionPayload = {
+    account_id: account.id,
+    amount: input.totalAmount,
+    category_id: input.categoryId || null,
+    deleted_at: null,
+    description: `${isLending ? "Money lent" : "Borrowed money received"} · ${input.name.trim()}`,
+    metadata: {
+      account_amount_type: firstAccountAmountType(account.metadata),
+      accounting_class: isLending ? "financing_payment" : "financing_receipt",
+      accounting_version: 1,
+      debt_interest_amount: 0,
+      debt_principal_amount: input.totalAmount,
+      debt_nature: input.nature.toLowerCase(),
+      financial_event: "debt_origination",
+      system_managed: true,
+    },
+    note: input.notes.trim() || null,
+    related_entity_id: debtId,
+    related_entity_type: "debt",
+    status: "cleared",
+    title: `${input.name.trim()} · ${isLending ? "lending funded" : "borrowing received"}`,
+    transaction_date: input.startDate,
+    transfer_account_id: null,
+    type: isLending ? "expense" : "income",
+  };
+
+  if (existing) {
+    const { error } = await supabase
+      .from("transactions")
+      .update(transactionPayload)
+      .eq("id", existing.id)
+      .eq("user_id", userId);
+    return error?.message ?? null;
+  }
+
+  const { error } = await supabase
+    .from("transactions")
+    .insert({ ...transactionPayload, user_id: userId });
+  return error?.message ?? null;
 }
 
 function isCreditCardDebtRow(row: DebtRow) {
@@ -468,8 +550,24 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
   );
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const { error } = await supabase.from("debts").insert({ ...debtPayload, user_id: user.id });
+    const { data, error } = await supabase
+      .from("debts")
+      .insert({ ...debtPayload, user_id: user.id })
+      .select("id")
+      .maybeSingle();
     if (!error) {
+      if (!data?.id) return { error: "Debt was saved without a reconciliation identifier." };
+      const originationError = await syncDebtOriginationTransaction(
+        supabase,
+        user.id,
+        data.id as string,
+        canonical.input,
+        accountResult.account,
+      );
+      if (originationError) {
+        await supabase.from("debts").delete().eq("id", data.id).eq("user_id", user.id);
+        return { error: `Debt origination could not be reconciled: ${originationError}` };
+      }
       revalidateDebtViews();
       return {};
     }
@@ -592,6 +690,16 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   );
   if (error) return { error: error.message };
   if (!data) return { error: "Debt not found." };
+  const originationError = await syncDebtOriginationTransaction(
+    supabase,
+    user.id,
+    debtId,
+    canonicalCategoryInput.input,
+    accountResult.account,
+  );
+  if (originationError) {
+    return { error: `Debt was updated, but its origination transaction could not be reconciled: ${originationError}` };
+  }
   revalidateDebtViews(debtId);
   return {};
 }

@@ -31,6 +31,10 @@ export function transactionMutationIntegrityError(
   transaction: TransactionIntegrityInput,
   hasPostedReversal: boolean,
 ) {
+  const metadata = metadataRecord(transaction.metadata);
+  if (metadata.system_managed === true && metadata.financial_event === "debt_origination") {
+    return "Debt origination transactions are managed from the linked Debt record and cannot be edited, deleted, or reversed here.";
+  }
   if (transactionReversalSourceId(transaction)) {
     return "Reversal transactions cannot be edited, deleted, or reversed. Record a new correcting transaction if another adjustment is needed.";
   }

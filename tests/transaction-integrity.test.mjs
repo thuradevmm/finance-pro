@@ -14,3 +14,15 @@ test("posted reversals are unique and immutable", () => {
   assert.match(transactionReversalIntegrityError({ status: "scheduled" }, false), /Only cleared/i);
   assert.match(transactionReversalIntegrityError({ status: "pending" }, false), /Mark a pending transaction as cleared/i);
 });
+
+test("debt origination transactions stay managed by their debt record", () => {
+  const managed = {
+    metadata: {
+      financial_event: "debt_origination",
+      system_managed: true,
+    },
+    status: "cleared",
+  };
+  assert.match(transactionMutationIntegrityError(managed, false), /managed from the linked Debt record/i);
+  assert.match(transactionReversalIntegrityError(managed, false), /managed from the linked Debt record/i);
+});
