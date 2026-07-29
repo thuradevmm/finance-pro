@@ -17,14 +17,22 @@ import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { normalizeTransactionDate } from "@/lib/transactions/filters";
 import type { CategoryType } from "@/types/finance";
+import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
-const tabs = categoryTypes.map((type) => `${type} Categories`);
+const tabs = categoryTypes.map((type) => `${categoryTypeLabel(type)} Categories`);
+
+function categoryTypeFromTab(tab: string): CategoryType {
+  const label = tab.replace(/ Categories$/, "");
+  if (label === "Credit" || label === "Income") return "Income";
+  if (label === "Debit" || label === "Expense") return "Expense";
+  return categoryTypes.find((type) => type === label) ?? "Expense";
+}
 
 function CategoryBadge({ type }: { type: CategoryType }) {
   return (
     <span className="rounded border border-[#c6c6cd]/40 bg-[#eff4ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">
-      {type}
+      {categoryTypeLabel(type)}
     </span>
   );
 }
@@ -72,7 +80,7 @@ function CategoryLifecycleActions({
           aria-label={`Merge ${category.name}`}
           className="grid size-11 place-items-center rounded-full text-[#4f46e5] transition hover:bg-[#eef2ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4f46e5]/25"
           onClick={() => setIsMergeOpen(true)}
-          title={`Merge ${category.name} into another ${category.type.toLowerCase()} category`}
+          title={`Merge ${category.name} into another ${categoryTypeLabel(category.type).toLowerCase()} category`}
           type="button"
         >
           <Icon className="size-4" name="sync" />
@@ -288,11 +296,11 @@ export function CategoriesPageContent({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("Expense Categories");
+  const [activeTab, setActiveTab] = useState("Debit Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [isPending, setIsPending] = useState(false);
   const filtersRestored = useRef(false);
-  const activeType = activeTab.replace(/ Categories$/, "") as CategoryType;
+  const activeType = categoryTypeFromTab(activeTab);
   const search = searchParams.get("q") ?? "";
   const requestedStatus = searchParams.get("categoryStatus") ?? "All statuses";
   const status = ["All statuses", "Active", "Hidden"].includes(requestedStatus) ? requestedStatus : "All statuses";
@@ -343,7 +351,7 @@ export function CategoriesPageContent({
       const saved = JSON.parse(window.localStorage.getItem("finance-pro:filters:categories") ?? "null");
       if (!saved || typeof saved !== "object") return;
       if (typeof saved.activeTab === "string" && tabs.includes(saved.activeTab)) {
-        queueMicrotask(() => setActiveTab(saved.activeTab));
+        queueMicrotask(() => setActiveTab(`${categoryTypeLabel(categoryTypeFromTab(saved.activeTab))} Categories`));
       }
       if (searchParams.has("q") || searchParams.has("categoryStatus") || searchParams.has("dateFrom") || searchParams.has("dateTo")) return;
       applyFilters(
@@ -438,7 +446,7 @@ export function CategoriesPageContent({
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="category" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">
-            {hasCategoriesForActiveType && hasActiveCategoryFilters ? "No matching categories" : `No ${activeType.toLowerCase()} categories yet`}
+            {hasCategoriesForActiveType && hasActiveCategoryFilters ? "No matching categories" : `No ${String(categoryTypeLabel(activeType)).toLowerCase()} categories yet`}
           </h2>
           <p className="mt-1 text-sm text-[#45464d]">
             {hasCategoriesForActiveType && hasActiveCategoryFilters

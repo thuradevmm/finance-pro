@@ -49,7 +49,7 @@ export default async function CategoriesPage({
             Add Category
           </Link>
         }
-        description="Manage income and expense classifications for transactions, budgets, and reports."
+        description="Manage Credit and Debit classifications for transactions, budgets, and reports."
         title="Categories"
       />
 

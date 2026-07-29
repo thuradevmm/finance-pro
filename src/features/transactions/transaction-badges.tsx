@@ -2,12 +2,13 @@ import { Icon } from "@/components/ui/icon";
 import { categoryStyles, transactionTypeBadgeClass, transactionTypeIcon } from "@/features/transactions/transaction-styles";
 import { normalizeTransactionStatus, transactionStatusLabel } from "@/lib/transactions/status";
 import type { Transaction, TransactionStatus, TransactionType } from "@/types/finance";
+import { transactionTypeLabel } from "@/lib/transactions/terminology";
 
 export function TransactionTypeBadge({ transferDirection, type }: { transferDirection?: Transaction["transferDirection"]; type: TransactionType }) {
   return (
     <span className={`inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${transactionTypeBadgeClass(type)}`}>
       <Icon className="size-3.5 shrink-0" name={transactionTypeIcon(type)} />
-      <span className="truncate">{type === "Transfer" && transferDirection ? `Transfer ${transferDirection}` : type}</span>
+      <span className="truncate">{type === "Transfer" && transferDirection ? `Transfer ${transferDirection}` : transactionTypeLabel(type)}</span>
     </span>
   );
 }

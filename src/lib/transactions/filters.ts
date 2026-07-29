@@ -1,5 +1,6 @@
 import type { TransactionRecord } from "@/lib/transactions/supabase";
 import type { TransactionFilterOptions } from "@/types/finance";
+import { transactionTypeFromLabel, transactionTypeLabel } from "./terminology.ts";
 
 export type TransactionFiltersState = {
   account: string;
@@ -122,6 +123,7 @@ export function filterTransactions(transactions: TransactionRecord[], filters: T
       transaction.title,
       transaction.note,
       transaction.type,
+      transactionTypeLabel(transaction.type),
       transaction.category,
       transaction.account,
       transaction.transferAccount,
@@ -141,7 +143,7 @@ export function filterTransactions(transactions: TransactionRecord[], filters: T
       && (filters.status === "Status" || transaction.status === filters.status.toLowerCase())
       && (filters.toAccount === "Account"
         || (transaction.type === "Transfer" && transaction.transferToAccount === filters.toAccount))
-      && (filters.type === "Type" || transaction.type === filters.type)
+      && (filters.type === "Type" || transaction.type === transactionTypeFromLabel(filters.type))
       && matchesDateFilter(transaction, filters.dateFrom, filters.dateTo)
     );
   });

@@ -52,45 +52,78 @@ export function calculateCreditCardPosition(signedLedgerBalance: number, configu
 
 type CreditCardLookupValue = {
   available: number;
+  cashAdvances?: number;
   cardCredit: number;
   charges: number;
+  credited?: number;
+  debited?: number;
+  fees?: number;
+  interest?: number;
   limit: number;
   minimumPayment: number;
   outstanding: number;
+  pendingCredits?: number;
+  pendingDebits?: number;
   payments: number;
+  refunds?: number;
   transactions: number;
 };
 
 export function summarizeCreditCardLookup(cards: CreditCardLookupValue[]) {
-  const totals = cards.reduce((summary, card) => ({
-    available: summary.available + card.available,
-    cardCredit: summary.cardCredit + card.cardCredit,
-    charges: summary.charges + card.charges,
-    limit: summary.limit + card.limit,
-    minimumPayment: summary.minimumPayment + card.minimumPayment,
-    outstanding: summary.outstanding + card.outstanding,
-    payments: summary.payments + card.payments,
-    transactions: summary.transactions + card.transactions,
-  }), {
+  const initialTotals = {
     available: 0,
+    cashAdvances: 0,
     cardCredit: 0,
     charges: 0,
+    credited: 0,
+    debited: 0,
+    fees: 0,
+    interest: 0,
     limit: 0,
     minimumPayment: 0,
     outstanding: 0,
+    pendingCredits: 0,
+    pendingDebits: 0,
     payments: 0,
+    refunds: 0,
     transactions: 0,
-  });
+  };
+  const totals = cards.reduce<typeof initialTotals>((summary, card) => ({
+    available: summary.available + card.available,
+    cashAdvances: summary.cashAdvances + (card.cashAdvances ?? 0),
+    cardCredit: summary.cardCredit + card.cardCredit,
+    charges: summary.charges + card.charges,
+    credited: summary.credited + (card.credited ?? card.payments),
+    debited: summary.debited + (card.debited ?? card.charges),
+    fees: summary.fees + (card.fees ?? 0),
+    interest: summary.interest + (card.interest ?? 0),
+    limit: summary.limit + card.limit,
+    minimumPayment: summary.minimumPayment + card.minimumPayment,
+    outstanding: summary.outstanding + card.outstanding,
+    pendingCredits: summary.pendingCredits + (card.pendingCredits ?? 0),
+    pendingDebits: summary.pendingDebits + (card.pendingDebits ?? 0),
+    payments: summary.payments + card.payments,
+    refunds: summary.refunds + (card.refunds ?? 0),
+    transactions: summary.transactions + card.transactions,
+  }), initialTotals);
 
   return {
     available: roundCardValue(totals.available),
+    cashAdvances: roundCardValue(totals.cashAdvances),
     cardCredit: roundCardValue(totals.cardCredit),
     charges: roundCardValue(totals.charges),
+    credited: roundCardValue(totals.credited),
+    debited: roundCardValue(totals.debited),
+    fees: roundCardValue(totals.fees),
+    interest: roundCardValue(totals.interest),
     limit: roundCardValue(totals.limit),
     minimumPayment: roundCardValue(totals.minimumPayment),
     netPosition: roundCardValue(totals.cardCredit - totals.outstanding),
     outstanding: roundCardValue(totals.outstanding),
+    pendingCredits: roundCardValue(totals.pendingCredits),
+    pendingDebits: roundCardValue(totals.pendingDebits),
     payments: roundCardValue(totals.payments),
+    refunds: roundCardValue(totals.refunds),
     transactions: totals.transactions,
   };
 }

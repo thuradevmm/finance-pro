@@ -15,8 +15,9 @@ import {
   type TransactionFiltersState,
 } from "@/lib/transactions/filters";
 import type { TransactionFilterOptions, TransactionType } from "@/types/finance";
+import { transactionTypeFromLabel, transactionTypeLabel, type TransactionDisplayType } from "@/lib/transactions/terminology";
 
-type TransactionTab = "All" | TransactionType;
+type TransactionTab = "All" | TransactionDisplayType;
 
 type TransactionsPageContentProps = {
   defaultDateFrom: string;
@@ -35,7 +36,7 @@ type TransactionsPageContentProps = {
   transactions: TransactionRecord[];
 };
 
-const transactionTabs: TransactionTab[] = ["All", "Income", "Expense", "Transfer"];
+const transactionTabs: TransactionTab[] = ["All", "Credit", "Debit", "Transfer"];
 
 function getInitialFilters(
   filterOptions: TransactionFilterOptions,
@@ -49,6 +50,9 @@ function getInitialFilters(
   initialToAccountFilter?: string,
   initialTypeFilter = "",
 ): TransactionFiltersState {
+  const normalizedInitialType = initialTypeFilter
+    ? transactionTypeLabel(transactionTypeFromLabel(initialTypeFilter) ?? initialTypeFilter as TransactionType)
+    : "";
   const accountFilter =
     initialAccountFilter && filterOptions.account.includes(initialAccountFilter) ? initialAccountFilter : filterOptions.account[0];
   const categoryFilter =
@@ -65,7 +69,7 @@ function getInitialFilters(
       ? filterOptions.status.find((option) => option.toLowerCase() === initialStatusFilter.toLowerCase()) ?? filterOptions.status[0]
       : filterOptions.status[0],
     toAccount: initialToAccountFilter && filterOptions.account.includes(initialToAccountFilter) ? initialToAccountFilter : filterOptions.account[0],
-    type: initialTypeFilter && filterOptions.type.includes(initialTypeFilter) ? initialTypeFilter : filterOptions.type[0],
+    type: normalizedInitialType && filterOptions.type.includes(normalizedInitialType) ? normalizedInitialType : filterOptions.type[0],
   };
 }
 
@@ -109,7 +113,9 @@ export function TransactionsPageContent({
     draftFilters,
     setDraftFilters,
   } = usePersistentFilterState("transactions", initialFilters, restoreSavedFilters, normalizeFilters);
-  const activeTab: TransactionTab = filters.type === "Type" ? "All" : filters.type as TransactionTab;
+  const activeTab: TransactionTab = filters.type === "Type"
+    ? "All"
+    : transactionTypeLabel(transactionTypeFromLabel(filters.type) ?? filters.type as TransactionType);
 
   const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [filters, transactions]);
 

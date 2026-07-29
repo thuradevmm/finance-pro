@@ -28,7 +28,7 @@ export default async function AddFutureTransactionPage() {
       topSearchLabel="Search future plans"
       topSearchPlaceholder="Search plans..."
     >
-      <PageHeader description="Schedule expected income or expenses. Repeating plans create independent occurrences you can adjust later." title="Add Planned Transaction" />
+      <PageHeader description="Schedule expected Credits or Debits. Repeating plans create independent occurrences you can adjust later." title="Add Planned Transaction" />
       <FutureTransactionForm accounts={accounts} categories={categories} defaultDate={localDateValue(new Date())} linkOptions={linkOptions} />
     </AppShell>
   );

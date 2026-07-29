@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { getFutureOccurrenceDates, materializeFuturePredictions, type FutureTransactionFormData } from "@/lib/future-planning/records";
 import { isCreditCardType } from "@/lib/ledger";
+import { transactionTypeLabel } from "@/lib/transactions/terminology";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -57,7 +58,7 @@ function validateInput(input: FutureTransactionFormData) {
     || typeof input.startDate !== "string"
     || typeof input.endDate !== "string"
     || typeof input.note !== "string") return "Enter valid planned transaction details.";
-  if (!typeOptions.has(input.type)) return "Future plans support income and expense transactions only.";
+  if (!typeOptions.has(input.type)) return "Future plans support Credit and Debit transactions only.";
   if (!recurrenceOptions.has(input.recurrence)) return "Choose a valid repeat schedule.";
   if (!statusOptions.has(input.status)) return "Choose a valid plan status.";
   if (!relatedEntityTypes.has(input.relatedEntityType)) return "Choose a valid linked record.";
@@ -156,7 +157,7 @@ async function validateOwnedReferences(
       ? "Archived"
       : accountMetadata.status === "Needs Review" ? "Needs Review" : "Active";
     if (!accountStatusContributesToCurrentTotals(accountStatus) && !preservesAccount) return "Choose an available account for this plan.";
-    if (isCreditCardType(accountResult.data.type) && input.type !== "Expense") return "Credit cards can only be used for planned purchases, not planned cash income.";
+    if (isCreditCardType(accountResult.data.type) && input.type !== "Expense") return "Credit cards can only be used for planned purchases, not planned cash Credits.";
     const preservesAmountType = preservesAccount && input.accountAmountType.trim() === existing?.accountAmountType;
     if (!accountAmountTypes(accountResult.data).includes(input.accountAmountType.trim()) && !preservesAmountType) return "Choose a valid amount type for the selected account.";
   }
@@ -167,7 +168,7 @@ async function validateOwnedReferences(
     if (categoryResult.data.is_active === false && !preservesCategory) return "Choose an active category for this plan.";
     const categoryMetadata = metadataRecord(categoryResult.data.metadata);
     const categoryType = String(categoryMetadata.category_type ?? categoryResult.data.type).trim().toLowerCase();
-    if (categoryType !== input.type.toLowerCase()) return `Choose an ${input.type.toLowerCase()} category for this plan.`;
+    if (categoryType !== input.type.toLowerCase()) return `Choose a ${transactionTypeLabel(input.type).toLowerCase()} category for this plan.`;
   }
 
   if (input.relatedEntityType !== "none") {

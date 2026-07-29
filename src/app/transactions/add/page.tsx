@@ -6,6 +6,7 @@ import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financia
 import { getAssets } from "@/lib/assets/supabase";
 import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { getDebts } from "@/lib/debts/supabase";
 import { getFuturePlanningTransactionOptions } from "@/lib/future-planning/supabase";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
@@ -83,7 +84,7 @@ export default async function AddTransactionPage({
   const allAccounts = user ? await getAccounts(supabase, user.id) : [];
   const accounts = allAccounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
   const categories = user ? await getCategories() : [];
-  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions] = user
+  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = user
     ? await Promise.all([
       getBudgets(supabase, user.id),
       getSavingsGoals(supabase, user.id, accounts, categories),
@@ -91,8 +92,9 @@ export default async function AddTransactionPage({
       getSubscriptions(supabase, user.id, accounts, categories),
       getAssets(supabase, user.id, categories),
       getFuturePlanningTransactionOptions(supabase, user.id),
+      getCurrencySettings(supabase, user.id),
     ])
-    : [[], [], [], [], [], []];
+    : [[], [], [], [], [], [], { baseCurrency: "MMK", rates: [] }];
   const requestedSubscription = requestedSubscriptionId ? subscriptions.find((subscription) => subscription.id === requestedSubscriptionId) : undefined;
   const initialValues: TransactionFormInitialValues | undefined = requestedSubscription
     ? {
@@ -116,7 +118,7 @@ export default async function AddTransactionPage({
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description={requestedSubscription ? `Record payment for ${requestedSubscription.name}.` : "Record a new financial activity."} title="Add Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} initialValues={initialValues} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets)} />
+      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} initialValues={initialValues} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets)} />
     </AppShell>
   );
 }

@@ -1,4 +1,9 @@
 import { transactionStatusIsFinalized } from "../transactions/status.ts";
+import {
+  creditCardJournalRole,
+  creditCardJournalRoleIsLiability,
+  creditCardJournalRoleIsPurchase,
+} from "../transactions/credit-card-journal.ts";
 import { normalizeDebtNature } from "./nature.ts";
 
 function metadataRecord(metadata: unknown) {
@@ -193,6 +198,11 @@ export function standaloneDebtPaymentTransactions(payments: DebtPaymentInput[]):
 function creditCardImpact(transaction: DebtLedgerTransactionInput, debtId: string, creditCardAccountId: string) {
   const type = String(transaction.type ?? "").toLowerCase();
   const metadata = metadataRecord(transaction.metadata);
+  const journalRole = creditCardJournalRole(metadata);
+  if (creditCardJournalRoleIsPurchase(journalRole)) return "";
+  if (creditCardJournalRoleIsLiability(journalRole)) {
+    return journalRole === "liability_credit_reversal" ? "repayment" : "charge";
+  }
   if (metadata.standalone_debt_payment === true) return "";
   const direction = transferDirection(metadata);
   const usesCreditCardAccount = transaction.account_id === creditCardAccountId;

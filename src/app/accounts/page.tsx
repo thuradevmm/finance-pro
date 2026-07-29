@@ -21,7 +21,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { AccountRecordActions } from "@/features/accounts/account-record-actions";
 import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, summarizeAccountPosition, type AccountRecord } from "@/lib/accounts/supabase";
-import { formatMmk, parseCurrency } from "@/lib/currency";
+import { formatCurrencyAmount, formatMmk } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
 import type { AccountStatus } from "@/types/finance";
@@ -169,6 +169,14 @@ function isCreditCardAccount(account: Pick<AccountRecord, "type">) {
   return account.type === "Credit Card";
 }
 
+function formatAccountAmount(account: Pick<AccountRecord, "currency">, value: number) {
+  return formatCurrencyAmount(value, account.currency);
+}
+
+function accountBaseAmount(account: Pick<AccountRecord, "exchangeRateToBase">, value: number) {
+  return account.exchangeRateToBase == null ? 0 : value * account.exchangeRateToBase;
+}
+
 function creditCardNetwork(account: Pick<AccountRecord, "cardType">) {
   return account.cardType.trim() || "Unspecified";
 }
@@ -222,12 +230,12 @@ function AccountCard({
 
       <dl className="mt-5 grid min-w-0 grid-cols-1 gap-3 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 min-[420px]:grid-cols-2">
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Posted Credits / Payments" : "Posted Inflow"}</dt>
-          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{account.monthlyInflow}</ResponsiveAmount></dd>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Total Credited" : "Posted Credit"}</dt>
+          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.875}>{isCreditCard ? formatMmk(account.cardCreditedValue) : account.monthlyInflow}</ResponsiveAmount></dd>
         </div>
         <div>
-          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Posted Debits / Charges" : "Posted Outflow"}</dt>
-          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{account.monthlyOutflow}</ResponsiveAmount></dd>
+          <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Total Debited / Spent" : "Posted Debit"}</dt>
+          <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.875}>{isCreditCard ? formatMmk(account.cardDebitedValue) : account.monthlyOutflow}</ResponsiveAmount></dd>
         </div>
         <div>
           <dt className="text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Credit Used" : "Net Amount"}</dt>
@@ -362,14 +370,18 @@ function CreditCardCard({
 
         <section className="mt-5 border-t border-[#c6c6cd]/40 pt-4">
           <h3 className="text-xs font-bold uppercase text-[#76777d]">Transaction Activity (all time)</h3>
-          <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div>
-              <dt className="text-xs font-medium text-[#76777d]">Posted Debits / Charges</dt>
-              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.8125}>{account.monthlyOutflow}</ResponsiveAmount></dd>
+              <dt className="text-xs font-medium text-[#76777d]">Total Debited / Spent</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={0.8125}>{formatMmk(account.cardDebitedValue)}</ResponsiveAmount></dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-[#76777d]">Posted Credits / Payments</dt>
-              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.8125}>{account.monthlyInflow}</ResponsiveAmount></dd>
+              <dt className="text-xs font-medium text-[#76777d]">Total Credited</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.8125}>{formatMmk(account.cardCreditedValue)}</ResponsiveAmount></dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium text-[#76777d]">Repayments</dt>
+              <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={0.8125}>{formatMmk(account.repaymentValue)}</ResponsiveAmount></dd>
             </div>
             <div>
               <dt className="text-xs font-medium text-[#76777d]">All Records</dt>
@@ -421,17 +433,26 @@ function AccountAmountTypeMatrix({
   );
   const totalColumns = amountTypes.map((amountType) => ({
     amountType,
-    total: sumScaledAmounts(ledgerAccounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
+    total: sumScaledAmounts(ledgerAccounts.map((account) => accountBaseAmount(account, account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0))),
   }));
   const position = summarizeAccountPosition(accounts);
+  const baseCurrency = accounts[0]?.baseCurrency ?? "MMK";
   const cardTotals = summarizeCreditCardLookup(creditAccounts.map((account) => ({
-    available: account.creditAvailableValue,
-    cardCredit: account.creditBalanceValue,
-    charges: parseCurrency(account.monthlyOutflow),
-    limit: account.creditLimitValue,
-    minimumPayment: account.creditMinimumPaymentValue,
-    outstanding: account.creditUsedValue,
-    payments: parseCurrency(account.monthlyInflow),
+    available: account.creditAvailableBaseValue,
+    cashAdvances: accountBaseAmount(account, account.cardCashAdvanceValue),
+    cardCredit: account.creditBalanceBaseValue,
+    charges: accountBaseAmount(account, account.cardDebitedValue),
+    credited: accountBaseAmount(account, account.cardCreditedValue),
+    debited: accountBaseAmount(account, account.cardDebitedValue),
+    fees: accountBaseAmount(account, account.cardFeeValue),
+    interest: accountBaseAmount(account, account.cardInterestValue),
+    limit: account.creditLimitBaseValue,
+    minimumPayment: accountBaseAmount(account, account.creditMinimumPaymentValue),
+    outstanding: account.creditUsedBaseValue,
+    pendingCredits: accountBaseAmount(account, account.pendingCreditValue),
+    pendingDebits: accountBaseAmount(account, account.pendingDebitValue),
+    payments: accountBaseAmount(account, account.repaymentValue),
+    refunds: accountBaseAmount(account, account.cardRefundValue),
     transactions: account.transactionCount,
   })));
 
@@ -492,7 +513,7 @@ function AccountAmountTypeMatrix({
                 })}
                 <div className="min-w-0 rounded-md bg-white p-3 min-[420px]:col-span-2">
                   <dt className="text-xs font-bold uppercase text-[#0058be]">Cash Balance</dt>
-                  <dd className="amount-value mt-1 font-bold text-[#0058be]" title={formatMmk(position.cashBalance)}>{formatMmk(position.cashBalance)}</dd>
+                  <dd className="amount-value mt-1 font-bold text-[#0058be]" title={formatCurrencyAmount(position.cashBalance, baseCurrency)}>{formatCurrencyAmount(position.cashBalance, baseCurrency)}</dd>
                 </div>
               </dl>
             </article>
@@ -568,9 +589,16 @@ function AccountAmountTypeMatrix({
                 { label: "Card Credit", tone: "text-[#047857]", value: account.creditBalance },
                 { label: "Available Credit", tone: "text-[#0058be]", value: account.creditAvailable },
                 { label: "Minimum Payment", tone: "text-[#0b1c30]", value: account.creditMinimumPayment },
-                { label: "Net Position", tone: netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatMmk(netPosition) },
-                { label: "Posted Debits / Charges", tone: "text-[#b42318]", value: account.monthlyOutflow },
-                { label: "Posted Credits / Payments", tone: "text-[#047857]", value: account.monthlyInflow },
+                { label: "Net Position", tone: netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatAccountAmount(account, netPosition) },
+                { label: "Total Debited / Spent", tone: "text-[#b42318]", value: formatAccountAmount(account, account.cardDebitedValue) },
+                { label: "Total Credited", tone: "text-[#047857]", value: formatAccountAmount(account, account.cardCreditedValue) },
+                { label: "Repayments", tone: "text-[#047857]", value: formatAccountAmount(account, account.repaymentValue) },
+                { label: "Cash Advances", tone: "text-[#b45309]", value: formatAccountAmount(account, account.cardCashAdvanceValue) },
+                { label: "Refunds / Card Credits", tone: "text-[#047857]", value: formatAccountAmount(account, account.cardRefundValue) },
+                { label: "Pending Debits", tone: "text-[#b45309]", value: formatAccountAmount(account, account.pendingDebitValue) },
+                { label: "Pending Credits", tone: "text-[#b45309]", value: formatAccountAmount(account, account.pendingCreditValue) },
+                { label: "Fees", tone: "text-[#b42318]", value: formatAccountAmount(account, account.cardFeeValue) },
+                { label: "Interest", tone: "text-[#b42318]", value: formatAccountAmount(account, account.cardInterestValue) },
               ];
 
               return (
@@ -605,15 +633,22 @@ function AccountAmountTypeMatrix({
               <p className="mt-1 text-xs font-medium text-[#45464d]">All credit cards</p>
               <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 min-[420px]:grid-cols-2">
                 {[
-                  { label: "Credit Limit", tone: "text-[#0b1c30]", value: formatMmk(cardTotals.limit) },
-                  { label: "Outstanding", tone: "text-[#b42318]", value: formatMmk(cardTotals.outstanding) },
-                  { label: "Card Credit", tone: "text-[#047857]", value: formatMmk(cardTotals.cardCredit) },
-                  { label: "Available Credit", tone: "text-[#0058be]", value: formatMmk(cardTotals.available) },
+                  { label: "Credit Limit", tone: "text-[#0b1c30]", value: formatCurrencyAmount(cardTotals.limit, baseCurrency) },
+                  { label: "Outstanding", tone: "text-[#b42318]", value: formatCurrencyAmount(cardTotals.outstanding, baseCurrency) },
+                  { label: "Card Credit", tone: "text-[#047857]", value: formatCurrencyAmount(cardTotals.cardCredit, baseCurrency) },
+                  { label: "Available Credit", tone: "text-[#0058be]", value: formatCurrencyAmount(cardTotals.available, baseCurrency) },
                   { label: "Utilization", tone: "text-[#0b1c30]", value: formatCreditUtilization(cardTotals.outstanding, cardTotals.limit) },
-                  { label: "Minimum Payment", tone: "text-[#0b1c30]", value: formatMmk(cardTotals.minimumPayment) },
-                  { label: "Net Position", tone: cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatMmk(cardTotals.netPosition) },
-                  { label: "Posted Debits / Charges", tone: "text-[#b42318]", value: formatMmk(cardTotals.charges) },
-                  { label: "Posted Credits / Payments", tone: "text-[#047857]", value: formatMmk(cardTotals.payments) },
+                  { label: "Minimum Payment", tone: "text-[#0b1c30]", value: formatCurrencyAmount(cardTotals.minimumPayment, baseCurrency) },
+                  { label: "Net Position", tone: cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]", value: formatCurrencyAmount(cardTotals.netPosition, baseCurrency) },
+                  { label: "Total Debited / Spent", tone: "text-[#b42318]", value: formatCurrencyAmount(cardTotals.debited, baseCurrency) },
+                  { label: "Total Credited", tone: "text-[#047857]", value: formatCurrencyAmount(cardTotals.credited, baseCurrency) },
+                  { label: "Repayments", tone: "text-[#047857]", value: formatCurrencyAmount(cardTotals.payments, baseCurrency) },
+                  { label: "Cash Advances", tone: "text-[#b45309]", value: formatCurrencyAmount(cardTotals.cashAdvances, baseCurrency) },
+                  { label: "Refunds / Card Credits", tone: "text-[#047857]", value: formatCurrencyAmount(cardTotals.refunds, baseCurrency) },
+                  { label: "Pending Debits", tone: "text-[#b45309]", value: formatCurrencyAmount(cardTotals.pendingDebits, baseCurrency) },
+                  { label: "Pending Credits", tone: "text-[#b45309]", value: formatCurrencyAmount(cardTotals.pendingCredits, baseCurrency) },
+                  { label: "Fees", tone: "text-[#b42318]", value: formatCurrencyAmount(cardTotals.fees, baseCurrency) },
+                  { label: "Interest", tone: "text-[#b42318]", value: formatCurrencyAmount(cardTotals.interest, baseCurrency) },
                   { label: "Transaction Records", tone: "text-[#0b1c30]", value: String(cardTotals.transactions) },
                 ].map((metric) => (
                   <div className="min-w-0 rounded-md bg-white p-3" key={`card-total-mobile-${metric.label}`}>
@@ -644,8 +679,10 @@ function AccountAmountTypeMatrix({
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Net Position</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Posted Debits / Charges</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Posted Credits / Payments</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Debited / Spent</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Credited</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Repayments</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Pending Debit</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transaction Records</th>
                   <th className="px-4 py-3 text-xs font-semibold text-[#45464d]">Last Updated</th>
                 </tr>
@@ -673,9 +710,11 @@ function AccountAmountTypeMatrix({
                       <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
-                      <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatMmk(netPosition)}</td>
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
-                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
+                      <td className={`whitespace-nowrap px-4 py-4 text-right font-semibold ${netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatAccountAmount(account, netPosition)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatAccountAmount(account, account.cardDebitedValue)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAccountAmount(account, account.cardCreditedValue)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatAccountAmount(account, account.repaymentValue)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b45309]">{formatAccountAmount(account, account.pendingDebitValue)}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.transactionCount}</td>
                       <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.lastUpdated}</td>
                     </tr>
@@ -683,17 +722,19 @@ function AccountAmountTypeMatrix({
                 })}
                 <tr className="bg-[#f8f9ff]">
                   <td className="px-4 py-4 font-semibold uppercase text-[#0b1c30]" colSpan={7}>CREDIT CARD TOTALS</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatMmk(cardTotals.limit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatMmk(cardTotals.outstanding)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatMmk(cardTotals.cardCredit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0058be]">{formatMmk(cardTotals.available)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatCurrencyAmount(cardTotals.limit, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatCurrencyAmount(cardTotals.outstanding, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatCurrencyAmount(cardTotals.cardCredit, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0058be]">{formatCurrencyAmount(cardTotals.available, baseCurrency)}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatCreditUtilization(cardTotals.outstanding, cardTotals.limit)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatMmk(cardTotals.minimumPayment)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{formatCurrencyAmount(cardTotals.minimumPayment, baseCurrency)}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-[#76777d]">—</td>
                   <td className="whitespace-nowrap px-4 py-4 text-right font-medium text-[#76777d]">—</td>
-                  <td className={`whitespace-nowrap px-4 py-4 text-right font-bold ${cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatMmk(cardTotals.netPosition)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatMmk(cardTotals.charges)}</td>
-                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatMmk(cardTotals.payments)}</td>
+                  <td className={`whitespace-nowrap px-4 py-4 text-right font-bold ${cardTotals.netPosition < 0 ? "text-[#b42318]" : "text-[#047857]"}`}>{formatCurrencyAmount(cardTotals.netPosition, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b42318]">{formatCurrencyAmount(cardTotals.debited, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatCurrencyAmount(cardTotals.credited, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#047857]">{formatCurrencyAmount(cardTotals.payments, baseCurrency)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#b45309]">{formatCurrencyAmount(cardTotals.pendingDebits, baseCurrency)}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0b1c30]">{cardTotals.transactions}</td>
                   <td className="whitespace-nowrap px-4 py-4 font-medium text-[#76777d]">—</td>
                 </tr>
@@ -760,8 +801,8 @@ function CreditCardsTable({
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Minimum Payment</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Statement Day</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Due Day</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Posted Debits / Charges</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Posted Credits / Payments</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Debited / Spent</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Total Credited</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-[#45464d]">Transaction Records</th>
               <th className="w-56 px-4 py-3 text-center text-xs font-semibold text-[#45464d]">Actions</th>
             </tr>
@@ -792,8 +833,8 @@ function CreditCardsTable({
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.creditMinimumPayment}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditStatementDay)}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{formatBillingDay(account.creditPaymentDueDay)}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{account.monthlyOutflow}</td>
-                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{account.monthlyInflow}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#b42318]">{formatMmk(account.cardDebitedValue)}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#047857]">{formatMmk(account.cardCreditedValue)}</td>
                 <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-[#0b1c30]">{account.transactionCount}</td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
@@ -1045,6 +1086,9 @@ export default function AccountsPage() {
   const filteredCreditCards = filteredAccounts.filter(isCreditCardAccount);
   const filteredNonCardAccounts = filteredAccounts.filter((account) => !isCreditCardAccount(account));
   const accountSummaries = getAccountSummaries(visibleAccounts);
+  const missingRateCurrencies = Array.from(new Set(
+    visibleAccounts.filter((account) => !account.hasExchangeRate).map((account) => account.currency),
+  )).sort();
 
   function applyAccountFilters(values: AccountFilterValues) {
     const params = new URLSearchParams(searchParams.toString());
@@ -1216,6 +1260,11 @@ export default function AccountsPage() {
       />
 
       <SummaryCards summaries={accountSummaries} />
+      {missingRateCurrencies.length > 0 ? (
+        <div className="mb-6 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
+          Cross-account totals exclude {missingRateCurrencies.join(", ")} accounts until their exchange rates are added in <Link className="font-bold underline" href="/settings">Settings</Link>.
+        </div>
+      ) : null}
 
       {error ? <div className="mb-6 rounded-md border border-[#fecaca] bg-[#fff1f0] px-4 py-3 text-sm font-medium text-[#991b1b]" role="alert">{error}</div> : null}
       {isLoading ? <div className="mb-6 rounded-lg border border-[#c6c6cd]/70 bg-white p-8 text-center text-sm font-medium text-[#45464d]">Loading accounts…</div> : null}
@@ -1358,8 +1407,14 @@ export default function AccountsPage() {
                   <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
                 </DetailModalSection>
                 <DetailModalSection title="Transaction activity (all time)">
-                  <DetailModalField label="Posted credits / payments" value={<span className="text-[#047857]">{viewedAccount.monthlyInflow}</span>} />
-                  <DetailModalField label="Posted debits / charges" value={<span className="text-[#b42318]">{viewedAccount.monthlyOutflow}</span>} />
+                  <DetailModalField label="Total credited" value={<span className="text-[#047857]">{formatMmk(viewedAccount.cardCreditedValue)}</span>} />
+                  <DetailModalField label="Total debited / spent" value={<span className="text-[#b42318]">{formatMmk(viewedAccount.cardDebitedValue)}</span>} />
+                  <DetailModalField label="Repayments" value={<span className="text-[#047857]">{formatMmk(viewedAccount.repaymentValue)}</span>} />
+                  <DetailModalField label="Cash advances" value={formatMmk(viewedAccount.cardCashAdvanceValue)} />
+                  <DetailModalField label="Pending debits" value={formatMmk(viewedAccount.pendingDebitValue)} />
+                  <DetailModalField label="Pending credits" value={formatMmk(viewedAccount.pendingCreditValue)} />
+                  <DetailModalField label="Fees" value={formatMmk(viewedAccount.cardFeeValue)} />
+                  <DetailModalField label="Interest" value={formatMmk(viewedAccount.cardInterestValue)} />
                   <DetailModalField label="Transaction records" value={viewedAccount.transactionCount} />
                 </DetailModalSection>
               </>

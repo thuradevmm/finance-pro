@@ -2,9 +2,9 @@
 
 FinancePro is a personal financial management web application built with Next.js, TypeScript, Tailwind CSS, Supabase Auth, Supabase PostgreSQL, and Supabase Row Level Security.
 
-The app replaces spreadsheet-based tracking with structured records for accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. It is designed for one owner/main user and uses Myanmar Kyat as the main system currency.
+The app replaces spreadsheet-based tracking with structured records for accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. It is designed for one owner/main user and supports a configurable base currency with dated account-currency conversion.
 
-> MVP status: core financial CRUD flows are connected to cloud Supabase. Dashboard, reports, documents, future planning, scenario budgeting, people payments, profile, settings, and admin-panel functionality are still placeholder-level or not implemented.
+> MVP status: core financial CRUD flows, dashboard reconciliation, reports, exports, future planning, currency settings, and transaction import/sync are connected to cloud Supabase. Documents, scenario budgeting, people payments, profile, and admin-panel functionality remain future work.
 
 ## Database Environments
 
@@ -59,6 +59,11 @@ Prisma is not used.
 - Subscriptions with recurring billing and reminders
 - Assets with purchase and usage tracking
 - Transaction links to budgets, savings goals, debts, subscriptions, and assets
+- Idempotent CSV import and JSON synchronization using permanent external IDs
+- Native account currencies with historical rates and base-currency aggregation
+- Cash-advance classification for credit-card-funded transfers
+- Reports grouped by month, category, or account
+- Transaction and report exports in CSV, Excel, and PDF
 
 ### Data and Security
 
@@ -125,7 +130,7 @@ The account lookup net total is cash balances plus credit-card overpayment credi
 
 Transactions support:
 
-- Income, Expense, and Transfer types
+- Credit, Debit, and Transfer terminology with legacy Income/Expense storage compatibility
 - Amount, date, account, account amount type, category, status, and note
 - Transfer from-account and to-account selection
 - Transfer amount type selection for both sides
@@ -142,6 +147,15 @@ Transactions can be linked to:
 - Asset
 
 Credit card expenses and credit-card-related transfers are treated as debt activity. Credit card charges increase used credit, and credit card payments reduce used credit.
+
+Transfers between different currencies store separate source and destination
+amounts using the latest configured rate on or before the transaction date.
+Credit-card-to-bank/wallet transfers are cash advances: they increase card
+liability and destination cash without becoming operating spending.
+
+CSV import is available at `/transactions/import`; programmatic synchronization
+uses `POST /api/transactions/sync` with a `transactions` array. Every row must
+include `externalReference.source` and `externalReference.externalId`.
 
 Transaction summaries default to all-time activity. Net excludes transfers and credit-card settlements because those move value between an asset and liability without creating new income or expense. With no filters, transaction net matches the account lookup net total.
 
@@ -234,6 +248,7 @@ Implemented MVP pages:
 - Add/Edit Category
 - Transactions
 - Add/Edit Transaction
+- Import/Sync Transactions
 - Budgets
 - Add/Edit Budget
 - Savings goals
@@ -244,17 +259,17 @@ Implemented MVP pages:
 - Add/Edit Subscription
 - Assets
 - Add/Edit Asset
+- Dashboard
+- Reports and CSV/Excel/PDF exports
+- Future planning
+- Settings (base currency and dated exchange rates)
 
 Placeholder or future pages:
 
-- Dashboard
-- Reports
 - Documents
-- Future planning
 - Scenario budgeting
 - People payments
 - Profile
-- Settings
 - Admin panel
 
 ## Environment Variables
@@ -343,8 +358,15 @@ npm run db:migration:seal
 npm run db:migration:check
 npm test
 npm run lint
+npm run test:e2e
 npm run build
 ```
+
+Authenticated browser and visual-regression tests use Playwright. Provide
+`E2E_EMAIL` and `E2E_PASSWORD`, or create `.auth/user.json`, then run
+`npm run test:e2e`. Use `npm run test:e2e:update` only when intentionally
+accepting new screenshots. CI runs the suite when the corresponding repository
+secrets and public Supabase environment variables are configured.
 
 Before deployment, create a verified backup and check linked history:
 
@@ -410,4 +432,5 @@ FinancePro is currently focused on finalizing the MVP foundation:
 - Clean personal finance UI
 - Consistent loading, empty, and error states
 
-Future work can expand dashboard analytics, reports, uploads, exports, profile settings, and planning tools.
+Future work can expand uploads, scenario modeling, people payments, profile
+settings, and administrative tools.

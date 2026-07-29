@@ -2,6 +2,11 @@ import {
   transactionStatusIsFinalized,
   transactionStatusReservesWorkingBalance,
 } from "./transactions/status.ts";
+import {
+  creditCardJournalRole,
+  creditCardJournalRoleIsLiability,
+  creditCardJournalRoleIsPurchase,
+} from "./transactions/credit-card-journal.ts";
 
 export type LedgerAccountInput = {
   id: string;
@@ -28,10 +33,19 @@ export type LedgerTransactionInput = {
 };
 
 export type LedgerAccountActivity = {
+  cashAdvances: number;
+  credited: number;
   creditUsed: number;
+  debited: number;
   deltas: Map<string, number>;
+  fees: number;
   inflow: number;
+  interest: number;
   outflow: number;
+  pendingInflow: number;
+  pendingOutflow: number;
+  repayments: number;
+  refunds: number;
   transactionCount: number;
 };
 
@@ -96,8 +110,13 @@ const ledgerRelevantMetadataKeys = [
   "credit_card_debt_id",
   "credit_card_debt_impact",
   "credit_card_payment",
+  "credit_card_journal_group_id",
+  "credit_card_journal_role",
   "debt_interest_amount",
   "debt_principal_amount",
+  "external_id",
+  "external_source",
+  "external_sync_group_id",
   "financial_event",
   "future_link_amount_snapshot",
   "future_link_label",
@@ -105,10 +124,12 @@ const ledgerRelevantMetadataKeys = [
   "future_predicted_amount",
   "future_prediction_mode",
   "reversed_credit_card_payment",
+  "reversed_financial_event",
   "reversed_transaction_id",
   "reversed_transaction_type",
   "same_account_transfer_role",
   "transfer_account_amount_type",
+  "transfer_counter_amount",
   "transfer_direction",
 ] as const;
 
@@ -171,6 +192,9 @@ export function normalizeAccountType(value: unknown) {
   if (key === "bankaccount") return "bank_account";
   if (key === "cashwallet") return "cash_wallet";
   if (key === "creditcard") return "credit_card";
+  if (["aya_visa", "visa", "visa_card", "mastercard", "mpu", "amex", "jcb", "unionpay"].includes(key)) {
+    return "credit_card";
+  }
   if (key === "digitalwallet") return "digital_wallet";
   return key;
 }
@@ -439,6 +463,7 @@ export function deriveCreditCardDebtMetadata(
   accounts: LedgerAccountInput[],
 ) {
   const metadata = metadataRecord(transaction.metadata);
+  if (creditCardJournalRoleIsPurchase(creditCardJournalRole(metadata))) return metadata;
   if (creditCardDebtImpact(metadata) && creditCardAccountId(metadata)) return metadata;
 
   const debtId = typeof metadata.credit_card_debt_id === "string" && metadata.credit_card_debt_id
@@ -508,7 +533,22 @@ export function deriveCreditCardDebtMetadata(
 }
 
 function emptyActivity(): LedgerAccountActivity {
-  return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
+  return {
+    cashAdvances: 0,
+    credited: 0,
+    creditUsed: 0,
+    debited: 0,
+    deltas: new Map(),
+    fees: 0,
+    inflow: 0,
+    interest: 0,
+    outflow: 0,
+    pendingInflow: 0,
+    pendingOutflow: 0,
+    repayments: 0,
+    refunds: 0,
+    transactionCount: 0,
+  };
 }
 
 function signedCashDelta(amount: number, isCreditCard: boolean, direction: "credit" | "debit") {
@@ -542,25 +582,55 @@ function ledgerEffects(
   const transferAmountType = normalizeAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type);
   const effects: LedgerEffect[] = [];
 
-  function pushEffect(accountId: string | null | undefined, effectAmountType: string, effectDirection: "credit" | "debit") {
+  function pushEffect(
+    accountId: string | null | undefined,
+    effectAmountType: string,
+    effectDirection: "credit" | "debit",
+    balanceMode: "default" | "liability_decrease" | "liability_increase" | "none" = "default",
+  ) {
     if (!accountId) return;
     const isCreditCard = isCreditCardType(accountTypes.get(accountId));
     effects.push({
       accountId,
       amount,
       amountType: effectAmountType,
-      cashDelta: signedCashDelta(amount, isCreditCard, effectDirection),
-      creditUsedDelta: signedCreditUsedDelta(amount, isCreditCard, effectDirection),
+      cashDelta: balanceMode === "none" ? 0 : signedCashDelta(amount, isCreditCard, effectDirection),
+      creditUsedDelta: balanceMode === "none"
+        ? 0
+        : balanceMode === "liability_decrease" && isCreditCard
+          ? -amount
+        : balanceMode === "liability_increase" && isCreditCard
+          ? amount
+          : signedCreditUsedDelta(amount, isCreditCard, effectDirection),
       flow: effectDirection === "credit" ? "inflow" : "outflow",
       isCreditCard,
       transactionType,
     });
   }
 
+  const journalRole = creditCardJournalRole(metadata);
   if (transactionType === "income") {
-    pushEffect(transaction.account_id, amountType, "credit");
+    pushEffect(
+      transaction.account_id,
+      amountType,
+      "credit",
+      creditCardJournalRoleIsPurchase(journalRole)
+        ? "none"
+        : creditCardJournalRoleIsLiability(journalRole)
+          ? journalRole === "liability_credit_reversal" ? "default" : "liability_increase"
+          : "default",
+    );
   } else if (transactionType === "expense") {
-    pushEffect(transaction.account_id, amountType, "debit");
+    pushEffect(
+      transaction.account_id,
+      amountType,
+      "debit",
+      creditCardJournalRoleIsPurchase(journalRole)
+        ? "none"
+        : journalRole === "liability_credit_reversal"
+          ? "liability_decrease"
+          : "default",
+    );
   } else if (transactionType === "transfer") {
     if (direction === "credit") {
       pushEffect(transaction.account_id, amountType, "credit");
@@ -618,11 +688,65 @@ export function buildAccountLedgerActivities(
 
     for (const effect of ledgerEffects(transaction, accountTypes)) {
       const activity = getActivity(effect.accountId);
+      const transactionMetadata = metadataRecord(transaction.metadata);
+      const journalRole = creditCardJournalRole(transactionMetadata);
       if (transactionStatusIsFinalized(transaction.status)) {
         if (effect.flow === "inflow") {
           activity.inflow = roundCurrencyValue(activity.inflow + effect.amount);
         } else {
           activity.outflow = roundCurrencyValue(activity.outflow + effect.amount);
+        }
+        if (effect.isCreditCard) {
+          const financialEvent = String(transactionMetadata.financial_event ?? "");
+          const reversedFinancialEvent = String(transactionMetadata.reversed_financial_event ?? "");
+          const reversalType = reversedTransactionType(transaction);
+
+          if (financialEvent === "credit_card_cash_advance") {
+            activity.cashAdvances = roundCurrencyValue(activity.cashAdvances + effect.amount);
+          } else if (reversedFinancialEvent === "credit_card_cash_advance") {
+            activity.cashAdvances = roundCurrencyValue(activity.cashAdvances - effect.amount);
+          } else if (journalRole === "liability_credit") {
+            activity.credited = roundCurrencyValue(activity.credited + effect.amount);
+          } else if (journalRole === "liability_credit_reversal") {
+            activity.credited = roundCurrencyValue(activity.credited - effect.amount);
+          } else if (journalRole === "purchase_debit") {
+            activity.debited = roundCurrencyValue(activity.debited + effect.amount);
+          } else if (journalRole === "purchase_debit_reversal") {
+            activity.debited = roundCurrencyValue(activity.debited - effect.amount);
+          } else if (isCreditCardPayment(transactionMetadata)) {
+            activity.repayments = roundCurrencyValue(activity.repayments + effect.amount);
+          } else if (
+            transactionMetadata.reversed_credit_card_payment === true
+            || financialEvent === "credit_card_payment_reversal"
+          ) {
+            activity.repayments = roundCurrencyValue(activity.repayments - effect.amount);
+          } else if (financialEvent === "credit_card_fee") {
+            activity.fees = roundCurrencyValue(activity.fees + effect.amount);
+          } else if (reversedFinancialEvent === "credit_card_fee") {
+            activity.fees = roundCurrencyValue(activity.fees - effect.amount);
+          } else if (financialEvent === "credit_card_interest") {
+            activity.interest = roundCurrencyValue(activity.interest + effect.amount);
+          } else if (reversedFinancialEvent === "credit_card_interest") {
+            activity.interest = roundCurrencyValue(activity.interest - effect.amount);
+          } else if (financialEvent === "credit_card_refund") {
+            activity.refunds = roundCurrencyValue(activity.refunds + effect.amount);
+          } else if (reversedFinancialEvent === "credit_card_refund") {
+            activity.refunds = roundCurrencyValue(activity.refunds - effect.amount);
+          } else if (reversalType === "expense") {
+            activity.debited = roundCurrencyValue(activity.debited - effect.amount);
+          } else if (reversalType === "income") {
+            activity.refunds = roundCurrencyValue(activity.refunds - effect.amount);
+          } else if (effect.flow === "outflow") {
+            activity.debited = roundCurrencyValue(activity.debited + effect.amount);
+          } else {
+            activity.refunds = roundCurrencyValue(activity.refunds + effect.amount);
+          }
+        }
+      } else if (String(transaction.status ?? "").trim().toLowerCase() === "pending") {
+        if (effect.flow === "inflow") {
+          activity.pendingInflow = roundCurrencyValue(activity.pendingInflow + effect.amount);
+        } else {
+          activity.pendingOutflow = roundCurrencyValue(activity.pendingOutflow + effect.amount);
         }
       }
       if (effect.isCreditCard) {

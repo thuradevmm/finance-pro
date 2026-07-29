@@ -8,6 +8,7 @@ import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financia
 import { getAssets } from "@/lib/assets/supabase";
 import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { getDebts } from "@/lib/debts/supabase";
 import { getFuturePlanningTransactionOptions } from "@/lib/future-planning/supabase";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
@@ -90,13 +91,14 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
   const categories = await getCategories();
   const transaction = await getTransaction(supabase, user.id, transactionId, allAccounts, categories);
   if (!transaction) notFound();
-  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions] = await Promise.all([
+  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = await Promise.all([
     getBudgets(supabase, user.id),
       getSavingsGoals(supabase, user.id, allAccounts, categories),
     getDebts(supabase, user.id, categories),
       getSubscriptions(supabase, user.id, allAccounts, categories),
     getAssets(supabase, user.id, categories),
     getFuturePlanningTransactionOptions(supabase, user.id, transaction.futurePlanningAmountId),
+    getCurrencySettings(supabase, user.id),
   ]);
   const preservedAccountIds = new Set([
     transaction.accountId,
@@ -116,7 +118,7 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description="Update transaction details and linked financial impacts." title="Edit Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
+      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
     </AppShell>
   );
 }

@@ -10,6 +10,7 @@ export type ValidatableTransactionInput = {
   status: string;
   transferAccountAmountType: string;
   transferAccountId: string;
+  transferAmount?: number;
   type: string;
 };
 
@@ -25,11 +26,14 @@ export function validateTransactionInput(input: ValidatableTransactionInput) {
   if (!validDateInput(input.date)) return "Choose a valid transaction date.";
   if (!input.accountId) return "Select an account.";
   if (!input.accountAmountType.trim()) return "Select an account amount type.";
-  if (!["Expense", "Income", "Transfer"].includes(input.type)) return "Choose a supported transaction type.";
+  if (!["Expense", "Income", "Transfer", "Debit", "Credit"].includes(input.type)) return "Choose Credit, Debit, or Transfer.";
   if (input.type === "Transfer" && input.futurePlanningAmountId) return "Transfers cannot be linked to a future-planning amount.";
   if (!["cleared", "pending", "scheduled"].includes(input.status.trim().toLowerCase())) return "Choose a supported transaction status.";
 
   if (input.type === "Transfer") {
+    if (input.transferAmount != null && (!Number.isFinite(input.transferAmount) || input.transferAmount <= 0)) {
+      return "Destination amount must be a finite number greater than zero.";
+    }
     if (!input.transferAccountId) return "Select a destination account.";
     if (!input.transferAccountAmountType.trim()) return "Select a destination amount type.";
     if (input.accountId === input.transferAccountId

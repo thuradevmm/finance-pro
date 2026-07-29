@@ -4,7 +4,9 @@ import type { IconName } from "@/components/ui/icon";
 import { accountAmountTypeValues, reconcileAccountAmountTypeDeltas } from "@/lib/accounts/amount-types";
 import { calculateCreditCardPosition, maskCardNumber } from "@/lib/accounts/card-display";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
-import { formatMmk } from "@/lib/currency";
+import { formatCurrencyAmount } from "@/lib/currency";
+import { convertToBaseCurrency, exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { formatDisplayDate } from "@/lib/date-format";
 import { creditCardOpeningBalancesByAccount } from "@/lib/debts/transactions";
 import { fetchSupabaseRows } from "@/lib/supabase/pagination";
@@ -23,23 +25,43 @@ import type { AccountAmountType, AccountStatus, AccountType, FinancialAccount, S
 export type AccountRecord = FinancialAccount & {
   amountTypeValues: { amountValue: number; type: string }[];
   availableBalanceValue: number;
+  availableBalanceBaseValue: number;
+  baseCurrency: string;
   balanceValue: number;
+  balanceBaseValue: number;
   creditAvailable: string;
   creditAvailableValue: number;
+  creditAvailableBaseValue: number;
   creditBalance: string;
   creditBalanceValue: number;
+  creditBalanceBaseValue: number;
   creditLimit: string;
   creditLimitValue: number;
+  creditLimitBaseValue: number;
   creditMinimumPayment: string;
   creditMinimumPaymentValue: number;
   creditPaymentDueDay: number | null;
   creditStatementDay: number | null;
   creditUsed: string;
   creditUsedValue: number;
+  creditUsedBaseValue: number;
+  exchangeRateToBase: number | null;
+  hasExchangeRate: boolean;
   categoryId: string;
   initialBalanceValue: number;
   monthlyBudgetLimit: number | null;
+  monthlyInflowValue: number;
+  monthlyOutflowValue: number;
   notes: string;
+  cardFeeValue: number;
+  cardCashAdvanceValue: number;
+  cardCreditedValue: number;
+  cardDebitedValue: number;
+  cardInterestValue: number;
+  cardRefundValue: number;
+  pendingCreditValue: number;
+  pendingDebitValue: number;
+  repaymentValue: number;
 };
 
 export type AccountFormData = {
@@ -187,20 +209,41 @@ function dayOfMonthValue(value: unknown) {
   return day >= 1 && day <= 31 ? day : null;
 }
 
-function amountTypeBreakdown(type: AccountAmountType, value: unknown) {
+function amountTypeBreakdown(type: AccountAmountType, value: unknown, currencyCode = "MMK") {
   const amountValue = roundCurrencyValue(numericValue(value));
   return {
-    amount: formatMmk(amountValue),
+    amount: formatCurrencyAmount(amountValue, currencyCode),
     amountValue,
     type,
   };
 }
 
 function emptyActivity(): LedgerAccountActivity {
-  return { creditUsed: 0, deltas: new Map(), inflow: 0, outflow: 0, transactionCount: 0 };
+  return {
+    cashAdvances: 0,
+    credited: 0,
+    creditUsed: 0,
+    debited: 0,
+    deltas: new Map(),
+    fees: 0,
+    inflow: 0,
+    interest: 0,
+    outflow: 0,
+    pendingInflow: 0,
+    pendingOutflow: 0,
+    refunds: 0,
+    repayments: 0,
+    transactionCount: 0,
+  };
 }
 
-function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActivity(), categoryNames = new Map<string, string>()): AccountRecord {
+function mapAccount(
+  row: AccountRow,
+  activity: LedgerAccountActivity = emptyActivity(),
+  categoryNames = new Map<string, string>(),
+  currencySettings: CurrencySettings = { baseCurrency: "MMK", rates: [] },
+  asOfDate?: string,
+): AccountRecord {
   const metadata = metadataRecord(row.metadata);
   const type = typeMap[normalizeTypeKey(row.type)] ?? "Bank Account";
   const isCreditCard = type === "Credit Card";
@@ -238,13 +281,17 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
   const creditPaymentDueDay = isCreditCard ? dayOfMonthValue(metadata.credit_payment_due_day) : null;
   const balanceValue = isCreditCard ? creditAvailableValue : cashBalanceValue;
   const availableBalanceValue = isCreditCard ? creditAvailableValue : cashBalanceValue;
-  const balanceBreakdowns = Array.from(displayAmountTypes, ([amountType, amountValue]) => amountTypeBreakdown(amountType, amountValue));
+  const exchangeRateToBase = exchangeRateFor(currencySettings, row.currency_code, asOfDate);
+  const toBase = (value: number) => convertToBaseCurrency(value, row.currency_code, currencySettings, asOfDate) ?? 0;
+  const balanceBaseValue = toBase(balanceValue);
+  const availableBalanceBaseValue = toBase(availableBalanceValue);
+  const balanceBreakdowns = Array.from(displayAmountTypes, ([amountType, amountValue]) => amountTypeBreakdown(amountType, amountValue, row.currency_code));
   const availableBreakdowns = isCreditCard
     ? [
-      amountTypeBreakdown("Credit Limit", creditLimitValue),
-      amountTypeBreakdown("Credit Used", creditUsedValue),
-      amountTypeBreakdown("Card Credit", creditBalanceValue),
-      amountTypeBreakdown("Available Credit", creditAvailableValue),
+      amountTypeBreakdown("Credit Limit", creditLimitValue, row.currency_code),
+      amountTypeBreakdown("Credit Used", creditUsedValue, row.currency_code),
+      amountTypeBreakdown("Card Credit", creditBalanceValue, row.currency_code),
+      amountTypeBreakdown("Available Credit", creditAvailableValue, row.currency_code),
     ]
     : balanceBreakdowns;
   const metadataStatus = metadata.status;
@@ -258,10 +305,12 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     ...appearance,
     accountNumber: [accountIdentifier, phoneNumber, cardNumber ? maskCardNumber(cardNumber) : ""].filter(Boolean).join(" / "),
     amountTypeValues,
-    availableBalance: formatMmk(availableBalanceValue),
+    availableBalance: formatCurrencyAmount(availableBalanceValue, row.currency_code),
+    availableBalanceBaseValue,
     availableBreakdowns,
     availableBalanceValue,
-    balance: formatMmk(balanceValue),
+    balance: formatCurrencyAmount(balanceValue, row.currency_code),
+    balanceBaseValue,
     balanceBreakdowns,
     balanceValue,
     bankBookAccountNumber: accountIdentifier,
@@ -270,34 +319,52 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
     cardSecurityCode,
     cardExpiryCode,
     cardType,
+    baseCurrency: currencySettings.baseCurrency,
+    cardFeeValue: activity.fees,
+    cardCashAdvanceValue: activity.cashAdvances,
+    cardCreditedValue: activity.credited,
+    cardDebitedValue: activity.debited,
+    cardInterestValue: activity.interest,
+    cardRefundValue: activity.refunds,
     category: categoryNames.get(typeof metadata.category_id === "string" ? metadata.category_id : "")
       ?? (typeof metadata.category === "string" ? metadata.category : ""),
     categoryId: typeof metadata.category_id === "string" ? metadata.category_id : "",
-    creditAvailable: formatMmk(creditAvailableValue),
+    creditAvailable: formatCurrencyAmount(creditAvailableValue, row.currency_code),
+    creditAvailableBaseValue: toBase(creditAvailableValue),
     creditAvailableValue,
-    creditBalance: formatMmk(creditBalanceValue),
+    creditBalance: formatCurrencyAmount(creditBalanceValue, row.currency_code),
+    creditBalanceBaseValue: toBase(creditBalanceValue),
     creditBalanceValue,
-    creditLimit: formatMmk(creditLimitValue),
+    creditLimit: formatCurrencyAmount(creditLimitValue, row.currency_code),
+    creditLimitBaseValue: toBase(creditLimitValue),
     creditLimitValue,
-    creditMinimumPayment: formatMmk(creditMinimumPaymentValue),
+    creditMinimumPayment: formatCurrencyAmount(creditMinimumPaymentValue, row.currency_code),
     creditMinimumPaymentValue,
     creditPaymentDueDay,
     creditStatementDay,
-    creditUsed: formatMmk(creditUsedValue),
+    creditUsed: formatCurrencyAmount(creditUsedValue, row.currency_code),
+    creditUsedBaseValue: toBase(creditUsedValue),
     creditUsedValue,
     currency: row.currency_code,
     icon: appearance.icon,
     id: row.id,
     institution: typeof metadata.institution === "string" ? metadata.institution : "",
     initialBalanceValue,
+    exchangeRateToBase,
+    hasExchangeRate: exchangeRateToBase != null,
     lastUpdated: formatDisplayDate(new Date(row.updated_at ?? row.created_at)),
     monthlyBudgetLimit,
-    monthlyInflow: formatMmk(activity.inflow),
-    monthlyOutflow: formatMmk(activity.outflow),
+    monthlyInflow: formatCurrencyAmount(activity.inflow, row.currency_code),
+    monthlyInflowValue: activity.inflow,
+    monthlyOutflow: formatCurrencyAmount(activity.outflow, row.currency_code),
+    monthlyOutflowValue: activity.outflow,
     mobileBankingAccountNumber,
     name: row.name,
     notes: row.description ?? "",
+    pendingCreditValue: activity.pendingInflow,
+    pendingDebitValue: activity.pendingOutflow,
     phoneNumber,
+    repaymentValue: activity.repayments,
     status,
     tone: appearance.tone,
     transactionCount: activity.transactionCount,
@@ -311,7 +378,7 @@ export async function getAccounts(
   options: { asOfDate?: string; limit?: number } = {},
 ) {
   const asOfTimestamp = options.asOfDate ? `${options.asOfDate}T23:59:59.999Z` : "";
-  const [accountRows, transactionRows, debtRows, categoryRows] = await Promise.all([
+  const [accountRows, transactionRows, debtRows, categoryRows, currencySettings] = await Promise.all([
     fetchSupabaseRows<AccountRow>(
       (from, to) => {
         const query = supabase
@@ -353,6 +420,7 @@ export async function getAccounts(
       .is("deleted_at", null)
       .order("created_at", { ascending: true })
       .range(from, to)),
+    getCurrencySettings(supabase, userId, options.asOfDate),
   ]);
 
   const datedDebtRows = options.asOfDate
@@ -376,7 +444,13 @@ export async function getAccounts(
     activities.set(accountId, activity);
   }
   const categoryNames = new Map(categoryRows.map((category) => [category.id, category.name]));
-  return accountRows.map((account) => mapAccount(account, activities.get(account.id), categoryNames));
+  return accountRows.map((account) => mapAccount(
+    account,
+    activities.get(account.id),
+    categoryNames,
+    currencySettings,
+    options.asOfDate,
+  ));
 }
 
 export async function getAccount(supabase: SupabaseClient, userId: string, accountId: string) {
@@ -395,10 +469,10 @@ export function summarizeAccountPosition(accounts: AccountRecord[]) {
   return summarizeFinancialPosition({
     cashBalances: currentAccounts
       .filter((account) => account.type !== "Credit Card")
-      .flatMap((account) => account.balanceBreakdowns.map((breakdown) => breakdown.amountValue)),
+      .map((account) => account.balanceBaseValue),
     creditCardBalances: currentAccounts
       .filter((account) => account.type === "Credit Card")
-      .map((account) => account.creditUsedValue - account.creditBalanceValue),
+      .map((account) => account.creditUsedBaseValue - account.creditBalanceBaseValue),
   });
 }
 
@@ -406,10 +480,23 @@ export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] 
   const activeAccounts = accounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
   const activeCashAccounts = activeAccounts.filter((account) => account.type !== "Credit Card");
   const activeCreditCards = activeAccounts.filter((account) => account.type === "Credit Card");
+  const baseCurrency = activeAccounts[0]?.baseCurrency ?? "MMK";
   const amountTypeTotals = new Map<string, number>();
   for (const account of activeCashAccounts) {
     for (const breakdown of account.balanceBreakdowns) {
-      amountTypeTotals.set(breakdown.type, roundCurrencyValue((amountTypeTotals.get(breakdown.type) ?? 0) + breakdown.amountValue));
+      const convertedValue = convertToBaseCurrency(
+        breakdown.amountValue,
+        account.currency,
+        {
+          baseCurrency: account.baseCurrency,
+          rates: account.exchangeRateToBase == null ? [] : [{
+            currencyCode: account.currency,
+            effectiveDate: "0001-01-01",
+            rateToBase: account.exchangeRateToBase,
+          }],
+        },
+      ) ?? 0;
+      amountTypeTotals.set(breakdown.type, roundCurrencyValue((amountTypeTotals.get(breakdown.type) ?? 0) + convertedValue));
     }
   }
 
@@ -422,26 +509,26 @@ export function getAccountSummaries(accounts: AccountRecord[]): SummaryMetric[] 
 
   const summaries = Array.from(amountTypeTotals, ([amountType, amountValue], index) => ({
     label: amountType,
-    value: formatMmk(amountValue),
+    value: formatCurrencyAmount(amountValue, baseCurrency),
     ...summaryStyles[index % summaryStyles.length],
   }));
 
   if (activeCreditCards.length > 0) {
-    const creditLimit = activeCreditCards.reduce((sum, account) => sum + account.creditLimitValue, 0);
-    const creditUsed = activeCreditCards.reduce((sum, account) => sum + account.creditUsedValue, 0);
-    const creditBalance = activeCreditCards.reduce((sum, account) => sum + account.creditBalanceValue, 0);
-    const creditAvailable = activeCreditCards.reduce((sum, account) => sum + account.creditAvailableValue, 0);
+    const creditLimit = activeCreditCards.reduce((sum, account) => sum + account.creditLimitBaseValue, 0);
+    const creditUsed = activeCreditCards.reduce((sum, account) => sum + account.creditUsedBaseValue, 0);
+    const creditBalance = activeCreditCards.reduce((sum, account) => sum + account.creditBalanceBaseValue, 0);
+    const creditAvailable = activeCreditCards.reduce((sum, account) => sum + account.creditAvailableBaseValue, 0);
     summaries.push(
-      { label: "Credit Used", value: formatMmk(creditUsed), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-      { label: "Available Credit", value: formatMmk(creditAvailable), icon: "credit", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
-      { label: "Credit Limit", value: formatMmk(creditLimit), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+      { label: "Credit Used", value: formatCurrencyAmount(creditUsed, baseCurrency), icon: "credit", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+      { label: "Available Credit", value: formatCurrencyAmount(creditAvailable, baseCurrency), icon: "credit", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+      { label: "Credit Limit", value: formatCurrencyAmount(creditLimit, baseCurrency), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
     );
     if (creditBalance > 0) {
-      summaries.push({ label: "Card Credit", value: formatMmk(creditBalance), icon: "savings", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" });
+      summaries.push({ label: "Card Credit", value: formatCurrencyAmount(creditBalance, baseCurrency), icon: "savings", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" });
     }
   }
 
   return summaries.length > 0
     ? summaries
-    : [{ label: "No Amount Types", value: formatMmk(0), icon: "account", tone: "text-[#45464d]", bg: "bg-[#f8f9ff]" }];
+    : [{ label: "No Amount Types", value: formatCurrencyAmount(0, baseCurrency), icon: "account", tone: "text-[#45464d]", bg: "bg-[#f8f9ff]" }];
 }

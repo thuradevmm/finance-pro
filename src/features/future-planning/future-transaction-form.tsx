@@ -26,6 +26,7 @@ import {
   type FutureTransactionFormData,
   type FutureTransactionRecord,
 } from "@/lib/future-planning/records";
+import { transactionTypeLabel } from "@/lib/transactions/terminology";
 
 const recurrenceOptions: FutureRecurrence[] = ["Once", "Weekly", "Monthly", "Yearly"];
 
@@ -296,10 +297,10 @@ export function FutureTransactionForm({
               <button aria-pressed={type === option} className={typeCardClass(option, type)} key={option} onClick={() => handleTypeChange(option)} type="button">
                 <span className="flex items-center gap-2 text-sm font-bold">
                   <Icon className="size-5" name={option === "Income" ? "trendingUp" : "trendingDown"} />
-                  {option}
+                  {transactionTypeLabel(option)}
                 </span>
                 <span className="mt-2 block text-xs font-medium leading-5">
-                  {option === "Income" ? "Expected money coming into an account." : "Expected money leaving an account."}
+                  {option === "Income" ? "Expected Credit to an account." : "Expected Debit from an account."}
                 </span>
               </button>
             ))}
@@ -424,7 +425,7 @@ export function FutureTransactionForm({
             {availableCategories.length > 0 ? (
               <SelectInput label="Category" onChange={(label) => setCategoryId(availableCategories.find((category) => categorySelectLabel(category) === label)?.id ?? "")} options={availableCategories.map(categorySelectLabel)} value={selectedCategory ? categorySelectLabel(selectedCategory) : ""} />
             ) : (
-              <p className="rounded-md border border-dashed border-[#c6c6cd] p-5 text-sm text-[#45464d]">Create a {type.toLowerCase()} category first. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></p>
+              <p className="rounded-md border border-dashed border-[#c6c6cd] p-5 text-sm text-[#45464d]">Create a {transactionTypeLabel(type).toLowerCase()} category first. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></p>
             )}
             <SelectInput label="Plan Status" onChange={(value) => setStatus(value as FuturePlanStatus)} options={["Active", "Paused"]} value={status} />
           </div>
@@ -454,7 +455,7 @@ export function FutureTransactionForm({
               <span className={`grid size-12 place-items-center rounded-md ${type === "Income" ? "bg-[#ecfdf5] text-[#047857]" : "bg-[#fff1f0] text-[#b42318]"}`}><Icon name={type === "Income" ? "trendingUp" : "trendingDown"} /></span>
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase text-[#45464d]">Plan Preview</p>
-                <h3 className="truncate text-lg font-semibold text-[#0b1c30]">{title.trim() || `${type} plan`}</h3>
+                <h3 className="truncate text-lg font-semibold text-[#0b1c30]">{title.trim() || `${transactionTypeLabel(type)} plan`}</h3>
               </div>
             </div>
             <ResponsiveAmount className={`mt-5 font-bold ${type === "Income" ? "text-[#047857]" : "text-[#b42318]"}`} maxSizeRem={2.1}>{formatMmkPreview(Number.isFinite(amountValue) ? amountValue : 0, type === "Income" ? "positive" : "negative")}</ResponsiveAmount>

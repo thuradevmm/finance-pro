@@ -21,9 +21,11 @@ test("financial reconciliation lives on Dashboard with a one-year date range flo
   assert.match(dashboardPage, /getDefaultTransactionDateRange/);
   assert.match(dashboardPage, /filterTransactionsByDateRange/);
   assert.match(dashboardPage, /asOfDate: dateRange\.dateTo/);
-  assert.match(dashboardSection, /Financial Position & Reconciliation/);
-  assert.match(dashboardSection, /Period Performance/);
-  assert.match(dashboardSection, /Position Composition/);
+  assert.match(dashboardSection, /Activity, Position & Reconciliation/);
+  assert.match(dashboardSection, /Period activity/);
+  assert.match(dashboardSection, /Current position/);
+  assert.match(dashboardSection, /Opening net worth/);
+  assert.match(dashboardSection, /Balanced — no unexplained difference/);
   assert.match(dashboardFilter, /fromName="dateFrom"/);
   assert.match(dashboardFilter, /toName="dateTo"/);
 });

@@ -43,6 +43,11 @@ export default async function TransactionsPage({
   const transactions = user ? await getTransactions(supabase, user.id, accounts, categories) : [];
   const transactionFilterOptions = getTransactionFilterOptions(transactions, accounts, categories);
   const defaultDateRange = getDefaultTransactionDateRange();
+  const exportDateQuery = new URLSearchParams({
+    dataset: "transactions",
+    dateFrom: requestedDateFrom ?? defaultDateRange.dateFrom,
+    dateTo: requestedDateTo ?? defaultDateRange.dateTo,
+  }).toString();
 
   return (
     <AppShell
@@ -57,15 +62,23 @@ export default async function TransactionsPage({
       <PageHeader
         actions={
           <>
-            <button
-              className="inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-semibold text-[#76777d] opacity-70 shadow-sm"
-              disabled
-              title="Export is currently unavailable."
-              type="button"
+            <Link
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] shadow-sm"
+              href="/transactions/import"
             >
               <Icon className="size-4" name="download" />
-              Export
-            </button>
+              Import / Sync
+            </Link>
+            {["csv", "xlsx", "pdf"].map((format) => (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0058be] shadow-sm"
+                href={`/api/exports/financial?${exportDateQuery}&format=${format}`}
+                key={format}
+              >
+                <Icon className="size-4" name="download" />
+                {format === "xlsx" ? "Excel" : format.toUpperCase()}
+              </Link>
+            ))}
             <Link
               className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1f2937]"
               href="/transactions/add"
@@ -75,7 +88,7 @@ export default async function TransactionsPage({
             </Link>
           </>
         }
-        description="Manage income, expenses, transfers, receipts, and account activity."
+        description="Manage Credits, Debits, transfers, receipts, and account activity."
         title="Transactions"
       />
 

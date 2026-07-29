@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { SYSTEM_CURRENCY, formatMmk, formatMmkPreview } from "@/lib/currency";
+import { SYSTEM_CURRENCY, formatCurrencyAmount } from "@/lib/currency";
+import { exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { combineDateWithTimestampTime, formatDisplayDate } from "@/lib/date-format";
 import { getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
@@ -36,14 +38,18 @@ export type TransactionRecord = Transaction & {
   accountId: string;
   accountAmountType: AccountAmountType;
   amountValue: number;
+  amountBaseValue: number;
+  baseCurrency: string;
   categoryId: string;
   creditCardAccount: string;
   creditCardAccountId: string;
   creditCardDebtImpact: "charge" | "repayment" | "";
   creditCardPayment: boolean;
+  currency: string;
   dateValue: string;
   futurePlan?: TransactionFuturePlan;
   futurePlanningAmountId: string;
+  hasExchangeRate: boolean;
   isReversal: boolean;
   isReversed: boolean;
   ledgerMetadata: Record<string, unknown>;
@@ -54,6 +60,7 @@ export type TransactionRecord = Transaction & {
   transferFromAccountId: string;
   transferAccountId: string;
   transferAccountAmountType: AccountAmountType;
+  transferAmount?: number;
   transferToAccountId: string;
   subscriptionPayment?: TransactionSubscriptionPaymentSnapshot;
 };
@@ -101,6 +108,11 @@ export type TransactionFormData = {
   amount: number;
   categoryId: string;
   date: string;
+  externalReference?: {
+    externalId: string;
+    groupId?: string;
+    source: string;
+  };
   futurePlanningAmountId: string;
   futurePlan?: TransactionFuturePlan;
   note: string;
@@ -116,6 +128,7 @@ export type TransactionFormData = {
   title: string;
   transferAccountId: string;
   transferAccountAmountType: AccountAmountType;
+  transferAmount?: number;
   type: TransactionType;
 };
 
@@ -181,10 +194,16 @@ function normalizeRelatedType(value: string | null): TransactionRelatedEntityTyp
   return "none";
 }
 
-function formatTransactionAmount(value: number, type: TransactionType) {
-  if (type === "Income") return formatMmkPreview(value, "positive");
-  if (type === "Expense") return formatMmkPreview(value, "negative");
-  return formatMmk(value);
+function formatSignedCurrency(value: number, currency: string, sign: "negative" | "positive") {
+  const formatted = formatCurrencyAmount(Math.abs(value), currency);
+  const prefix = sign === "positive" ? "+" : "-";
+  return formatted.replace(/(\s)/, `$1${prefix}`);
+}
+
+function formatTransactionAmount(value: number, type: TransactionType, currency: string) {
+  if (type === "Income") return formatSignedCurrency(value, currency, "positive");
+  if (type === "Expense") return formatSignedCurrency(value, currency, "negative");
+  return formatCurrencyAmount(value, currency);
 }
 
 function transferDirection(metadata: Record<string, unknown>): Transaction["transferDirection"] | undefined {
@@ -199,15 +218,18 @@ function transferDirection(metadata: Record<string, unknown>): Transaction["tran
 }
 
 function transferGroupId(metadata: Record<string, unknown>, rowId: string, type: TransactionType) {
+  if (typeof metadata.credit_card_journal_group_id === "string" && metadata.credit_card_journal_group_id) {
+    return metadata.credit_card_journal_group_id;
+  }
   if (typeof metadata.transfer_group_id === "string" && metadata.transfer_group_id) return metadata.transfer_group_id;
   if (typeof metadata.same_account_transfer_group_id === "string" && metadata.same_account_transfer_group_id) return metadata.same_account_transfer_group_id;
   return type === "Transfer" ? rowId : "";
 }
 
-function formatTransferAmount(value: number, direction: Transaction["transferDirection"] | undefined) {
-  if (direction === "Debit") return formatMmkPreview(value, "negative");
-  if (direction === "Credit") return formatMmkPreview(value, "positive");
-  return formatMmk(value);
+function formatTransferAmount(value: number, direction: Transaction["transferDirection"] | undefined, currency: string) {
+  if (direction === "Debit") return formatSignedCurrency(value, currency, "negative");
+  if (direction === "Credit") return formatSignedCurrency(value, currency, "positive");
+  return formatCurrencyAmount(value, currency);
 }
 
 function subscriptionPaymentSnapshot(row: TransactionRow, metadata: Record<string, unknown>): TransactionSubscriptionPaymentSnapshot | undefined {
@@ -255,12 +277,18 @@ function mapTransaction(
   accountList: AccountRecord[],
   categories: Map<string, CategoryRecord>,
   reversedGroupIds: Set<string>,
+  currencySettings: CurrencySettings,
 ): TransactionRecord | null {
   const metadata = metadataRecord(row.metadata);
   const direction = transferDirection(metadata);
   const type = direction ? "Transfer" : normalizeType(row.type);
   const amountValue = Math.abs(Number(row.amount) || 0);
   const account = row.account_id ? accounts.get(row.account_id) : undefined;
+  const currency = account?.currency ?? SYSTEM_CURRENCY;
+  const historicalExchangeRate = exchangeRateFor(currencySettings, currency, row.transaction_date);
+  const amountBaseValue = historicalExchangeRate == null
+    ? 0
+    : roundCurrencyValue(amountValue * historicalExchangeRate);
   const metadataTransferAccountId = typeof metadata.transfer_account_id === "string" ? metadata.transfer_account_id : "";
   const counterAccountId = typeof metadata.counter_account_id === "string" ? metadata.counter_account_id : "";
   const transferAccountId = row.transfer_account_id ?? (counterAccountId || metadataTransferAccountId);
@@ -292,19 +320,23 @@ function mapTransaction(
     account: accountLabel,
     accountAmountType: normalizeAccountAmountType(metadata.account_amount_type),
     accountId: row.account_id ?? "",
-    amount: type === "Transfer" ? formatTransferAmount(amountValue, direction) : formatTransactionAmount(amountValue, type),
+    amount: type === "Transfer" ? formatTransferAmount(amountValue, direction, currency) : formatTransactionAmount(amountValue, type, currency),
+    amountBaseValue,
     amountValue,
+    baseCurrency: currencySettings.baseCurrency,
     category: type === "Transfer" ? "Transfer" : category?.name ?? "Uncategorized",
     categoryId: row.category_id ?? "",
     creditCardAccount: linkedCreditCardAccount ? getAccountOptionLabel(linkedCreditCardAccount, accountList) : "",
     creditCardAccountId: linkedCreditCardAccountId,
     creditCardDebtImpact: creditCardDebtImpact(metadata),
     creditCardPayment: isCreditCardPayment(metadata),
+    currency,
     date: formatDisplayDate(row.transaction_date),
     dateValue: row.transaction_date,
     dateTimeValue: combineDateWithTimestampTime(row.transaction_date, row.created_at),
     ...(futurePlan ? { futurePlan } : {}),
     futurePlanningAmountId: metadataString(metadata, "future_planning_amount_id"),
+    hasExchangeRate: historicalExchangeRate != null,
     id: row.id,
     isReversal: transactionStatusIsFinalized(row.status) && Boolean(reversalSourceId),
     isReversed: reversedGroupIds.has(groupId || row.id),
@@ -317,6 +349,7 @@ function mapTransaction(
     transferAccountId,
     transferAccount: transferAccountLabel,
     transferAccountAmountType: normalizeAccountAmountType(metadata.transfer_account_amount_type ?? metadata.account_amount_type),
+    transferAmount: positiveMetadataNumber(metadata.transfer_counter_amount) || amountValue,
     transferDirection: direction,
     transferFromAccount,
     transferFromAccountId,
@@ -341,7 +374,7 @@ export async function getTransactions(
   categories: CategoryRecord[],
   options: { limit?: number } = {},
 ) {
-  const [rows, debtRows] = await Promise.all([
+  const [rows, debtRows, currencySettings] = await Promise.all([
     fetchSupabaseRows<TransactionRow>(
       (from, to) => supabase
         .from("transactions")
@@ -360,6 +393,7 @@ export async function getTransactions(
       .is("deleted_at", null)
       .order("created_at", { ascending: true })
       .range(from, to)),
+    getCurrencySettings(supabase, userId),
   ]);
 
   const enrichedRows = rows.map((row) => ({
@@ -380,7 +414,7 @@ export async function getTransactions(
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   return enrichedRows.flatMap((row) => {
-    const transaction = mapTransaction(row, accountsById, accounts, categoriesById, reversedGroupIds);
+    const transaction = mapTransaction(row, accountsById, accounts, categoriesById, reversedGroupIds, currencySettings);
     return transaction ? [transaction] : [];
   });
 }
@@ -395,14 +429,14 @@ export function getTransactionFilterOptions(transactions: TransactionRecord[], a
     account: ["Account", ...getAccountOptionLabels(accounts)],
     category: ["Category", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     status: ["Status", ...transactionStatusFilterLabels()],
-    type: ["Type", "Income", "Expense", "Transfer"],
+    type: ["Type", "Credit", "Debit", "Transfer"],
   };
 }
 
 export function getTransactionSummaryValues(transactions: TransactionRecord[]) {
   const ledgerTransactions = transactions.map((transaction) => ({
       account_id: transaction.accountId || null,
-      amount: transaction.amountValue ?? 0,
+      amount: transaction.amountBaseValue ?? 0,
       metadata: transaction.ledgerMetadata,
       related_entity_id: transaction.relatedEntityId || null,
       related_entity_type: transaction.relatedEntityType || null,
@@ -422,12 +456,13 @@ export function getTransactionSummaries(transactions: TransactionRecord[]): Summ
     net,
   } = getTransactionSummaryValues(transactions);
   const netFinancing = roundCurrencyValue(financingReceipts - financingPayments);
+  const baseCurrency = transactions[0]?.baseCurrency ?? SYSTEM_CURRENCY;
   return [
-    { label: "Operating Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Operating Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Net Income", value: formatMmk(net), icon: "savings", tone: net < 0 ? "text-[#b42318]" : "text-[#0058be]", bg: "bg-[#eff6ff]" },
-    { label: "Financing Receipts", value: formatMmkPreview(financingReceipts, "positive"), icon: "trendingUp", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
-    { label: "Financing Payments", value: formatMmkPreview(financingPayments, "negative"), icon: "trendingDown", tone: "text-[#b45309]", bg: "bg-[#fffbeb]" },
-    { label: "Net Financing", value: formatMmk(netFinancing), icon: "timeline", tone: netFinancing < 0 ? "text-[#b45309]" : "text-[#7c3aed]", bg: "bg-[#f8f9ff]" },
+    { label: "Operating Credits", value: formatSignedCurrency(income, baseCurrency, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Operating Debits", value: formatSignedCurrency(expenses, baseCurrency, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Net Activity", value: formatCurrencyAmount(net, baseCurrency), icon: "savings", tone: net < 0 ? "text-[#b42318]" : "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Financing Receipts", value: formatSignedCurrency(financingReceipts, baseCurrency, "positive"), icon: "trendingUp", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
+    { label: "Financing Payments", value: formatSignedCurrency(financingPayments, baseCurrency, "negative"), icon: "trendingDown", tone: "text-[#b45309]", bg: "bg-[#fffbeb]" },
+    { label: "Net Financing", value: formatCurrencyAmount(netFinancing, baseCurrency), icon: "timeline", tone: netFinancing < 0 ? "text-[#b45309]" : "text-[#7c3aed]", bg: "bg-[#f8f9ff]" },
   ];
 }

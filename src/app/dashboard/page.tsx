@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { FinancialPositionReconciliation } from "@/features/dashboard/financial-position-reconciliation";
 import { getAccounts, summarizeAccountPosition } from "@/lib/accounts/supabase";
 import { getDebts } from "@/lib/debts/supabase";
-import { normalizeReconciliationDateRange, reconcileFinancialPosition } from "@/lib/reconciliation";
+import { normalizeReconciliationDateRange, reconcileFinancialPosition, summarizeNetWorth } from "@/lib/reconciliation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getDefaultTransactionDateRange } from "@/lib/transactions/date-range";
@@ -28,18 +28,28 @@ export default async function DashboardPage({
   }, defaultDateRange);
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const accounts = user ? await getAccounts(supabase, user.id, { asOfDate: dateRange.dateTo }) : [];
-  const [debts, transactions] = user
+  const openingDate = new Date(`${dateRange.dateFrom}T00:00:00Z`);
+  openingDate.setUTCDate(openingDate.getUTCDate() - 1);
+  const openingDateValue = openingDate.toISOString().slice(0, 10);
+  const [accounts, openingAccounts] = user
     ? await Promise.all([
-      getDebts(supabase, user.id, [], { asOfDate: dateRange.dateTo }),
-      getTransactions(supabase, user.id, accounts, []),
+      getAccounts(supabase, user.id, { asOfDate: dateRange.dateTo }),
+      getAccounts(supabase, user.id, { asOfDate: openingDateValue }),
     ])
     : [[], []];
+  const [debts, openingDebts, transactions] = user
+    ? await Promise.all([
+      getDebts(supabase, user.id, [], { asOfDate: dateRange.dateTo }),
+      getDebts(supabase, user.id, [], { asOfDate: openingDateValue }),
+      getTransactions(supabase, user.id, accounts, []),
+    ])
+    : [[], [], []];
   const periodTransactions = filterTransactionsByDateRange(transactions, dateRange.dateFrom, dateRange.dateTo);
   const reconciliation = reconcileFinancialPosition(
     summarizeAccountPosition(accounts),
     debts,
     getTransactionSummaryValues(periodTransactions),
+    summarizeNetWorth(summarizeAccountPosition(openingAccounts), openingDebts).netWorth,
   );
 
   return (
@@ -56,6 +66,7 @@ export default async function DashboardPage({
         title="Dashboard"
       />
       <FinancialPositionReconciliation
+        baseCurrency={accounts[0]?.baseCurrency ?? "MMK"}
         dateFrom={dateRange.dateFrom}
         dateTo={dateRange.dateTo}
         defaultDateFrom={defaultDateRange.dateFrom}

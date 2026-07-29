@@ -274,8 +274,8 @@ export function getCategorySummaries(categories: CategoryRecord[]): SummaryMetri
   const activeCategories = currentCategories.filter((category) => category.status === "Active");
 
   return [
-    { label: "Expense Categories", value: String(currentCategories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Income Categories", value: String(currentCategories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Debit Categories", value: String(currentCategories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Credit Categories", value: String(currentCategories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Page Categories", value: String(currentCategories.filter((category) => category.type !== "Expense" && category.type !== "Income").length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Categories", value: String(activeCategories.length), icon: "category", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];

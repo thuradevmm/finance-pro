@@ -3,7 +3,17 @@ export function canonicalAccountType(value: unknown) {
 
   if (compactType === "bank" || compactType === "bankaccount") return "bank_account";
   if (compactType === "cash" || compactType === "cashwallet") return "cash";
-  if (compactType === "creditcard") return "credit_card";
+  if (
+    compactType === "creditcard"
+    || compactType === "ayavisa"
+    || compactType === "visa"
+    || compactType === "visacard"
+    || compactType === "mastercard"
+    || compactType === "mpu"
+    || compactType === "amex"
+    || compactType === "jcb"
+    || compactType === "unionpay"
+  ) return "credit_card";
   if (compactType === "digitalwallet") return "digital_wallet";
   if (compactType === "saving" || compactType === "savings") return "savings";
   return compactType;

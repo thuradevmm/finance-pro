@@ -1,4 +1,5 @@
 import { transactionStatusCanBeReversed, transactionStatusIsFinalized } from "./status.ts";
+import { creditCardJournalRole } from "./credit-card-journal.ts";
 
 export type TransactionIntegrityInput = {
   id?: string | null;
@@ -32,6 +33,9 @@ export function transactionMutationIntegrityError(
   hasPostedReversal: boolean,
 ) {
   const metadata = metadataRecord(transaction.metadata);
+  if (creditCardJournalRole(metadata) === "liability_credit") {
+    return "The Credit side of a card purchase is system-managed. Edit, delete, or reverse its linked Debit purchase instead.";
+  }
   if (metadata.system_managed === true && metadata.financial_event === "debt_origination") {
     return "Debt origination transactions are managed from the linked Debt record and cannot be edited, deleted, or reversed here.";
   }

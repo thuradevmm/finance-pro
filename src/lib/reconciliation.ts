@@ -20,6 +20,7 @@ export type NetWorthSummary = {
 
 export type FinancialReconciliation = NetWorthSummary & LedgerSummary & {
   difference: number;
+  hasIndependentOpeningPosition: boolean;
   openingPositionAndAdjustments: number;
   reconciledClosingNetWorth: number;
 };
@@ -93,21 +94,37 @@ export function reconcileFinancialPosition(
   accountPosition: FinancialPositionSummary,
   debts: ReconciliationDebtInput[],
   transactions: Pick<LedgerSummary, "expenses" | "income">,
+  openingNetWorth?: number,
 ): FinancialReconciliation {
   const netWorth = summarizeNetWorth(accountPosition, debts);
   const income = roundCurrencyValue(transactions.income);
   const expenses = roundCurrencyValue(transactions.expenses);
   const net = roundCurrencyValue(income - expenses);
-  const openingPositionAndAdjustments = roundCurrencyValue(netWorth.netWorth - net);
+  const hasIndependentOpeningPosition = Number.isFinite(openingNetWorth);
+  // The optional opening position is calculated independently as of the day
+  // before the selected range. The fallback preserves legacy callers that do
+  // not have an opening snapshot, but those callers must not present the
+  // resulting zero as an independently verified reconciliation.
+  const openingPositionAndAdjustments = hasIndependentOpeningPosition
+    ? roundCurrencyValue(openingNetWorth!)
+    : roundCurrencyValue(netWorth.netWorth - net);
   const reconciledClosingNetWorth = roundCurrencyValue(openingPositionAndAdjustments + net);
 
   return {
     ...netWorth,
     difference: roundCurrencyValue(netWorth.netWorth - reconciledClosingNetWorth),
     expenses,
+    hasIndependentOpeningPosition,
     income,
     net,
     openingPositionAndAdjustments,
     reconciledClosingNetWorth,
   };
+}
+
+export function reconciliationSeverity(difference: number) {
+  const absoluteDifference = Math.abs(roundCurrencyValue(difference));
+  if (absoluteDifference <= 0.005) return "balanced" as const;
+  if (absoluteDifference <= 1) return "minor" as const;
+  return "review" as const;
 }

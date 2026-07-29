@@ -13,6 +13,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { SYSTEM_CURRENCY, cleanAmountInputValue, formatAmountInputValue, formatCurrencyAmount, formatMmkPreview, parseAmountInputValue } from "@/lib/currency";
+import { exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
@@ -24,6 +25,7 @@ import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/i
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import { calculateTransactionRemainingAmount } from "@/lib/transactions/remaining-amount";
 import { normalizeTransactionStatus, transactionStatusLabel, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
+import { transactionTypeLabel } from "@/lib/transactions/terminology";
 import type { TransactionType } from "@/types/finance";
 
 type TransactionTypeOption = {
@@ -37,8 +39,8 @@ type TransactionTypeOption = {
 };
 
 const transactionTypes: TransactionTypeOption[] = [
-  { type: "Expense", description: "Money paid from an account", icon: "trendingDown", previewIcon: "receipt", accent: "text-[#b42318]", activeClassName: "border-[#fca5a5] bg-[#fff1f0] text-[#991b1b] shadow-sm", previewClassName: "bg-[#b42318] text-white" },
-  { type: "Income", description: "Money received into an account", icon: "trendingUp", previewIcon: "trendingUp", accent: "text-[#047857]", activeClassName: "border-[#86efac] bg-[#ecfdf5] text-[#166534] shadow-sm", previewClassName: "bg-[#047857] text-white" },
+  { type: "Expense", description: "Money used or paid from an account", icon: "trendingDown", previewIcon: "receipt", accent: "text-[#b42318]", activeClassName: "border-[#fca5a5] bg-[#fff1f0] text-[#991b1b] shadow-sm", previewClassName: "bg-[#b42318] text-white" },
+  { type: "Income", description: "Money credited to an account", icon: "trendingUp", previewIcon: "trendingUp", accent: "text-[#047857]", activeClassName: "border-[#86efac] bg-[#ecfdf5] text-[#166534] shadow-sm", previewClassName: "bg-[#047857] text-white" },
   { type: "Transfer", description: "Move money between accounts", icon: "sync", previewIcon: "sync", accent: "text-[#4f46e5]", activeClassName: "border-[#c7d2fe] bg-[#eef2ff] text-[#3730a3] shadow-sm", previewClassName: "bg-[#4f46e5] text-white" },
 ];
 
@@ -150,16 +152,18 @@ function accountAvailableAmount(account: AccountRecord | undefined, amountType: 
 
 function RemainingAmount({
   amountType,
+  currency,
   value,
 }: {
   amountType: string;
+  currency: string;
   value: number;
 }) {
   return (
     <div className="mt-2 flex min-w-0 items-center justify-between gap-3 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs">
       <span className="min-w-0 truncate font-semibold text-[#45464d]">Remaining amount · {amountType}</span>
       <ResponsiveAmount className={`shrink-0 font-bold ${value < 0 ? "text-[#ba1a1a]" : "text-[#0b1c30]"}`} maxSizeRem={0.875}>
-        {formatMmkPreview(value)}
+        {formatCurrencyAmount(value, currency)}
       </ResponsiveAmount>
     </div>
   );
@@ -168,6 +172,7 @@ function RemainingAmount({
 export function AddTransactionForm({
   accounts,
   categories,
+  currencySettings,
   initialValues,
   planningOptions,
   relatedOptions,
@@ -175,6 +180,7 @@ export function AddTransactionForm({
 }: {
   accounts: AccountRecord[];
   categories: CategoryRecord[];
+  currencySettings: CurrencySettings;
   initialValues?: TransactionFormInitialValues;
   planningOptions: FuturePlanningTransactionOption[];
   relatedOptions: TransactionRelatedOption[];
@@ -190,7 +196,11 @@ export function AddTransactionForm({
   const subscriptionBilledAmountInputId = useId();
   const subscriptionExchangeRateInputId = useId();
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
-  const [amount, setAmount] = useState(transaction ? String(transaction.amountValue) : initialValues?.amount ?? "");
+  const [amount, setAmount] = useState(transaction
+    ? String(transaction.type === "Transfer" && transaction.transferDirection === "Credit"
+      ? transaction.transferAmount ?? transaction.amountValue
+      : transaction.amountValue)
+    : initialValues?.amount ?? "");
   const [transactionDate, setTransactionDate] = useState(transaction?.dateValue ?? initialValues?.date ?? new Date().toISOString().slice(0, 10));
   const [futurePlanningAmountId, setFuturePlanningAmountId] = useState(transaction?.futurePlanningAmountId ?? "");
   const initialTransferFromAccountId = transaction?.type === "Transfer" ? transaction.transferFromAccountId || transaction.accountId : transaction?.accountId;
@@ -249,6 +259,10 @@ export function AddTransactionForm({
     : transferAccountAmountTypeOptions[0] ?? "General";
   const selectedRelatedOption = relatedOptions.find((option) => `${option.type}:${option.value}` === relatedOptionValue) ?? relatedOptions[0];
   const isTransfer = selectedType === "Transfer";
+  const isCashAdvance = isTransfer
+    && isCreditCardAccount(selectedAccount)
+    && Boolean(selectedTransferAccount)
+    && !isCreditCardAccount(selectedTransferAccount);
   const isCreditCardCharge = isCreditCardAccount(selectedAccount) && (selectedType === "Expense" || selectedType === "Transfer");
   const isCreditCardPayment = isTransfer && isCreditCardAccount(selectedTransferAccount);
   const autoLinksCreditCardDebt = isCreditCardCharge || isCreditCardPayment;
@@ -313,6 +327,25 @@ export function AddTransactionForm({
     && selectedAccount?.id !== effectiveRelatedOption?.creditCardDebt?.accountId;
   const hasSecondaryCreditCardDebtImpact = hasAdditionalAutomaticCreditCardDebtImpact(isCreditCardCharge, effectiveRelatedOption);
   const amountNumber = Number(amount);
+  const hasDifferentTransferCurrency = isTransfer
+    && Boolean(selectedAccount && selectedTransferAccount)
+    && selectedAccount?.currency !== selectedTransferAccount?.currency;
+  const transferAmountValue = isTransfer
+    ? transaction?.transferAmount && transaction.transferAmount > 0
+      && transaction.amountValue === amountNumber
+      && transaction.transferFromAccountId === accountId
+      && transaction.transferToAccountId === effectiveTransferToAccountId
+        ? transaction.transferAmount
+        : exchangeRateFor(currencySettings, selectedAccount?.currency, transactionDate) != null
+          && exchangeRateFor(currencySettings, selectedTransferAccount?.currency, transactionDate) != null
+          ? roundMoney(
+            amountNumber
+            * exchangeRateFor(currencySettings, selectedAccount?.currency, transactionDate)!
+            / exchangeRateFor(currencySettings, selectedTransferAccount?.currency, transactionDate)!,
+          )
+          : Number.NaN
+    : amountNumber;
+  const transferExchangeRateMissing = hasDifferentTransferCurrency && !Number.isFinite(transferAmountValue);
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;
   const accountHasError = showErrors && !accountId;
@@ -331,7 +364,7 @@ export function AddTransactionForm({
   const transferAvailableAmountValue = accountAvailableAmount(selectedTransferAccount, effectiveTransferAccountAmountType)
     + editedTransactionBalanceAdjustment(transaction, effectiveTransferToAccountId, effectiveTransferAccountAmountType);
   const transferRemainingAmountValue = calculateTransactionRemainingAmount({
-    amount: amountNumber,
+    amount: transferAmountValue,
     availableAmount: transferAvailableAmountValue,
     direction: "inflow",
     maximumAmount: isCreditCardAccount(selectedTransferAccount) ? selectedTransferAccount?.creditLimitValue : undefined,
@@ -420,7 +453,7 @@ export function AddTransactionForm({
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || transferExchangeRateMissing || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -444,9 +477,10 @@ export function AddTransactionForm({
           exchangeRate: subscriptionPaymentExchangeRateValue,
         }
         : undefined,
-      title: note.trim() || `${selectedType} transaction`,
+      title: note.trim() || `${transactionTypeLabel(selectedType)} transaction`,
       transferAccountId: isTransfer ? effectiveTransferToAccountId : "",
       transferAccountAmountType: isTransfer ? effectiveTransferAccountAmountType : "",
+      transferAmount: isTransfer ? transferAmountValue : undefined,
       type: selectedType,
     };
 
@@ -490,7 +524,7 @@ export function AddTransactionForm({
                   onClick={() => handleTypeChange(option.type)}
                   type="button"
                 >
-                  <span className="mb-3 flex items-center gap-2 text-sm font-bold"><Icon className="size-5" name={option.icon} />{option.type}</span>
+                  <span className="mb-3 flex items-center gap-2 text-sm font-bold"><Icon className="size-5" name={option.icon} />{transactionTypeLabel(option.type)}</span>
                   <span className="block text-xs font-medium leading-5">{option.description}</span>
                 </button>
               );
@@ -585,12 +619,12 @@ export function AddTransactionForm({
             <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={accountAmountTypeOptions.length > 0 ? accountAmountTypeOptions : ["General"]} value={effectiveAccountAmountType} />
-                <RemainingAmount amountType={effectiveAccountAmountType} value={remainingAmountValue} />
+                <RemainingAmount amountType={effectiveAccountAmountType} currency={selectedAccount?.currency ?? SYSTEM_CURRENCY} value={remainingAmountValue} />
               </div>
               {isTransfer ? (
                 <div>
                   <SelectInput label="To Account Amount Type" onChange={setTransferAccountAmountType} options={transferAccountAmountTypeOptions.length > 0 ? transferAccountAmountTypeOptions : ["General"]} value={effectiveTransferAccountAmountType} />
-                  <RemainingAmount amountType={effectiveTransferAccountAmountType} value={transferRemainingAmountValue} />
+                  <RemainingAmount amountType={effectiveTransferAccountAmountType} currency={selectedTransferAccount?.currency ?? SYSTEM_CURRENCY} value={transferRemainingAmountValue} />
                 </div>
               ) : (
                 <SelectInput label="Status" onChange={(value) => setStatus(normalizeTransactionStatus(value))} options={["Cleared", "Pending", "Scheduled"]} value={transactionStatusLabel(status)} />
@@ -602,7 +636,24 @@ export function AddTransactionForm({
               </div>
             ) : null}
             {transferAmountTypeHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Choose a different amount type when transferring within the same account.</p> : null}
+            {transferExchangeRateMissing ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">Add dated exchange rates for both account currencies in Settings before saving this transfer.</p> : null}
             {availableAmountHasError ? <p className="mt-2 text-xs font-medium text-[#ba1a1a]">This {effectiveAccountAmountType} transaction exceeds the available amount for the selected account.</p> : null}
+            {hasDifferentTransferCurrency && Number.isFinite(transferAmountValue) ? (
+              <div className="mt-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
+                <p className="text-xs font-bold uppercase text-[#0058be]">Currency conversion</p>
+                <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                  {formatCurrencyAmount(amountNumber || 0, selectedAccount?.currency ?? SYSTEM_CURRENCY)} converts to {formatCurrencyAmount(transferAmountValue, selectedTransferAccount?.currency ?? SYSTEM_CURRENCY)} using the dated base-currency rates.
+                </p>
+              </div>
+            ) : null}
+            {isCashAdvance ? (
+              <div className="mt-4 rounded-lg border border-[#fde68a] bg-[#fffbeb] p-4">
+                <p className="text-xs font-bold uppercase text-[#92400e]">Credit-card cash advance</p>
+                <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                  This increases the card liability and credits the destination account. It is financing activity, not operating spending.
+                </p>
+              </div>
+            ) : null}
           </FormCard>
 
           <FormCard title="Additional Information">
@@ -757,7 +808,7 @@ export function AddTransactionForm({
           <div className={`mx-auto mb-5 grid size-20 place-items-center rounded-full shadow-sm ${selectedOption.previewClassName}`}>
             <Icon className="size-10" name={selectedOption.previewIcon} />
           </div>
-          <p className="text-center text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
+          <p className="text-center text-xs font-bold uppercase text-[#45464d]">{transactionTypeLabel(selectedType)} Preview</p>
           <h3 className="mt-2 text-center"><ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatPreviewAmount(amount, selectedType)}</ResponsiveAmount></h3>
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Date</span><span className="text-sm font-semibold text-[#0b1c30]">{formatDisplayDate(transactionDate, "-")}</span></div>

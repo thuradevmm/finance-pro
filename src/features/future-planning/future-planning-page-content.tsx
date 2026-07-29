@@ -22,6 +22,7 @@ import {
   type FuturePlanningColumnDirection,
   type FuturePlanningColumnMoveDirection,
 } from "@/lib/future-planning/manual-table";
+import { planningDirectionLabel } from "@/lib/transactions/terminology";
 
 type FuturePlanningPageContentProps = {
   amounts: FuturePlanningAmount[];
@@ -29,12 +30,12 @@ type FuturePlanningPageContentProps = {
   selectedYears: number[];
 };
 
-const directionLabels = ["Income", "Expense", "Saving"];
+const directionLabels = ["Credit", "Debit", "Saving"];
 const stickyYearColumnWidth = 84;
 const stickyMonthColumnWidth = 144;
 
 function directionLabel(direction: FuturePlanningColumnDirection) {
-  return `${direction[0].toUpperCase()}${direction.slice(1)}`;
+  return planningDirectionLabel(direction);
 }
 
 function amountKey(columnId: string, monthKey: string) {
@@ -63,7 +64,7 @@ function ManualPlanningSettings({
   const { showError, showSuccess } = useToast();
   const [yearInput, setYearInput] = useState(selectedYears.join(", "));
   const [columnName, setColumnName] = useState("");
-  const [direction, setDirection] = useState("Expense");
+  const [direction, setDirection] = useState("Debit");
   const [isSavingYears, setIsSavingYears] = useState(false);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
 
@@ -83,7 +84,7 @@ function ManualPlanningSettings({
     event.preventDefault();
     setIsAddingColumn(true);
     const result = await createFuturePlanningColumn({
-      direction: direction.toLowerCase() as FuturePlanningColumnDirection,
+      direction: direction === "Credit" ? "income" : direction === "Debit" ? "expense" : "saving",
       name: columnName,
     });
     setIsAddingColumn(false);
@@ -106,7 +107,7 @@ function ManualPlanningSettings({
 
       <form className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm sm:p-5" onSubmit={handleAddColumn}>
         <h2 className="text-lg font-semibold text-[#0b1c30]">Planning types</h2>
-        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Create as many income, expense, or saving types as you need. They are independent and never pull amounts from another page.</p>
+        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Create as many Credit, Debit, or Saving types as you need. They are independent and never pull amounts from another page.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <TextInput label="Type name" onChange={setColumnName} placeholder="Salary, Rent, Emergency fund…" value={columnName} />
           <SelectInput label="Total group" onChange={setDirection} options={directionLabels} value={direction} />
@@ -181,7 +182,7 @@ function ManualPlanTable({
     return (
       <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-8 text-center">
         <h2 className="text-lg font-semibold text-[#0b1c30]">Add your first planning type</h2>
-        <p className="mt-1 text-sm text-[#45464d]">Create an income, expense, or saving type above, then enter its monthly predefined amounts here.</p>
+        <p className="mt-1 text-sm text-[#45464d]">Create a Credit, Debit, or Saving type above, then enter its monthly predefined amounts here.</p>
       </section>
     );
   }
@@ -205,8 +206,8 @@ function ManualPlanTable({
             <tr className="border-b border-[#c6c6cd]/60 bg-[#eff4ff] text-xs font-semibold uppercase text-[#45464d]">
               <th className="sticky left-0 z-40 box-border border-b border-r border-[#c6c6cd]/60 bg-[#eff4ff] px-4 py-3" style={{ width: `${stickyYearColumnWidth}px`, minWidth: `${stickyYearColumnWidth}px`, maxWidth: `${stickyYearColumnWidth}px` }}>Year</th>
               <th className={`sticky z-40 box-border border-b border-r border-[#c6c6cd]/60 bg-[#eff4ff] px-4 py-3 ${stickyColumnShadowClass}`} style={{ left: `${stickyYearColumnWidth}px`, width: `${stickyMonthColumnWidth}px`, minWidth: `${stickyMonthColumnWidth}px`, maxWidth: `${stickyMonthColumnWidth}px` }}>Month</th>
-              <th className="px-4 py-3 text-right">Total income</th>
-              <th className="px-4 py-3 text-right">Total expense</th>
+              <th className="px-4 py-3 text-right">Total Credit</th>
+              <th className="px-4 py-3 text-right">Total Debit</th>
               <th className="px-4 py-3 text-right">Total saving</th>
               {columns.map((column, columnIndex) => (
                 <th className="min-w-52 px-4 py-3 text-right" key={column.id}>

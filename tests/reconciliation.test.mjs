@@ -50,6 +50,7 @@ test("net worth includes lending receivables and standard debts without double-c
 test("historical income and expense reconcile through explicit opening and legacy adjustments", () => {
   assert.deepEqual(reconcileFinancialPosition(accountPosition, debts, {
     expenses: 3_000,
+    hasIndependentOpeningPosition: false,
     income: 10_000,
   }), {
     borrowingLiabilities: 2_000,
@@ -57,6 +58,7 @@ test("historical income and expense reconcile through explicit opening and legac
     cashAndCardCredit: 10_100,
     difference: 0,
     expenses: 3_000,
+    hasIndependentOpeningPosition: false,
     income: 10_000,
     lendingReceivables: 1_200,
     net: 7_000,

@@ -41,13 +41,19 @@ export function NavigationProgress({ label = "Loading workspace" }: { label?: st
 }
 
 export type FinancialSkeletonRouteKind =
+  | "accounts"
+  | "auth"
+  | "coming-soon"
   | "dashboard"
   | "detail"
   | "form"
   | "report"
   | "settings"
+  | "status"
   | "subscriptions"
-  | "table";
+  | "table"
+  | "transactions"
+  | "planning";
 
 function SkeletonBlock({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-md bg-[#d9e2f2] ${className}`} />;
@@ -98,6 +104,25 @@ function TableSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: num
             ))}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function FilterSkeleton({ fields = 5 }: { fields?: number }) {
+  return (
+    <div className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        {Array.from({ length: fields }, (_, index) => (
+          <div className={index === 0 ? "sm:col-span-2" : ""} key={index}>
+            <SkeletonBlock className="mb-2 h-3 w-24" />
+            <SkeletonBlock className="h-12 w-full rounded-lg" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <SkeletonBlock className="h-11 w-24" />
+        <SkeletonBlock className="h-11 w-28" />
       </div>
     </div>
   );
@@ -173,14 +198,101 @@ function SubscriptionSkeleton() {
 function DashboardSkeleton() {
   return (
     <>
-      <SummarySkeleton />
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <SkeletonBlock className="h-80 rounded-lg xl:col-span-2" />
-        <SkeletonBlock className="h-80 rounded-lg" />
-        <SkeletonBlock className="h-72 rounded-lg" />
-        <SkeletonBlock className="h-72 rounded-lg xl:col-span-2" />
+      <section className="overflow-hidden rounded-xl border border-[#c6c6cd]/70 bg-white">
+        <div className="border-b border-[#c6c6cd]/50 bg-[#eff6ff] p-4 sm:p-6">
+          <SkeletonBlock className="h-6 w-72 max-w-full" />
+          <SkeletonBlock className="mt-3 h-4 w-full max-w-2xl" />
+          <SkeletonBlock className="mt-5 h-24 w-full rounded-lg" />
+        </div>
+        <div className="p-4 sm:p-6">
+          <SummarySkeleton count={3} />
+          <TableSkeleton columns={4} rows={10} />
+          <SkeletonBlock className="mt-5 h-28 w-full rounded-lg" />
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AccountsSkeleton() {
+  return (
+    <>
+      <SummarySkeleton count={5} />
+      <FilterSkeleton fields={6} />
+      <div className="space-y-6">
+        <TableSkeleton columns={5} rows={4} />
+        <TableSkeleton columns={5} rows={3} />
       </div>
     </>
+  );
+}
+
+function TransactionsSkeleton() {
+  return (
+    <>
+      <div className="mb-4 flex gap-3 border-b border-[#c6c6cd]/60 pb-2">
+        {Array.from({ length: 4 }, (_, index) => <SkeletonBlock className="h-9 w-20" key={index} />)}
+      </div>
+      <FilterSkeleton fields={6} />
+      <TableSkeleton columns={5} rows={8} />
+    </>
+  );
+}
+
+function PlanningSkeleton() {
+  return (
+    <>
+      <div className="mb-6 grid gap-4 xl:grid-cols-2">
+        <SkeletonBlock className="h-64 rounded-lg" />
+        <SkeletonBlock className="h-64 rounded-lg" />
+      </div>
+      <TableSkeleton columns={5} rows={8} />
+    </>
+  );
+}
+
+function AuthSkeleton() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[#f8f9ff] p-4" role="status" aria-label="Loading secure account page">
+      <NavigationProgress />
+      <div className="w-full max-w-md rounded-xl border border-[#c6c6cd]/70 bg-white p-6 shadow-[0_16px_50px_rgba(15,23,42,0.10)]">
+        <SkeletonBlock className="mx-auto size-12 rounded-xl" />
+        <SkeletonBlock className="mx-auto mt-5 h-8 w-52" />
+        <SkeletonBlock className="mx-auto mt-3 h-4 w-72 max-w-full" />
+        <div className="mt-7 space-y-4">
+          <SkeletonBlock className="h-12 w-full rounded-lg" />
+          <SkeletonBlock className="h-12 w-full rounded-lg" />
+          <SkeletonBlock className="h-11 w-full rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusSkeleton() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-[#f8f9ff] p-4" role="status" aria-label="Loading status page">
+      <NavigationProgress />
+      <div className="w-full max-w-lg rounded-xl border border-[#c6c6cd]/70 bg-white p-8 text-center shadow-[0_16px_50px_rgba(15,23,42,0.10)]">
+        <SkeletonBlock className="mx-auto size-14 rounded-full" />
+        <SkeletonBlock className="mx-auto mt-5 h-5 w-28" />
+        <SkeletonBlock className="mx-auto mt-4 h-8 w-72 max-w-full" />
+        <SkeletonBlock className="mx-auto mt-4 h-16 w-full" />
+        <SkeletonBlock className="mx-auto mt-6 h-11 w-40" />
+      </div>
+    </div>
+  );
+}
+
+function ComingSoonSkeleton() {
+  return (
+    <section className="grid min-h-[420px] place-items-center rounded-xl border border-[#c6c6cd]/70 bg-white p-6 text-center shadow-sm">
+      <div className="w-full max-w-xl">
+        <SkeletonBlock className="mx-auto size-14 rounded-xl" />
+        <SkeletonBlock className="mx-auto mt-5 h-8 w-64 max-w-full" />
+        <SkeletonBlock className="mx-auto mt-4 h-16 w-full" />
+      </div>
+    </section>
   );
 }
 
@@ -221,6 +333,10 @@ function DetailSkeleton() {
 }
 
 function RouteBodySkeleton({ kind }: { kind: FinancialSkeletonRouteKind }) {
+  if (kind === "accounts") return <AccountsSkeleton />;
+  if (kind === "transactions") return <TransactionsSkeleton />;
+  if (kind === "planning") return <PlanningSkeleton />;
+  if (kind === "coming-soon") return <ComingSoonSkeleton />;
   if (kind === "dashboard") return <DashboardSkeleton />;
   if (kind === "form") return <FormSkeleton />;
   if (kind === "report") return <ReportSkeleton />;
@@ -230,6 +346,7 @@ function RouteBodySkeleton({ kind }: { kind: FinancialSkeletonRouteKind }) {
   return (
     <>
       <SummarySkeleton />
+      <FilterSkeleton />
       <TableSkeleton columns={5} />
     </>
   );
@@ -242,6 +359,8 @@ export function FinancialPageSkeleton({
   routeKind?: FinancialSkeletonRouteKind;
   sidebarCollapsed?: boolean;
 }) {
+  if (routeKind === "auth") return <AuthSkeleton />;
+  if (routeKind === "status") return <StatusSkeleton />;
   return (
     <div className="min-h-dvh bg-[#f8f9ff] text-[#0b1c30]" role="status" aria-label="Loading financial workspace">
       <NavigationProgress />
@@ -272,7 +391,7 @@ export function FinancialPageSkeleton({
             <SkeletonBlock className="mt-4 h-10 w-full" />
           </header>
           <main className="mx-auto min-w-0 w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-5 md:px-6 lg:px-8 lg:py-8">
-            <HeaderSkeleton action={routeKind !== "settings" && routeKind !== "detail"} />
+            <HeaderSkeleton action={!["coming-soon", "detail", "settings"].includes(routeKind)} />
             <RouteBodySkeleton kind={routeKind} />
           </main>
         </div>

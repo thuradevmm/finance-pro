@@ -11,7 +11,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { cleanAmountInputValue, formatAmountInputValue, formatMmkPreview } from "@/lib/currency";
+import { cleanAmountInputValue, formatAmountInputValue, formatCurrencyAmount } from "@/lib/currency";
 import { calculateCreditCardPosition } from "@/lib/accounts/card-display";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { AccountFormData, AccountRecord } from "@/lib/accounts/supabase";
@@ -75,7 +75,7 @@ const accountTypes: AccountTypeOption[] = [
   },
 ];
 
-const currencies = ["MMK"];
+const currencies = ["MMK", "USD", "EUR", "GBP", "SGD", "THB", "CNY", "JPY", "AUD"];
 const statuses: AccountStatus[] = ["Active", "Needs Review", "Archived"];
 const cardTypes = ["No Card", "MPU", "Visa"];
 const defaultAmountTypeName = "Operation";
@@ -440,7 +440,7 @@ export function AddAccountForm({
               <div>
                 <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">{isCreditCard ? "Available Credit" : "Total Amount"}</span>
                 <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-xl font-semibold text-[#0b1c30]">
-                  <ResponsiveAmount maxSizeRem={1.25}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
+                  <ResponsiveAmount maxSizeRem={1.25}>{formatCurrencyAmount(transactionTotal, currency)}</ResponsiveAmount>
                 </div>
               </div>
               <SelectInput label="Currency" onChange={setCurrency} options={currencies} value={currency} />
@@ -603,7 +603,7 @@ export function AddAccountForm({
           </div>
           <p className="text-center text-xs font-bold uppercase text-[#45464d]">{selectedType} Preview</p>
           <h3 className="mt-2 text-center">
-            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatMmkPreview(transactionTotal)}</ResponsiveAmount>
+            <ResponsiveAmount className={`font-bold ${selectedOption.accent}`}>{formatCurrencyAmount(transactionTotal, currency)}</ResponsiveAmount>
           </h3>
 
           <div className="mt-6 space-y-4 rounded-lg border border-[#c6c6cd]/40 bg-white p-4">
@@ -631,7 +631,7 @@ export function AddAccountForm({
               <>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs font-bold uppercase text-[#45464d]">Credit Limit</span>
-                  <ResponsiveAmount className="max-w-48 text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatMmkPreview(Number.isFinite(creditLimitValue) ? creditLimitValue : 0)}</ResponsiveAmount>
+                  <ResponsiveAmount className="max-w-48 text-right font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{formatCurrencyAmount(Number.isFinite(creditLimitValue) ? creditLimitValue : 0, currency)}</ResponsiveAmount>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs font-bold uppercase text-[#45464d]">Payment Due Day</span>

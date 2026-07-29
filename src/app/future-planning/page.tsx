@@ -35,7 +35,7 @@ export default async function FuturePlanningPage() {
       topSearchPlaceholder="Search plans..."
     >
       <PageHeader
-        description="Define your own income, expense, and saving types, enter monthly planned amounts manually, and compare them with linked actual transactions."
+        description="Define your own Credit, Debit, and Saving types, enter monthly planned amounts manually, and compare them with linked actual transactions."
         title="Future Planning"
       />
 

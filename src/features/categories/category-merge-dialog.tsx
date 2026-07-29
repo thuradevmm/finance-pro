@@ -6,6 +6,7 @@ import { Icon } from "@/components/ui/icon";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { ModalShell } from "@/components/ui/modal-shell";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 export function CategoryMergeDialog({
   isOpen,
@@ -51,7 +52,7 @@ export function CategoryMergeDialog({
       isOpen={isOpen}
       maxWidthClassName="sm:max-w-lg"
       onClose={onCancel}
-      subtitle={`${source.name} · ${source.type}`}
+      subtitle={`${source.name} · ${categoryTypeLabel(source.type)}`}
       title="Merge category"
     >
       <div className="space-y-4">
@@ -76,7 +77,7 @@ export function CategoryMergeDialog({
           </label>
         ) : (
           <div className="rounded-md border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm font-medium text-[#92400e]">
-            Create or restore another {source.type.toLowerCase()} category before merging this one.
+            Create or restore another {categoryTypeLabel(source.type).toLowerCase()} category before merging this one.
           </div>
         )}
       </div>

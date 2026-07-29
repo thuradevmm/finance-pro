@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607290003",
+  "sealedThrough": "202607290005",
   "migrations": [
     {
       "version": "202606180001",
@@ -181,6 +181,16 @@
       "version": "202607290003",
       "file": "202607290003_lending_opening_balance_cash_correction.sql",
       "sha256": "c026408243ee8b175a37dcc70adbd8838c7d1a743c288b47d3fcbfd161a11d3c"
+    },
+    {
+      "version": "202607290004",
+      "file": "202607290004_credit_debit_card_journals.sql",
+      "sha256": "a2cca942480367df9dd11c5e75599cddf6102938a36c8f46edd0a03ea648ff2b"
+    },
+    {
+      "version": "202607290005",
+      "file": "202607290005_sync_and_multi_currency.sql",
+      "sha256": "92cc338704a8146d99a737e293eccefd1ac052d67b1258869e651ff47cf3ccdf"
     }
   ],
   "historyRepairs": [

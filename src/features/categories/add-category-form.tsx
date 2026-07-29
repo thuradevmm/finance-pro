@@ -16,6 +16,7 @@ import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { getScopesForCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
 import type { CategoryType } from "@/types/finance";
+import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
 export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
@@ -102,13 +103,13 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
                 >
                   <span className="mb-2 flex items-center gap-2 text-sm font-bold">
                     <Icon className="size-5" name={type === "Expense" ? "trendingDown" : type === "Income" ? "trendingUp" : "category"} />
-                    {type}
+                    {categoryTypeLabel(type)}
                   </span>
                   <span className="block text-xs font-medium leading-5">
                     {type === "Expense"
-                      ? "Classify money spent in transactions."
+                      ? "Classify Debit activity in transactions."
                       : type === "Income"
-                        ? "Classify money received in transactions."
+                        ? "Classify Credit activity in transactions."
                         : `Create categories only for ${getScopesForCategoryType(type)[0].toLowerCase()}.`}
                   </span>
                 </button>
@@ -145,10 +146,10 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
 
         <FormCard title="Category Usage">
           <p className="text-sm leading-6 text-[#45464d]">
-            Category usage is now controlled by category type. Income and expense categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate from transaction income/expense categories.
+            Category usage is controlled by category type. Credit and Debit categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate.
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
-            Income and expense monthly averages use the full calendar span between the first and latest posted transaction, including zero-activity months. Page categories show the related module&apos;s tracked value and record count instead of calling those records transactions.
+            Credit and Debit monthly averages use the full calendar span between the first and latest posted transaction, including zero-activity months. Page categories show the related module&apos;s tracked value and record count.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {selectedScopes.map((scope) => (
@@ -167,7 +168,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
               </span>
               <div className="min-w-0">
                 <span className="block text-xs font-bold uppercase text-[#45464d]">Type Style</span>
-                <span className="mt-1 block truncate text-sm font-semibold text-[#0b1c30]">{selectedType} uses {selectedStyle.color}</span>
+                <span className="mt-1 block truncate text-sm font-semibold text-[#0b1c30]">{categoryTypeLabel(selectedType)} uses {selectedStyle.color}</span>
               </div>
             </div>
             <span className={`size-4 shrink-0 rounded-full ${selectedStyle.marker}`} />

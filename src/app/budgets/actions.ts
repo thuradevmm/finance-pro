@@ -120,7 +120,7 @@ async function validateBudgetCategory(
       .maybeSingle());
   }
   if (error) return error.message;
-  if (!data || (data.is_active === false && data.id !== allowedExistingCategoryId) || !categoryRowSupports(data, "Transactions", "Expense")) return "Select an active expense category.";
+  if (!data || (data.is_active === false && data.id !== allowedExistingCategoryId) || !categoryRowSupports(data, "Transactions", "Expense")) return "Select an active Debit category.";
   return "";
 }
 

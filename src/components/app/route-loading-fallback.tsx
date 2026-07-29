@@ -8,12 +8,18 @@ import { FinancialPageSkeleton, type FinancialSkeletonRouteKind } from "@/compon
 
 function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
   if (pathname === "/dashboard" || pathname === "/") return "dashboard";
+  if (pathname === "/accounts") return "accounts";
+  if (pathname === "/transactions") return "transactions";
+  if (pathname === "/transactions/import") return "form";
   if (pathname === "/subscriptions") return "subscriptions";
-  if (pathname === "/reports" || pathname === "/future-planning") return "report";
-  if (pathname === "/settings" || pathname === "/profile") return "settings";
+  if (pathname === "/future-planning") return "planning";
+  if (pathname === "/reports") return "dashboard";
+  if (pathname === "/settings") return "form";
+  if (pathname === "/profile") return "coming-soon";
   if (pathname.includes("/add") || pathname.includes("/edit")) return "form";
-  if (pathname === "/forgot-password" || pathname === "/login" || pathname === "/register" || pathname === "/update-password") return "detail";
-  if (pathname === "/scenario-budgeting" || pathname === "/documents" || pathname === "/people-payments" || pathname === "/unavailable") return "detail";
+  if (pathname === "/forgot-password" || pathname === "/login" || pathname === "/register" || pathname === "/update-password") return "auth";
+  if (pathname === "/unavailable" || pathname === "/auth/callback") return "status";
+  if (pathname === "/scenario-budgeting" || pathname === "/documents" || pathname === "/people-payments") return "coming-soon";
   return "table";
 }
 

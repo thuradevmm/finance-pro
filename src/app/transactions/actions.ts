@@ -1,6 +1,6 @@
 "use server";
 
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 
 import { buildCreditCardDueBuckets, nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
@@ -36,6 +36,14 @@ import {
 import { normalizeTransactionStatus, transactionStatusIsFinalized, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
 import { validateTransactionInput } from "@/lib/transactions/validation";
 import {
+  buildCreditCardChargeJournal,
+  buildCreditCardChargeJournalReversal,
+  creditCardJournalGroupId,
+  creditCardJournalRole,
+  isCreditCardChargeJournalCandidate,
+} from "@/lib/transactions/credit-card-journal";
+import { transactionTypeFromLabel, transactionTypeLabel } from "@/lib/transactions/terminology";
+import {
   subscriptionBillingOccurrence,
   subscriptionPaymentCoversCycle,
   subscriptionPaymentIsAfterCutoff,
@@ -45,6 +53,13 @@ import { createClient } from "@/lib/supabase/server";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string; transactionIds?: string[]; warning?: string };
+
+export type TransactionSyncResult = {
+  created: number;
+  errors: Array<{ externalId: string; message: string; source: string }>;
+  skipped: number;
+  updated: number;
+};
 
 type AccountRow = {
   id: string;
@@ -187,6 +202,13 @@ function revalidateTransactionLinkedPaths(extraPaths: string[] = []) {
 
 type TransactionExtraMetadata = Record<string, unknown>;
 
+function normalizeTransactionInputTerminology(input: TransactionFormData): TransactionFormData {
+  const normalizedType = transactionTypeFromLabel(input.type);
+  return normalizedType && normalizedType !== input.type
+    ? { ...input, type: normalizedType }
+    : input;
+}
+
 function futurePlanMetadata(input: TransactionFormData["futurePlan"], amount: number): TransactionExtraMetadata {
   if (!input) return {};
   return {
@@ -196,6 +218,16 @@ function futurePlanMetadata(input: TransactionFormData["futurePlan"], amount: nu
     future_prediction_mode: "explicit",
     future_recurrence: input.recurrence.toLowerCase(),
     future_status: input.status.toLowerCase(),
+  };
+}
+
+function externalReferenceMetadata(input: TransactionFormData) {
+  const reference = input.externalReference;
+  if (!reference) return {};
+  return {
+    external_id: reference.externalId.trim(),
+    external_source: reference.source.trim().toLowerCase(),
+    external_sync_group_id: reference.groupId ?? null,
   };
 }
 
@@ -246,11 +278,55 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
     status: input.status.toLowerCase(),
-    title: input.title.trim() || `${input.type} transaction`,
+    title: input.title.trim() || `${transactionTypeLabel(input.type)} transaction`,
     transaction_date: input.date,
     transfer_account_id: null,
     type: input.type.toLowerCase(),
   };
+}
+
+function creditCardChargeJournalPayload(
+  input: TransactionFormData,
+  userId: string,
+  groupId: string,
+  debtId: string,
+  extraMetadata: TransactionExtraMetadata,
+) {
+  const statusMetadata = input.status.toLowerCase() === "scheduled"
+    ? { future_predicted_amount: input.amount, future_prediction_mode: "explicit" }
+    : {};
+  return buildCreditCardChargeJournal({
+    accountId: input.accountId,
+    amount: input.amount,
+    categoryId: input.categoryId,
+    date: input.date,
+    debtId,
+    groupId,
+    note: input.note.trim(),
+    relatedEntityId: input.relatedEntityId,
+    relatedEntityType: input.relatedEntityType,
+    status: input.status,
+    title: input.title.trim(),
+    userId,
+  }, {
+    account_amount_type: input.accountAmountType,
+    future_planning_amount_id: input.futurePlanningAmountId || null,
+    ...extraMetadata,
+    ...futurePlanMetadata(input.futurePlan, input.amount),
+    ...statusMetadata,
+  });
+}
+
+function shouldCreateCreditCardChargeJournal(
+  input: TransactionFormData,
+  resolution: Pick<CreditCardDebtResolution, "debtId" | "metadata">,
+) {
+  return isCreditCardChargeJournalCandidate({
+    accountId: input.accountId,
+    debtId: resolution.debtId,
+    impact: resolution.metadata.credit_card_debt_impact,
+    type: input.type,
+  });
 }
 
 async function validateFuturePlanningAmount(
@@ -276,15 +352,15 @@ async function validateFuturePlanningAmount(
     .maybeSingle();
   if (columnError) return columnError.message;
   if (!column || column.is_active === false) return "The selected planning type is no longer available.";
-  const requiredType = column.direction === "income" ? "Income" : "Expense";
+  const requiredType = column.direction === "income" ? "Credit" : "Debit";
   if (!futurePlanningDirectionSupportsTransactionType(column.direction, input.type)) {
-    return `${directionLabelForError(column.direction)} planning amounts require an ${requiredType} transaction.`;
+    return `${directionLabelForError(column.direction)} planning amounts require a ${requiredType} transaction.`;
   }
   return "";
 }
 
 function directionLabelForError(direction: string) {
-  return direction === "saving" ? "Saving" : direction === "income" ? "Income" : "Expense";
+  return direction === "saving" ? "Saving" : direction === "income" ? "Credit" : "Debit";
 }
 
 function metadataRecord(metadata: unknown) {
@@ -435,7 +511,8 @@ async function validateAndResolveTransactionReferences(
     if (categoryError) return { error: categoryError.message, input };
     if (!category || (category.is_active === false && category.id !== allowedExistingCategoryId)) return { error: "Select an active category that belongs to your account.", input };
     if (!categoryRowSupports(category, "Transactions", input.type)) {
-      return { error: `${input.type} transactions require an active ${input.type} category from the Transactions page.`, input };
+      const displayType = input.type === "Income" ? "Credit" : input.type === "Expense" ? "Debit" : input.type;
+      return { error: `${displayType} transactions require an active ${displayType} category from the Transactions page.`, input };
     }
   }
 
@@ -465,7 +542,7 @@ async function validateAndResolveTransactionReferences(
     if (!preservesExistingRelated && (input.date < plan.start_date || input.date > effectiveEndDate)) {
       return { error: "The transaction date must fall within the linked budget period.", input };
     }
-    if (input.type !== "Expense") return { error: "Budget activity must be recorded as an Expense.", input };
+    if (input.type !== "Expense") return { error: "Budget activity must be recorded as a Debit.", input };
     return { input: { ...input, categoryId: item.category_id } };
   }
 
@@ -520,17 +597,17 @@ async function validateAndResolveTransactionReferences(
         : relatedRecord.payment_account_id;
     const isCardDebt = normalizeDebtType(relatedRecord.type ?? relatedMetadata.type) === "creditcard";
     if (debtNature === "Lending" && input.type !== "Income") {
-      return { error: "Money returned for a lending record must be recorded as Income.", input };
+      return { error: "Money returned for a lending record must be recorded as a Credit.", input };
     }
     if (debtNature !== "Lending" && input.type === "Income" && (!isCardDebt || input.accountId !== cardAccountId)) {
-      return { error: "Income can only link to a credit card debt when it is a credit posted directly to that card account.", input };
+      return { error: "A Credit can only link to credit-card debt when it is posted directly to that card account.", input };
     }
   }
   if (["asset", "subscription"].includes(input.relatedEntityType) && input.type !== "Expense") {
-    return { error: `${input.relatedEntityType === "asset" ? "Asset purchases" : "Subscription payments"} must be recorded as an Expense.`, input };
+    return { error: `${input.relatedEntityType === "asset" ? "Asset purchases" : "Subscription payments"} must be recorded as a Debit.`, input };
   }
   if (input.relatedEntityType === "savings_goal" && input.type === "Income") {
-    return { error: "Savings-goal contributions must be an Expense or a Transfer into the goal account.", input };
+    return { error: "Savings-goal contributions must be a Debit or a Transfer into the goal account.", input };
   }
   if (input.relatedEntityType === "savings_goal" && savingsGoalRecord) {
     const ignoredIds = new Set(preservesExistingRelated ? allowedExistingRelated?.transactionIds ?? [] : []);
@@ -626,6 +703,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         counter_account_amount_type: input.transferAccountAmountType,
         counter_account_id: input.transferAccountId,
         ...extraMetadata,
+        transfer_counter_amount: input.transferAmount ?? input.amount,
         transfer_direction: "debit",
         transfer_group_id: groupId,
         transfer_account_amount_type: input.transferAccountAmountType,
@@ -633,6 +711,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
     },
     {
       ...base,
+      amount: input.transferAmount ?? input.amount,
       account_id: input.transferAccountId || null,
       transfer_account_id: input.accountId || null,
       metadata: {
@@ -640,12 +719,20 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         counter_account_amount_type: input.accountAmountType,
         counter_account_id: input.accountId,
         ...extraMetadata,
+        transfer_counter_amount: input.amount,
         transfer_direction: "credit",
         transfer_group_id: groupId,
         transfer_account_amount_type: input.accountAmountType,
       },
     },
   ];
+}
+
+function isCreditCardCashAdvance(input: TransactionFormData, cardAccountId: string) {
+  return input.type === "Transfer"
+    && input.accountId === cardAccountId
+    && Boolean(input.transferAccountId)
+    && input.transferAccountId !== cardAccountId;
 }
 
 async function validateAvailableAmount(input: TransactionFormData, userId: string, ignoredTransactionIds: string[] = []) {
@@ -1428,6 +1515,7 @@ function creditCardReversalMetadata(
     credit_card_payment: false,
     financial_event: reversedPayment ? "credit_card_payment_reversal" : "credit_card_activity_reversal",
     reversed_credit_card_payment: reversedPayment,
+    reversed_financial_event: sourceMetadata.financial_event ?? null,
     reversed_transaction_type: sourceType,
   };
 }
@@ -1630,7 +1718,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
           : input.type === "Expense" ? "repayment" : "";
 
         if (!impact) {
-          return { error: "Settle a credit card debt with an Expense from the payment account or a Transfer to the credit card." };
+          return { error: "Settle a credit card debt with a Debit from the payment account or a Transfer to the credit card." };
         }
 
         const isExternalPayment = impact === "repayment" && !physicallyTouchesCard;
@@ -1643,7 +1731,7 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
             credit_card_debt_impact: impact,
             credit_card_payment: isExternalPayment,
             financial_event: impact === "charge"
-              ? "credit_card_charge"
+              ? isCreditCardCashAdvance(input, selectedCardAccountId) ? "credit_card_cash_advance" : "credit_card_charge"
               : isExternalPayment ? "credit_card_payment" : "credit_card_credit",
           },
         };
@@ -1683,7 +1771,9 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
     credit_card_debt_id: debtResult.debtId,
     credit_card_debt_impact: impact,
     credit_card_payment: isPayment,
-    financial_event: impact === "charge" ? "credit_card_charge" : isPayment ? "credit_card_payment" : "credit_card_credit",
+    financial_event: impact === "charge"
+      ? isCreditCardCashAdvance(input, accountResult.account.id) ? "credit_card_cash_advance" : "credit_card_charge"
+      : isPayment ? "credit_card_payment" : "credit_card_credit",
   };
 
   if (input.relatedEntityType === "none" || (input.relatedEntityType === "debt" && !input.relatedEntityId)) {
@@ -1714,14 +1804,19 @@ async function resolveCreditCardDebtLink(input: TransactionFormData, userId: str
 async function getLinkedTransactionIds(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, transaction: Pick<TransactionRow, "id" | "metadata">) {
   const metadata = metadataRecord(transaction.metadata);
   const groupId = transferGroupId(metadata);
-  if (!groupId) return [transaction.id];
+  const journalGroupId = creditCardJournalGroupId(metadata);
+  if (!groupId && !journalGroupId) return [transaction.id];
 
   const { data, error } = await supabase
     .from("transactions")
     .select("id")
     .eq("user_id", userId)
     .is("deleted_at", null)
-    .or(`metadata->>transfer_group_id.eq.${groupId},metadata->>same_account_transfer_group_id.eq.${groupId}`);
+    .or([
+      groupId ? `metadata->>transfer_group_id.eq.${groupId}` : "",
+      groupId ? `metadata->>same_account_transfer_group_id.eq.${groupId}` : "",
+      journalGroupId ? `metadata->>credit_card_journal_group_id.eq.${journalGroupId}` : "",
+    ].filter(Boolean).join(","));
 
   if (error) throw new Error(error.message);
   const ids = (data as Pick<TransactionRow, "id">[]).map((row) => row.id);
@@ -2172,6 +2267,7 @@ function reconciliationWarning(debtError: string | null, subscriptionError: stri
 }
 
 export async function createTransaction(input: TransactionFormData): Promise<ActionResult> {
+  input = normalizeTransactionInputTerminology(input);
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
   const inputError = validateTransactionInput(input);
@@ -2209,10 +2305,29 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
     ...accountingMetadataResult.metadata,
     ...creditCardDebtResolution.metadata,
     ...subscriptionMetadataResult.metadata,
+    ...externalReferenceMetadata(resolvedInput),
   };
+  const transactionGroupId = resolvedInput.externalReference?.groupId || randomUUID();
   let transactionIds: string[] = [];
   if (resolvedInput.type === "Transfer") {
-    const { data, error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, randomUUID(), extraMetadata)).select("id");
+    const { data, error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, transactionGroupId, extraMetadata)).select("id");
+    if (error) {
+      const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
+      const message = transactionMutationError(error.message);
+      return { error: cleanupError ? `${message} Automatic card-debt cleanup also failed: ${cleanupError}` : message };
+    }
+    transactionIds = (data as Pick<TransactionRow, "id">[] | null)?.map((transaction) => transaction.id) ?? [];
+  } else if (shouldCreateCreditCardChargeJournal(resolvedInput, creditCardDebtResolution)) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert(creditCardChargeJournalPayload(
+        resolvedInput,
+        user.id,
+        transactionGroupId,
+        creditCardDebtResolution.debtId,
+        extraMetadata,
+      ))
+      .select("id");
     if (error) {
       const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
       const message = transactionMutationError(error.message);
@@ -2237,6 +2352,7 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
 }
 
 export async function updateTransaction(transactionId: string, input: TransactionFormData): Promise<ActionResult> {
+  input = normalizeTransactionInputTerminology(input);
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
   const inputError = validateTransactionInput(input);
@@ -2310,11 +2426,18 @@ export async function updateTransaction(transactionId: string, input: Transactio
     ...accountingMetadataResult.metadata,
     ...creditCardDebtResolution.metadata,
     ...subscriptionMetadataResult.metadata,
+    ...externalReferenceMetadata(resolvedInput),
   };
 
   const existingGroupId = transferGroupId(metadataRecord(existingTransaction.metadata));
+  const existingJournalGroupId = creditCardJournalGroupId(existingTransaction.metadata);
   const existingType = String(existingTransaction.type ?? "").toLowerCase();
-  const shouldReplaceRows = resolvedInput.type === "Transfer" || existingGroupId || existingType === "transfer";
+  const createsCardJournal = shouldCreateCreditCardChargeJournal(resolvedInput, creditCardDebtResolution);
+  const shouldReplaceRows = resolvedInput.type === "Transfer"
+    || createsCardJournal
+    || existingGroupId
+    || existingJournalGroupId
+    || existingType === "transfer";
 
   if (shouldReplaceRows) {
     let archivedIds: string[] = [];
@@ -2328,6 +2451,22 @@ export async function updateTransaction(transactionId: string, input: Transactio
 
     if (resolvedInput.type === "Transfer") {
       const { error } = await supabase.from("transactions").insert(transferPairPayload(resolvedInput, user.id, existingGroupId || randomUUID(), extraMetadata));
+      if (error) {
+        const [restoreError, cleanupError] = await Promise.all([
+          restoreArchivedTransactions(supabase, user.id, archivedIds),
+          cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId),
+        ]);
+        const compensationError = [restoreError && `Original restoration failed: ${restoreError}`, cleanupError && `Automatic card-debt cleanup failed: ${cleanupError}`].filter(Boolean).join(" ");
+        return { error: `${transactionMutationError(error.message)}${compensationError ? ` ${compensationError}` : ""}` };
+      }
+    } else if (createsCardJournal) {
+      const { error } = await supabase.from("transactions").insert(creditCardChargeJournalPayload(
+        resolvedInput,
+        user.id,
+        existingJournalGroupId || randomUUID(),
+        creditCardDebtResolution.debtId,
+        extraMetadata,
+      ));
       if (error) {
         const [restoreError, cleanupError] = await Promise.all([
           restoreArchivedTransactions(supabase, user.id, archivedIds),
@@ -2367,6 +2506,159 @@ export async function updateTransaction(transactionId: string, input: Transactio
   ]);
   revalidateTransactionLinkedPaths([`/transactions/${transactionId}/edit`]);
   return { warning: reconciliationWarning(debtReconciliationError, subscriptionReconciliationError) };
+}
+
+function stableSyncPayload(input: TransactionFormData) {
+  const payload = Object.fromEntries(
+    Object.entries(input).filter(([key]) => key !== "externalReference"),
+  );
+  const canonicalize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, canonicalize(nested)]),
+    );
+  };
+  return JSON.stringify(canonicalize(payload));
+}
+
+export async function syncTransactions(inputs: TransactionFormData[]): Promise<TransactionSyncResult> {
+  const result: TransactionSyncResult = { created: 0, errors: [], skipped: 0, updated: 0 };
+  if (inputs.length === 0) return result;
+  if (inputs.length > 500) {
+    return {
+      ...result,
+      errors: [{ externalId: "", message: "A synchronization batch is limited to 500 transactions.", source: "" }],
+    };
+  }
+
+  const { supabase, user } = await authenticatedClient();
+  if (!user) {
+    return {
+      ...result,
+      errors: [{ externalId: "", message: "You must be signed in.", source: "" }],
+    };
+  }
+
+  for (const input of inputs) {
+    if (!input || typeof input !== "object") {
+      result.errors.push({ externalId: "", message: "Each synchronized transaction must be an object.", source: "" });
+      continue;
+    }
+    const reference = input.externalReference;
+    const source = reference?.source.trim().toLowerCase() ?? "";
+    const externalId = reference?.externalId.trim() ?? "";
+    if (!source || !externalId || source.length > 100 || externalId.length > 250) {
+      result.errors.push({ externalId, message: "A valid external source and ID are required.", source });
+      continue;
+    }
+
+    const payloadHash = createHash("sha256").update(stableSyncPayload(input)).digest("hex");
+    const { data: identity, error: identityError } = await supabase
+      .from("transaction_sync_identities")
+      .select("id,payload_hash,transaction_group_id")
+      .eq("user_id", user.id)
+      .eq("source", source)
+      .eq("external_id", externalId)
+      .maybeSingle();
+    if (identityError) {
+      result.errors.push({ externalId, message: identityError.message, source });
+      continue;
+    }
+
+    if (identity) {
+      await supabase
+        .from("transaction_sync_identities")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", identity.id)
+        .eq("user_id", user.id);
+      if (identity.payload_hash === payloadHash) {
+        result.skipped += 1;
+        continue;
+      }
+
+      const { data: linkedRows, error: linkedError } = await supabase
+        .from("transactions")
+        .select("id,metadata")
+        .eq("user_id", user.id)
+        .eq("metadata->>external_source", source)
+        .eq("metadata->>external_id", externalId)
+        .is("deleted_at", null);
+      if (linkedError) {
+        result.errors.push({ externalId, message: linkedError.message, source });
+        continue;
+      }
+      const editableRow = (linkedRows as Array<{ id: string; metadata: unknown }>)
+        .find((row) => creditCardJournalRole(row.metadata) === "purchase_debit")
+        ?? linkedRows?.[0];
+      if (!editableRow) {
+        result.skipped += 1;
+        continue;
+      }
+      const updateResult = await updateTransaction(editableRow.id, {
+        ...input,
+        externalReference: { externalId, groupId: identity.transaction_group_id, source },
+      });
+      if (updateResult.error) {
+        result.errors.push({ externalId, message: updateResult.error, source });
+        continue;
+      }
+      const { error: identityUpdateError } = await supabase
+        .from("transaction_sync_identities")
+        .update({ last_seen_at: new Date().toISOString(), payload_hash: payloadHash })
+        .eq("id", identity.id)
+        .eq("user_id", user.id);
+      if (identityUpdateError) {
+        result.errors.push({ externalId, message: identityUpdateError.message, source });
+        continue;
+      }
+      result.updated += 1;
+      continue;
+    }
+
+    const transactionGroupId = randomUUID();
+    const { data: claimedIdentity, error: claimError } = await supabase
+      .from("transaction_sync_identities")
+      .insert({
+        external_id: externalId,
+        payload_hash: payloadHash,
+        source,
+        transaction_group_id: transactionGroupId,
+        user_id: user.id,
+      })
+      .select("id")
+      .maybeSingle();
+    if (claimError) {
+      if (claimError.code === "23505") {
+        result.skipped += 1;
+      } else {
+        result.errors.push({ externalId, message: claimError.message, source });
+      }
+      continue;
+    }
+
+    const createResult = await createTransaction({
+      ...input,
+      externalReference: { externalId, groupId: transactionGroupId, source },
+    });
+    if (createResult.error) {
+      if (claimedIdentity?.id) {
+        await supabase
+          .from("transaction_sync_identities")
+          .delete()
+          .eq("id", claimedIdentity.id)
+          .eq("user_id", user.id);
+      }
+      result.errors.push({ externalId, message: createResult.error, source });
+      continue;
+    }
+    result.created += 1;
+  }
+
+  revalidateTransactionLinkedPaths();
+  return result;
 }
 
 export async function markTransactionCleared(transactionId: string): Promise<ActionResult> {
@@ -2458,8 +2750,86 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
   const initialIntegrityError = transactionReversalIntegrityError(source, false);
   if (initialIntegrityError) return { error: initialIntegrityError };
   const groupId = transferGroupId(metadata);
+  const journalGroupId = creditCardJournalGroupId(metadata);
   const reversalType = sourceType === "income" ? "expense" : sourceType === "expense" ? "income" : "transfer";
   const reversalNote = `Reversal of ${source.title || source.note || source.id}`;
+
+  if (journalGroupId) {
+    const { data: journalRowsData, error: journalRowsError } = await supabase
+      .from("transactions")
+      .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata")
+      .eq("user_id", user.id)
+      .is("deleted_at", null)
+      .eq("metadata->>credit_card_journal_group_id", journalGroupId);
+    if (journalRowsError) return { error: journalRowsError.message };
+
+    const journalRows = journalRowsData as TransactionRow[];
+    const liabilitySource = journalRows.find((row) => creditCardJournalRole(row.metadata) === "liability_credit");
+    const purchaseSource = journalRows.find((row) => creditCardJournalRole(row.metadata) === "purchase_debit");
+    if (!liabilitySource || !purchaseSource) {
+      return { error: "This card journal is incomplete. No reversal was posted; review the linked Credit and Debit records." };
+    }
+
+    let alreadyReversed: boolean;
+    try {
+      alreadyReversed = await hasPostedReversalForTransactionIds(
+        supabase,
+        user.id,
+        [liabilitySource.id, purchaseSource.id],
+      );
+    } catch (reversalCheckError) {
+      return { error: reversalCheckError instanceof Error ? reversalCheckError.message : "Unable to verify card journal reversal." };
+    }
+    const integrityError = transactionReversalIntegrityError(purchaseSource, alreadyReversed);
+    if (integrityError) return { error: integrityError };
+
+    const purchaseMetadata = metadataRecord(purchaseSource.metadata);
+    const liabilityMetadata = metadataRecord(liabilitySource.metadata);
+    const cardAccountId = metadataString(liabilityMetadata, "credit_card_account_id")
+      || liabilitySource.account_id
+      || "";
+    const cardDebtId = metadataString(liabilityMetadata, "credit_card_debt_id")
+      || (liabilitySource.related_entity_type === "debt" ? liabilitySource.related_entity_id ?? "" : "");
+    if (!cardAccountId || !cardDebtId) {
+      return { error: "This card journal is missing its linked card account or liability. No reversal was posted." };
+    }
+
+    const reversalRows = buildCreditCardChargeJournalReversal({
+      accountId: cardAccountId,
+      amount: numericValue(purchaseSource.amount),
+      categoryId: purchaseSource.category_id ?? "",
+      date: new Date().toISOString().slice(0, 10),
+      debtId: cardDebtId,
+      groupId: randomUUID(),
+      liabilitySourceId: liabilitySource.id,
+      note: reversalNote,
+      purchaseSourceId: purchaseSource.id,
+      relatedEntityId: purchaseSource.related_entity_id ?? "",
+      relatedEntityType: purchaseSource.related_entity_type ?? "none",
+      status: "cleared",
+      title: reversalNote,
+      userId: user.id,
+    }, {
+      account_amount_type: normalizeAmountType(
+        purchaseMetadata.account_amount_type ?? liabilityMetadata.account_amount_type,
+      ),
+      original_credit_card_journal_group_id: journalGroupId,
+    });
+    const { error: reversalError } = await supabase.from("transactions").insert(reversalRows);
+    if (reversalError) return { error: transactionMutationError(reversalError.message) };
+
+    const [debtReconciliationError, subscriptionReconciliationError] = await Promise.all([
+      reconcileDebtIds(supabase, user.id, [
+        cardDebtId,
+        purchaseSource.related_entity_type === "debt" ? purchaseSource.related_entity_id : "",
+      ]),
+      reconcileSubscriptionIds(supabase, user.id, [
+        purchaseSource.related_entity_type === "subscription" ? purchaseSource.related_entity_id : "",
+      ]),
+    ]);
+    revalidateTransactionLinkedPaths();
+    return { warning: reconciliationWarning(debtReconciliationError, subscriptionReconciliationError) };
+  }
 
   if (sourceType === "transfer") {
     let debitRow = source;

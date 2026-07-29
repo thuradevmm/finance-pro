@@ -167,7 +167,7 @@ export function AddBudgetForm({ budget, categories }: { budget?: BudgetRecord; c
                 onSelect={() => setSelectedCategoryId(category.id)}
               />
             ))}
-          </div> : <div className="rounded-md border border-dashed border-[#c6c6cd] p-6 text-center text-sm text-[#45464d]">Create an expense category before adding a budget. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></div>}
+          </div> : <div className="rounded-md border border-dashed border-[#c6c6cd] p-6 text-center text-sm text-[#45464d]">Create a Debit category before adding a budget. <Link className="font-semibold text-[#0058be] hover:underline" href="/categories/add">Add Category</Link></div>}
         </FormCard>
 
         <FormCard title="Budget Details">

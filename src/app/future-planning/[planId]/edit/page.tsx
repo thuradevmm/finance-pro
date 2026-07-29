@@ -9,6 +9,7 @@ import { getFuturePlanLinkOptions } from "@/lib/future-planning/link-options";
 import { getFutureTransaction } from "@/lib/future-planning/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
+import { transactionTypeLabel } from "@/lib/transactions/terminology";
 
 export default async function EditFutureTransactionPage({ params }: { params: Promise<{ planId: string }> }) {
   const { planId } = await params;
@@ -33,7 +34,7 @@ export default async function EditFutureTransactionPage({ params }: { params: Pr
       topSearchLabel="Search future plans"
       topSearchPlaceholder="Search plans..."
     >
-      <PageHeader description={`Update the scheduled ${transaction.type.toLowerCase()} for ${transaction.title}.`} title="Edit Planned Transaction" />
+      <PageHeader description={`Update the scheduled ${transactionTypeLabel(transaction.type).toLowerCase()} for ${transaction.title}.`} title="Edit Planned Transaction" />
       <FutureTransactionForm accounts={accounts} categories={categories} defaultDate={transaction.dateValue} linkOptions={linkOptions} transaction={transaction} />
     </AppShell>
   );

@@ -126,7 +126,7 @@ function validateCategoryInput(input: CategoryFormData) {
   if (!input.name.trim() || input.name.trim().length > 100) return "Enter a category name up to 100 characters.";
   if (input.description.length > 1_000) return "Keep the category description under 1,000 characters.";
   if (!allowedTypes.includes(input.type)) return "Choose a valid category type.";
-  if (input.reportingRole && (input.type !== "Income" || input.reportingRole !== "salary")) return "Choose a valid income reporting role.";
+  if (input.reportingRole && (input.type !== "Income" || input.reportingRole !== "salary")) return "Choose a valid Credit reporting role.";
   const expectedScopes = getScopesForCategoryType(input.type);
   if (input.scopes.length !== expectedScopes.length || expectedScopes.some((scope) => !input.scopes.includes(scope))) {
     return "Choose the valid scope for this category type.";

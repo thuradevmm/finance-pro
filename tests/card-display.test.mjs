@@ -105,12 +105,20 @@ test("lookup card totals keep limits, liabilities, credits, and activity separat
   ]), {
     available: 13_000,
     cardCredit: 500,
+    cashAdvances: 0,
     charges: 3_250,
+    credited: 1_750,
+    debited: 3_250,
+    fees: 0,
+    interest: 0,
     limit: 15_000,
     minimumPayment: 750,
     netPosition: -1_500,
     outstanding: 2_000,
+    pendingCredits: 0,
+    pendingDebits: 0,
     payments: 1_750,
+    refunds: 0,
     transactions: 6,
   });
 });
