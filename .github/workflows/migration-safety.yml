@@ -42,7 +42,17 @@ jobs:
       - name: Start isolated Supabase
         run: |
           set -o pipefail
-          npm run db:start:ci 2>&1 | tee "$RUNNER_TEMP/supabase-start.log"
+          for attempt in 1 2 3; do
+            echo "Supabase database start attempt $attempt of 3" | tee -a "$RUNNER_TEMP/supabase-start.log"
+            if npm run db:start:ci 2>&1 | tee -a "$RUNNER_TEMP/supabase-start.log"; then
+              exit 0
+            fi
+            if test "$attempt" -lt 3; then
+              echo "Registry pull failed; preserving downloaded layers and retrying in 20 seconds." | tee -a "$RUNNER_TEMP/supabase-start.log"
+              sleep 20
+            fi
+          done
+          exit 1
 
       - name: Capture Supabase startup diagnostics
         if: failure()
