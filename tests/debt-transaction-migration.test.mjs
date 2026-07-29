@@ -4,6 +4,7 @@ import test from "node:test";
 
 const migrationPath = new URL("../supabase/migrations/202607180003_debt_transaction_progress_alignment.sql", import.meta.url);
 const dashboardMigrationPath = new URL("../supabase/migrations/202607180004_dashboard_debt_status_alignment.sql", import.meta.url);
+const statusMigrationPath = new URL("../supabase/migrations/202607220002_transaction_status_semantics.sql", import.meta.url);
 
 test("debt progress migration cancels reversals and permits exactly one transfer reversal pair", async () => {
   const sql = await readFile(migrationPath, "utf8");
@@ -11,6 +12,21 @@ test("debt progress migration cancels reversals and permits exactly one transfer
   assert.match(sql, /reversal_group_id[\s\S]+lower\(coalesce\(existing\.type, ''\)\) = 'transfer'/i);
   assert.match(sql, /select count\(\*\)[\s\S]+\) >= 2/i);
   assert.match(sql, /duplicate_transaction_reversal/i);
+});
+
+test("debt progress replacements preserve the baseline PostgreSQL view contract", async () => {
+  const migrations = await Promise.all([
+    readFile(migrationPath, "utf8"),
+    readFile(statusMigrationPath, "utf8"),
+  ]);
+  const columnOrder =
+    /end as progress_percentage,\s+coalesce\(debt\.repayment_amount, debt\.monthly_payment\) as repayment_amount,\s+debt\.repayment_cycle,\s+debt\.start_date,\s+coalesce\(debt\.next_payment_date, debt\.due_date\) as due_date/is;
+
+  for (const sql of migrations) {
+    assert.match(sql, columnOrder);
+    assert.doesNotMatch(sql, /calculated_total::numeric\(14,\s*2\) as total_amount/i);
+    assert.doesNotMatch(sql, /monthly_payment\)::numeric\(14,\s*2\) as repayment_amount/i);
+  }
 });
 
 test("dashboard migration counts calculated debt status", async () => {

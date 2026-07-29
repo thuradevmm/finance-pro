@@ -110,7 +110,7 @@
     {
       "version": "202607180003",
       "file": "202607180003_debt_transaction_progress_alignment.sql",
-      "sha256": "21fc378345ea80563e7f92b6a00aea25ce0f8a807c0218e9b922e8fbaf3afcd6"
+      "sha256": "3abe3a1f38c1ef14fa9fabbb8ad024ec9f46682a8b02f6a64c6e11b8be3d6b5a"
     },
     {
       "version": "202607180004",
@@ -130,7 +130,7 @@
     {
       "version": "202607220002",
       "file": "202607220002_transaction_status_semantics.sql",
-      "sha256": "7bb7b088d5164d16dbe4564365596e241d0730e678421ddb8d53c14b09102dfa"
+      "sha256": "a22f0eb6fc2bae6fa83138c381f95818216940befb23e0e071d56960259e4237"
     },
     {
       "version": "202607220003",
@@ -205,6 +205,18 @@
       "previousSha256": "e70f6d6e072311cdf4677df186d96442300ad276201260885d99f419f0fa25c1",
       "canonicalSha256": "86ef18cf4a503bf671a402c2d6ee3e03ec9f1fb7ef53fe4f76ad50e977564e36",
       "reason": "Rebuild baseline reporting views before changing date column types and preserve the original budget view column order so a fresh PostgreSQL migration chain can run."
+    },
+    {
+      "file": "202607180003_debt_transaction_progress_alignment.sql",
+      "previousSha256": "21fc378345ea80563e7f92b6a00aea25ce0f8a807c0218e9b922e8fbaf3afcd6",
+      "canonicalSha256": "3abe3a1f38c1ef14fa9fabbb8ad024ec9f46682a8b02f6a64c6e11b8be3d6b5a",
+      "reason": "Preserve the baseline debt-progress view column order and numeric types so PostgreSQL 17 can replay the canonical migration history."
+    },
+    {
+      "file": "202607220002_transaction_status_semantics.sql",
+      "previousSha256": "7bb7b088d5164d16dbe4564365596e241d0730e678421ddb8d53c14b09102dfa",
+      "canonicalSha256": "a22f0eb6fc2bae6fa83138c381f95818216940befb23e0e071d56960259e4237",
+      "reason": "Keep the debt-progress replacement compatible with the established view contract while updating transaction status semantics."
     }
   ]
 }
