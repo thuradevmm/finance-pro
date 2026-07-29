@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
-import { normalizeDebtNature } from "@/lib/debts/nature";
+import { debtOriginationTransactionType, normalizeDebtNature } from "@/lib/debts/nature";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import type { DebtFormData } from "@/lib/debts/supabase";
@@ -187,7 +187,8 @@ async function syncDebtOriginationTransaction(
   const existing = (existingRows ?? []).find((transaction) => {
     return metadataRecord(transaction.metadata).financial_event === "debt_origination";
   });
-  if (input.isCreditCardDebt || !account || input.totalAmount <= 0) {
+  const originationTransactionType = debtOriginationTransactionType(input.nature);
+  if (input.isCreditCardDebt || !originationTransactionType || !account || input.totalAmount <= 0) {
     if (!existing) return null;
     const { error } = await supabase
       .from("transactions")
@@ -197,20 +198,19 @@ async function syncDebtOriginationTransaction(
     return error?.message ?? null;
   }
 
-  const isLending = input.nature === "Lending";
   const transactionPayload = {
     account_id: account.id,
     amount: input.totalAmount,
     category_id: input.categoryId || null,
     deleted_at: null,
-    description: `${isLending ? "Money lent" : "Borrowed money received"} · ${input.name.trim()}`,
+    description: `Borrowed money received · ${input.name.trim()}`,
     metadata: {
       account_amount_type: firstAccountAmountType(account.metadata),
-      accounting_class: isLending ? "financing_payment" : "financing_receipt",
+      accounting_class: "financing_receipt",
       accounting_version: 1,
       debt_interest_amount: 0,
       debt_principal_amount: input.totalAmount,
-      debt_nature: input.nature.toLowerCase(),
+      debt_nature: "borrowing",
       financial_event: "debt_origination",
       system_managed: true,
     },
@@ -218,10 +218,10 @@ async function syncDebtOriginationTransaction(
     related_entity_id: debtId,
     related_entity_type: "debt",
     status: "cleared",
-    title: `${input.name.trim()} · ${isLending ? "lending funded" : "borrowing received"}`,
+    title: `${input.name.trim()} · borrowing received`,
     transaction_date: input.startDate,
     transfer_account_id: null,
-    type: isLending ? "expense" : "income",
+    type: originationTransactionType,
   };
 
   if (existing) {

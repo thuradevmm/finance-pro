@@ -264,10 +264,11 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           </div>
           <div className="mt-5">
             <div>
-              <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccountOptions} value={paymentAccountValue} />
+              <SelectInput label={nature === "Lending" ? "Return Account" : "Payment Account"} onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccountOptions} value={paymentAccountValue} />
               {paymentAccountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Select a credit card account for this credit card debt.</p> : null}
             </div>
             {selectedPaymentAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedPaymentAccount)}</p> : null}
+            {nature === "Lending" ? <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">Returned money will be received here. Creating a lending record does not infer an earlier cash payment from this account.</p> : null}
           </div>
           <div className="mt-5">
             <TextAreaInput label="Notes" onChange={setNotes} placeholder="Optional repayment notes..." value={notes} />

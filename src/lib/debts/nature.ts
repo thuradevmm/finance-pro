@@ -20,3 +20,12 @@ export function normalizeDebtRepaymentFrequency(value: unknown): DebtRepaymentFr
 export function debtRepaymentTransactionType(nature: DebtNature) {
   return nature === "Lending" ? "Income" as const : "Expense" as const;
 }
+
+/**
+ * A lending record can be an opening receivable, and its payment account only
+ * identifies where future returns are received. Without a separately confirmed
+ * funding account, setup must not fabricate a historical cash outflow.
+ */
+export function debtOriginationTransactionType(nature: DebtNature) {
+  return nature === "Lending" ? null : "Income" as const;
+}
