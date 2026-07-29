@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
-import { normalizePlanningYears, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
+import {
+  movePlanningColumn,
+  normalizePlanningYears,
+  type FuturePlanningColumnDirection,
+  type FuturePlanningColumnMoveDirection,
+} from "@/lib/future-planning/manual-table";
 import { getUserSafely } from "@/lib/supabase/auth";
 import {
   isMissingDatabaseObject,
@@ -100,6 +105,55 @@ export async function createFuturePlanningColumn(input: {
   }
   revalidateFuturePlanning();
   return {};
+}
+
+export async function moveFuturePlanningColumn(input: {
+  columnId: string;
+  direction: FuturePlanningColumnMoveDirection;
+}): Promise<SettingsActionResult & { orderedColumnIds?: string[] }> {
+  if (!input.columnId?.trim()) return { error: "Planning type not found." };
+  if (input.direction !== "left" && input.direction !== "right") return { error: "Choose a valid move direction." };
+
+  const { authError, supabase, user } = await authenticatedClient();
+  if (authError || !user) return { error: authError ?? "You must be signed in." };
+  const { data, error } = await supabase
+    .from("future_planning_columns")
+    .select("id,name,direction,sort_order,is_active,created_at")
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) {
+    return {
+      error: isMissingDatabaseObject(error, ["future_planning_columns"])
+        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        : error.message,
+    };
+  }
+
+  const columns = data ?? [];
+  if (!columns.some((column) => column.id === input.columnId)) return { error: "Planning type not found." };
+  const reordered = movePlanningColumn(columns, input.columnId, input.direction);
+  const orderedColumnIds = reordered.map((column) => column.id);
+  if (orderedColumnIds.every((columnId, index) => columnId === columns[index]?.id)) {
+    return { orderedColumnIds };
+  }
+
+  const { error: updateError } = await supabase.from("future_planning_columns").upsert(
+    reordered.map((column, sortOrder) => ({
+      direction: column.direction,
+      id: column.id,
+      is_active: true,
+      name: column.name,
+      sort_order: sortOrder,
+      user_id: user.id,
+    })),
+    { onConflict: "id" },
+  );
+  if (updateError) return { error: updateError.message };
+  revalidateFuturePlanning();
+  return { orderedColumnIds };
 }
 
 export async function saveFuturePlanningAmount(input: {

@@ -1083,6 +1083,7 @@ async function standardDebtRepayments(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   debt: DebtRow,
+  ignoredTransactionIds: string[] = [],
 ): Promise<{ error?: string; repayments: DebtDatedRepayment[] }> {
   const [transactionsResult, paymentsResult] = await Promise.all([
     supabase.from("transactions").select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata").eq("user_id", userId).eq("related_entity_type", "debt").eq("related_entity_id", debt.id).is("deleted_at", null),
@@ -1091,10 +1092,152 @@ async function standardDebtRepayments(
   const error = transactionsResult.error ?? paymentsResult.error;
   if (error) return { error: error.message, repayments: [] };
 
+  const ignoredIds = new Set(ignoredTransactionIds);
   return { repayments: debtTransactionLedgerFor([
-    ...(transactionsResult.data as TransactionRow[]),
+    ...(transactionsResult.data as TransactionRow[]).filter((transaction) => !ignoredIds.has(transaction.id)),
     ...standaloneDebtPaymentTransactions(paymentsResult.data ?? []),
   ], debt).repaymentActivity };
+}
+
+function accountingClassForInput(
+  input: TransactionFormData,
+  metadata: TransactionExtraMetadata,
+): "financing_payment" | "financing_receipt" | "operating_expense" | "operating_income" | "transfer" {
+  if (input.relatedEntityType === "debt" && input.relatedEntityId) {
+    const creditCardDebtId = typeof metadata.credit_card_debt_id === "string"
+      ? metadata.credit_card_debt_id
+      : "";
+    const isPrimaryCardCharge = metadata.credit_card_debt_impact === "charge"
+      && (!creditCardDebtId || creditCardDebtId === input.relatedEntityId);
+    return isPrimaryCardCharge
+      ? "operating_expense"
+      : input.type === "Income"
+        ? "financing_receipt"
+        : "financing_payment";
+  }
+  if (input.type === "Income") return "operating_income";
+  if (input.type === "Expense") return "operating_expense";
+  return "transfer";
+}
+
+async function accountingMetadataForInput(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: TransactionFormData,
+  existingMetadata: TransactionExtraMetadata,
+  ignoredTransactionIds: string[] = [],
+): Promise<{ error?: string; metadata: TransactionExtraMetadata }> {
+  const classification = accountingClassForInput(input, existingMetadata);
+  const baseMetadata: TransactionExtraMetadata = {
+    accounting_class: classification,
+    accounting_version: 1,
+  };
+  if (
+    classification !== "financing_payment"
+    || input.relatedEntityType !== "debt"
+    || !input.relatedEntityId
+  ) {
+    return { metadata: baseMetadata };
+  }
+
+  const { data, error } = await supabase
+    .from("debts")
+    .select("id,name,status,payment_account_id,total_amount,repaid_amount,metadata,type,interest_rate,start_date,next_payment_date,monthly_payment")
+    .eq("id", input.relatedEntityId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return { error: error.message, metadata: baseMetadata };
+  if (!data) return { metadata: baseMetadata };
+
+  const debt = data as DebtRow;
+  if (isCreditCardDebt(debt)) {
+    return {
+      metadata: {
+        ...baseMetadata,
+        debt_interest_amount: 0,
+        debt_principal_amount: roundCurrencyValue(input.amount),
+      },
+    };
+  }
+
+  const metadata = metadataRecord(debt.metadata);
+  const nature = normalizeDebtNature(metadata.debt_nature, debt.name ?? "");
+  if (nature !== "Borrowing") {
+    return {
+      metadata: {
+        ...baseMetadata,
+        debt_interest_amount: 0,
+        debt_principal_amount: roundCurrencyValue(input.amount),
+      },
+    };
+  }
+
+  const principal = resolveDebtStoredNumber(debt.total_amount, metadata.total_amount);
+  const startDate = debt.start_date ?? metadataString(metadata, "start_date");
+  if (
+    principal <= 0
+    || !startDate
+    || normalizeDebtRepaymentFrequency(metadata.repayment_frequency) === "One-time"
+  ) {
+    return {
+      metadata: {
+        ...baseMetadata,
+        debt_interest_amount: 0,
+        debt_principal_amount: roundCurrencyValue(input.amount),
+      },
+    };
+  }
+
+  const repaymentsResult = await standardDebtRepayments(
+    supabase,
+    userId,
+    debt,
+    ignoredTransactionIds,
+  );
+  if (repaymentsResult.error) return { error: repaymentsResult.error, metadata: baseMetadata };
+
+  const durationMonths = Math.max(
+    numericValue(metadata.duration_months, wholeMonthsBetween(startDate, metadataString(metadata, "payoff_date"))),
+    0,
+  );
+  const summaryInput = {
+    interestRate: resolveDebtStoredNumber(debt.interest_rate, metadata.interest_rate),
+    interestRatePeriod: normalizeDebtInterestRatePeriod(metadata.interest_rate_period),
+    numberOfMonths: durationMonths,
+    openingRepaidAmount: resolveDebtStoredNumber(debt.repaid_amount, metadata.repaid_amount),
+    principal,
+    referenceDate: input.date,
+    startDate,
+  };
+  const before = calculateDebtPayoffSummary({
+    ...summaryInput,
+    repayments: repaymentsResult.repayments,
+  });
+  const after = calculateDebtPayoffSummary({
+    ...summaryInput,
+    repayments: [
+      ...repaymentsResult.repayments,
+      { amountValue: input.amount, dateValue: input.date },
+    ],
+  });
+  const principalAmount = roundCurrencyValue(
+    Math.min(Math.max(after.principalPaid - before.principalPaid, 0), input.amount),
+  );
+  const interestAmount = roundCurrencyValue(
+    Math.min(
+      Math.max(after.isEarlyPayoff ? after.settlementInterestAmount : input.amount - principalAmount, 0),
+      input.amount,
+    ),
+  );
+
+  return {
+    metadata: {
+      ...baseMetadata,
+      debt_interest_amount: interestAmount,
+      debt_principal_amount: roundCurrencyValue(input.amount - interestAmount),
+    },
+  };
 }
 
 async function reconcileStandardDebt(
@@ -2048,7 +2191,22 @@ export async function createTransaction(input: TransactionFormData): Promise<Act
     const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
     return { error: cleanupError ? `${subscriptionMetadataResult.error} Automatic card-debt cleanup also failed: ${cleanupError}` : subscriptionMetadataResult.error };
   }
+  const accountingMetadataResult = await accountingMetadataForInput(
+    supabase,
+    user.id,
+    resolvedInput,
+    creditCardDebtResolution.metadata,
+  );
+  if (accountingMetadataResult.error) {
+    const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
+    return {
+      error: cleanupError
+        ? `${accountingMetadataResult.error} Automatic card-debt cleanup also failed: ${cleanupError}`
+        : accountingMetadataResult.error,
+    };
+  }
   const extraMetadata = {
+    ...accountingMetadataResult.metadata,
     ...creditCardDebtResolution.metadata,
     ...subscriptionMetadataResult.metadata,
   };
@@ -2132,8 +2290,24 @@ export async function updateTransaction(transactionId: string, input: Transactio
     const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
     return { error: cleanupError ? `${subscriptionMetadataResult.error} Automatic card-debt cleanup also failed: ${cleanupError}` : subscriptionMetadataResult.error };
   }
+  const accountingMetadataResult = await accountingMetadataForInput(
+    supabase,
+    user.id,
+    resolvedInput,
+    creditCardDebtResolution.metadata,
+    ignoredTransactionIds,
+  );
+  if (accountingMetadataResult.error) {
+    const cleanupError = await cleanupCreatedCreditCardDebt(supabase, user.id, creditCardDebtResolution.createdDebtId);
+    return {
+      error: cleanupError
+        ? `${accountingMetadataResult.error} Automatic card-debt cleanup also failed: ${cleanupError}`
+        : accountingMetadataResult.error,
+    };
+  }
   const extraMetadata = {
     ...preservedFuturePlanMetadata(existingTransaction.metadata, resolvedInput.amount),
+    ...accountingMetadataResult.metadata,
     ...creditCardDebtResolution.metadata,
     ...subscriptionMetadataResult.metadata,
   };

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const sourcePath = new URL("../src/features/future-planning/future-planning-page-content.tsx", import.meta.url);
+const actionsPath = new URL("../src/app/future-planning/settings-actions.ts", import.meta.url);
 
 test("future planning sticky columns use matched widths and offsets", async () => {
   const source = await readFile(sourcePath, "utf8");
@@ -15,4 +16,21 @@ test("future planning sticky columns use matched widths and offsets", async () =
   assert.match(source, /const stickyColumnShadowClass = isScrolledHorizontally \? "shadow-\[8px_0_12px_-12px_rgba\(11,28,48,0\.45\)\]" : "";/);
   assert.doesNotMatch(source, /left-\[76px\]/);
   assert.doesNotMatch(source, /border-collapse/);
+});
+
+test("future planning headers expose persistent left and right column controls", async () => {
+  const [source, actions] = await Promise.all([
+    readFile(sourcePath, "utf8"),
+    readFile(actionsPath, "utf8"),
+  ]);
+
+  assert.match(source, /moveFuturePlanningColumn/);
+  assert.match(source, /aria-label=\{`Move \$\{column\.name\} left`\}/);
+  assert.match(source, /aria-label=\{`Move \$\{column\.name\} right`\}/);
+  assert.match(source, /disabled=\{columnIndex === 0 \|\| Boolean\(movingColumnId\)\}/);
+  assert.match(source, /disabled=\{columnIndex === columns\.length - 1 \|\| Boolean\(movingColumnId\)\}/);
+  assert.match(actions, /export async function moveFuturePlanningColumn/);
+  assert.match(actions, /\.eq\("user_id", user\.id\)[\s\S]*\.eq\("is_active", true\)/);
+  assert.match(actions, /reordered\.map\(\(column, sortOrder\) => \(\{[\s\S]*sort_order: sortOrder/);
+  assert.match(actions, /\{ onConflict: "id" \}/);
 });

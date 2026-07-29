@@ -259,7 +259,6 @@ export async function getFuturePlanningData(
   const historicalActuals: HistoricalActualItem[] = transactions.flatMap((transaction) => {
     if (!transactionStatusIsFinalized(transaction.status) || transaction.type === "Transfer") return [];
     if (["savings_goal", "subscription"].includes(transaction.relatedEntityType)) return [];
-    if (transaction.relatedEntityType === "debt" && transaction.creditCardDebtImpact !== "charge") return [];
     const delta = economicTransactionDelta({
       amount: transaction.amountValue,
       metadata: transaction.ledgerMetadata,

@@ -295,11 +295,11 @@ test("a custom date range always calculates Net from its displayed Income and Ex
   })));
 
   assert.deepEqual(summary, {
-    expenses: 1_000,
+    expenses: 0,
     financingPayments: 1_000,
     financingReceipts: 0,
     income: 5_000,
-    net: 4_000,
+    net: 5_000,
   });
   assert.equal(summary.net, summary.income - summary.expenses);
 });

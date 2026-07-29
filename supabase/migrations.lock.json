@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202607280003",
+  "sealedThrough": "202607290001",
   "migrations": [
     {
       "version": "202606180001",
@@ -166,6 +166,11 @@
       "version": "202607280003",
       "file": "202607280003_standard_financial_event_reconciliation.sql",
       "sha256": "a2cd0adae0ae90d2681747e719832bd42605403b1864839d7d6b02999205018b"
+    },
+    {
+      "version": "202607290001",
+      "file": "202607290001_accounting_class_and_net_worth_reconciliation.sql",
+      "sha256": "ed2c0103f18a3d7285984eec17b3f8a7932a3ca2b9d8d100d7570192ca41b8ca"
     }
   ],
   "historyRepairs": [

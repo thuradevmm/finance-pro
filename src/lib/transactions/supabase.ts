@@ -14,6 +14,7 @@ import {
   ledgerRelevantMetadata,
   summarizeTransactionCards,
 } from "@/lib/ledger";
+import { fetchSupabaseRows } from "@/lib/supabase/pagination";
 import { normalizeTransactionStatus, transactionStatusFilterLabels, transactionStatusIsFinalized } from "@/lib/transactions/status";
 import type { AccountAmountType, SummaryMetric, Transaction, TransactionFilterOptions, TransactionType } from "@/types/finance";
 
@@ -339,29 +340,28 @@ export async function getTransactions(
   categories: CategoryRecord[],
   options: { limit?: number } = {},
 ) {
-  let query = supabase
-    .from("transactions")
-    .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata,created_at")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("transaction_date", { ascending: false })
-    .order("created_at", { ascending: false });
-
-  if (options.limit) query = query.limit(options.limit);
-
-  const [{ data, error }, debtsResult] = await Promise.all([
-    query,
-    supabase
+  const [rows, debtRows] = await Promise.all([
+    fetchSupabaseRows<TransactionRow>(
+      (from, to) => supabase
+        .from("transactions")
+        .select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata,created_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .range(from, to),
+      { limit: options.limit },
+    ),
+    fetchSupabaseRows<TransactionDebtRow>((from, to) => supabase
       .from("debts")
       .select("id,payment_account_id,type,metadata")
       .eq("user_id", userId)
-      .is("deleted_at", null),
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
   ]);
 
-  if (error) throw new Error(error.message);
-  if (debtsResult.error) throw new Error(debtsResult.error.message);
-  const debtRows = debtsResult.data as TransactionDebtRow[];
-  const enrichedRows = (data as TransactionRow[]).map((row) => ({
+  const enrichedRows = rows.map((row) => ({
     ...row,
     metadata: deriveCreditCardDebtMetadata(row, debtRows, accounts),
   }));

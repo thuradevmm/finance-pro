@@ -22,8 +22,12 @@ import { AccountRecordActions } from "@/features/accounts/account-record-actions
 import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, summarizeAccountPosition, type AccountRecord } from "@/lib/accounts/supabase";
 import { formatMmk, parseCurrency } from "@/lib/currency";
+import { getDebts, type DebtRecordWithValues } from "@/lib/debts/supabase";
+import { reconcileFinancialPosition } from "@/lib/reconciliation";
 import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
+import { getTransactions, getTransactionSummaryValues } from "@/lib/transactions/supabase";
+import type { TransactionCardSummary } from "@/lib/ledger";
 import type { AccountStatus } from "@/types/finance";
 
 const statusStyles: Record<AccountStatus, string> = {
@@ -406,7 +410,17 @@ function CreditCardCard({
   );
 }
 
-function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
+function AccountAmountTypeMatrix({
+  accounts,
+  allAccounts,
+  debts,
+  transactionSummary,
+}: {
+  accounts: AccountRecord[];
+  allAccounts: AccountRecord[];
+  debts: DebtRecordWithValues[];
+  transactionSummary: TransactionCardSummary;
+}) {
   const ledgerAccounts = accounts.filter((account) => account.type !== "Credit Card");
   const creditAccounts = accounts.filter((account) => account.type === "Credit Card");
   const amountTypes = Array.from(
@@ -420,6 +434,11 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
     total: sumScaledAmounts(ledgerAccounts.map((account) => account.balanceBreakdowns.find((breakdown) => breakdown.type === amountType)?.amountValue ?? 0)),
   }));
   const position = summarizeAccountPosition(accounts);
+  const reconciliation = reconcileFinancialPosition(
+    summarizeAccountPosition(allAccounts),
+    debts,
+    transactionSummary,
+  );
   const cardTotals = summarizeCreditCardLookup(creditAccounts.map((account) => ({
     available: account.creditAvailableValue,
     cardCredit: account.creditBalanceValue,
@@ -551,29 +570,51 @@ function AccountAmountTypeMatrix({ accounts }: { accounts: AccountRecord[] }) {
 
       <section className="min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
         <div>
-          <h2 className="text-sm font-bold uppercase text-[#45464d]">Account Position Reconciliation</h2>
-          <p className="mt-1 text-xs font-medium text-[#45464d]">Net position = cash balances + card credits − outstanding card liabilities. Credit limits and available credit are excluded.</p>
+          <h2 className="text-sm font-bold uppercase text-[#45464d]">Financial Position & Reconciliation</h2>
+          <p className="mt-1 text-xs font-medium text-[#45464d]">Net worth = cash and card credits + lending receivables − card and borrowing liabilities. Credit limits are excluded, and card debt is counted only once.</p>
         </div>
         <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-md border border-[#c6c6cd]/50 bg-[#f8f9ff] p-4">
-            <dt className="text-xs font-bold uppercase text-[#76777d]">Cash Balances</dt>
-            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1}>{formatMmk(position.cashBalance)}</ResponsiveAmount></dd>
-          </div>
-          <div className="rounded-md border border-[#bbf7d0] bg-[#ecfdf5] p-4">
-            <dt className="text-xs font-bold uppercase text-[#166534]">Card Credits</dt>
-            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#047857]" maxSizeRem={1}>{formatMmk(position.cardCredit)}</ResponsiveAmount></dd>
+            <dt className="text-xs font-bold uppercase text-[#76777d]">Total Assets</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#0b1c30]" maxSizeRem={1}>{formatMmk(reconciliation.totalAssets)}</ResponsiveAmount></dd>
           </div>
           <div className="rounded-md border border-[#fecaca] bg-[#fff8f7] p-4">
-            <dt className="text-xs font-bold uppercase text-[#991b1b]">Card Liabilities</dt>
-            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={1}>{formatMmk(-position.cardLiability)}</ResponsiveAmount></dd>
+            <dt className="text-xs font-bold uppercase text-[#991b1b]">Total Liabilities</dt>
+            <dd><ResponsiveAmount className="mt-1 font-semibold text-[#b42318]" maxSizeRem={1}>{formatMmk(-reconciliation.totalLiabilities)}</ResponsiveAmount></dd>
           </div>
           <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-4">
-            <dt className="text-xs font-bold uppercase text-[#0058be]">Account Net Position</dt>
-            <dd><ResponsiveAmount className={`mt-1 font-bold ${position.net < 0 ? "text-[#b42318]" : "text-[#0058be]"}`} maxSizeRem={1}>{formatMmk(position.net)}</ResponsiveAmount></dd>
+            <dt className="text-xs font-bold uppercase text-[#0058be]">Closing Net Worth</dt>
+            <dd><ResponsiveAmount className={`mt-1 font-bold ${reconciliation.netWorth < 0 ? "text-[#b42318]" : "text-[#0058be]"}`} maxSizeRem={1}>{formatMmk(reconciliation.netWorth)}</ResponsiveAmount></dd>
+          </div>
+          <div className={`rounded-md border p-4 ${Math.abs(reconciliation.difference) <= 0.005 ? "border-[#bbf7d0] bg-[#ecfdf5]" : "border-[#fecaca] bg-[#fff8f7]"}`}>
+            <dt className={`text-xs font-bold uppercase ${Math.abs(reconciliation.difference) <= 0.005 ? "text-[#166534]" : "text-[#991b1b]"}`}>Reconciliation Difference</dt>
+            <dd><ResponsiveAmount className={`mt-1 font-bold ${Math.abs(reconciliation.difference) <= 0.005 ? "text-[#047857]" : "text-[#b42318]"}`} maxSizeRem={1}>{formatMmk(reconciliation.difference)}</ResponsiveAmount></dd>
           </div>
         </dl>
+        <div className="mt-4 overflow-x-auto rounded-md border border-[#c6c6cd]/50">
+          <table className="w-full min-w-[720px] border-collapse text-sm">
+            <tbody className="divide-y divide-[#c6c6cd]/40">
+              {[
+                ["Cash & card-credit assets", reconciliation.cashAndCardCredit],
+                ["Lending receivables", reconciliation.lendingReceivables],
+                ["Card liabilities", -reconciliation.cardLiabilities],
+                ["Borrowing liabilities", -reconciliation.borrowingLiabilities],
+                ["All-time economic income", reconciliation.income],
+                ["All-time economic expenses", -reconciliation.expenses],
+                ["All-time net income", reconciliation.net],
+                ["Opening position & legacy adjustments", reconciliation.openingPositionAndAdjustments],
+                ["Reconciled closing net worth", reconciliation.reconciledClosingNetWorth],
+              ].map(([label, value]) => (
+                <tr key={String(label)}>
+                  <th className="px-4 py-3 text-left font-semibold text-[#45464d]">{label}</th>
+                  <td className={`whitespace-nowrap px-4 py-3 text-right font-semibold ${Number(value) < 0 ? "text-[#b42318]" : "text-[#0b1c30]"}`}>{formatMmk(Number(value))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <p className="mt-3 text-xs font-medium leading-5 text-[#45464d]">
-          Account Net Position uses current working account balances, including pending reservations, plus any manual card opening balance. It is not the Transactions-page Net: the selected period, transfers, card liabilities, and standard debt or lending balances tracked on the Debts page explain the difference.
+          The bridge uses finalized economic transactions. It is not the Transactions-page Net for a selected date range. Opening position and legacy adjustments preserve older account/debt records that were entered without an origination transaction; pending reservations remain visible in working account balances and are disclosed here rather than being misclassified as income or expense.
         </p>
       </section>
       {creditAccounts.length > 0 ? (
@@ -1001,6 +1042,14 @@ export default function AccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [visibleAccounts, setVisibleAccounts] = useState<AccountRecord[]>([]);
+  const [debts, setDebts] = useState<DebtRecordWithValues[]>([]);
+  const [transactionSummary, setTransactionSummary] = useState<TransactionCardSummary>({
+    expenses: 0,
+    financingPayments: 0,
+    financingReceipts: 0,
+    income: 0,
+    net: 0,
+  });
   const [viewedAccount, setViewedAccount] = useState<AccountRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1138,8 +1187,16 @@ export default function AccountsPage() {
       }
 
       try {
-        const accounts = await getAccounts(supabase, user.id, { limit: 200 });
-        if (isMounted) setVisibleAccounts(accounts);
+        const accounts = await getAccounts(supabase, user.id);
+        const [loadedDebts, transactions] = await Promise.all([
+          getDebts(supabase, user.id, []),
+          getTransactions(supabase, user.id, accounts, []),
+        ]);
+        if (isMounted) {
+          setVisibleAccounts(accounts);
+          setDebts(loadedDebts);
+          setTransactionSummary(getTransactionSummaryValues(transactions));
+        }
       } catch (loadError) {
         if (isMounted) {
           const message = loadError instanceof Error ? loadError.message : "Unable to load accounts.";
@@ -1305,7 +1362,14 @@ export default function AccountsPage() {
           {filteredCreditCards.length > 0 ? <CreditCardsTable accounts={visibleAccounts} items={filteredCreditCards} onArchive={archiveAccount} onDelete={deleteAccount} onRestore={restoreAccount} onView={setViewedAccount} returnTo={returnTo} /> : null}
         </div>
       ) : null}
-      {!isLoading && filteredAccounts.length > 0 && viewMode === "Lookup" ? <AccountAmountTypeMatrix accounts={filteredAccounts} /> : null}
+      {!isLoading && filteredAccounts.length > 0 && viewMode === "Lookup" ? (
+        <AccountAmountTypeMatrix
+          accounts={filteredAccounts}
+          allAccounts={visibleAccounts}
+          debts={debts}
+          transactionSummary={transactionSummary}
+        />
+      ) : null}
       <DetailModal
         actions={
           viewedAccount ? (

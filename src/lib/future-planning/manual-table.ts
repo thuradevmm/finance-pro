@@ -1,6 +1,7 @@
 import type { FutureTransactionRecord } from "./records.ts";
 
 export type FuturePlanningColumnDirection = "expense" | "income" | "neutral" | "saving";
+export type FuturePlanningColumnMoveDirection = "left" | "right";
 
 export type FuturePlanningColumn = {
   direction: FuturePlanningColumnDirection;
@@ -53,6 +54,21 @@ export function normalizePlanningYears(values: Iterable<number>, fallbackYear?: 
   if (years.length > 0 || fallbackYear == null) return years;
   const fallback = Math.trunc(fallbackYear);
   return fallback >= 1900 && fallback <= 9999 ? [fallback] : [];
+}
+
+export function movePlanningColumn<T extends Pick<FuturePlanningColumn, "id">>(
+  columns: T[],
+  columnId: string,
+  direction: FuturePlanningColumnMoveDirection,
+) {
+  const currentIndex = columns.findIndex((column) => column.id === columnId);
+  if (currentIndex < 0) return [...columns];
+  const targetIndex = direction === "left" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= columns.length) return [...columns];
+
+  const reordered = [...columns];
+  [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+  return reordered;
 }
 
 export function buildManualFuturePlanningTable(

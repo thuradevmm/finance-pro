@@ -88,11 +88,11 @@ test("a linked bank expense restores the respective card utilization", () => {
   assert.equal(activity.get("card")?.creditUsed, 0);
   assert.equal(activity.get("bank")?.deltas.get("Operation"), -1_000);
   assert.deepEqual(summarizeTransactionCards([payment]), {
-    expenses: 1_000,
+    expenses: 0,
     financingPayments: 1_000,
     financingReceipts: 0,
     income: 0,
-    net: -1_000,
+    net: 0,
   });
 });
 
@@ -167,11 +167,11 @@ test("dashboard cashflow summaries include expense card repayments and their rev
   assert.deepEqual(summarizeCashflowTransactions([payment]), { expenses: 1_000, income: 0, net: -1_000 });
   assert.deepEqual(summarizeCashflowTransactions([payment, reversal]), { expenses: 0, income: 0, net: 0 });
   assert.deepEqual(summarizeTransactionCards([payment]), {
-    expenses: 1_000,
+    expenses: 0,
     financingPayments: 1_000,
     financingReceipts: 0,
     income: 0,
-    net: -1_000,
+    net: 0,
   });
 });
 
@@ -207,11 +207,52 @@ test("debt principal movements are financing while card purchases remain operati
   };
 
   assert.deepEqual(summarizeTransactionCards([borrowingPayment, lendingReturn, cardPurchase]), {
-    expenses: 850,
+    expenses: 250,
     financingPayments: 600,
     financingReceipts: 400,
-    income: 400,
-    net: -450,
+    income: 0,
+    net: -250,
+  });
+});
+
+test("standard debt installments split principal financing from interest expense", () => {
+  const payment = {
+    account_id: "bank",
+    amount: 600,
+    metadata: {
+      accounting_class: "financing_payment",
+      accounting_version: 1,
+      debt_interest_amount: 100,
+      debt_principal_amount: 500,
+    },
+    related_entity_id: "borrowing",
+    related_entity_type: "debt",
+    status: "cleared",
+    type: "expense",
+  };
+  const reversal = {
+    ...payment,
+    metadata: {
+      ...payment.metadata,
+      reversed_transaction_id: "payment",
+      reversed_transaction_type: "expense",
+    },
+    type: "income",
+  };
+
+  assert.deepEqual(summarizeTransactionCards([payment]), {
+    expenses: 100,
+    financingPayments: 500,
+    financingReceipts: 0,
+    income: 0,
+    net: -100,
+  });
+  assert.deepEqual(summarizeTransactionCards([payment, reversal]), {
+    expenses: 0,
+    financingPayments: 0,
+    financingReceipts: 0,
+    income: 0,
+    net: 0,
   });
 });
 
@@ -310,8 +351,12 @@ test("reversing a purchase subtracts spending and reversing a payment is not inc
 test("client summary metadata preserves payments, reversals, and future link labels", () => {
   assert.deepEqual(ledgerRelevantMetadata({
     credit_card_account_id: "card",
+    accounting_class: "financing_payment",
+    accounting_version: 1,
     credit_card_debt_impact: "repayment",
     credit_card_payment: true,
+    debt_interest_amount: 0,
+    debt_principal_amount: 1_000,
     future_link_amount_snapshot: 275,
     future_link_label: "Subscription · Cloud storage",
     future_predicted_amount: 325,
@@ -322,9 +367,13 @@ test("client summary metadata preserves payments, reversals, and future link lab
     reversed_transaction_type: "expense",
     transfer_direction: "credit",
   }), {
+    accounting_class: "financing_payment",
+    accounting_version: 1,
     credit_card_account_id: "card",
     credit_card_debt_impact: "repayment",
     credit_card_payment: true,
+    debt_interest_amount: 0,
+    debt_principal_amount: 1_000,
     future_link_amount_snapshot: 275,
     future_link_label: "Subscription · Cloud storage",
     future_predicted_amount: 325,

@@ -26,6 +26,7 @@ import {
   type DebtTransactionLedger,
 } from "@/lib/debts/transactions";
 import { metadataRecord, numericValue, roundCurrencyValue } from "@/lib/ledger";
+import { fetchSupabaseRows } from "@/lib/supabase/pagination";
 import type { DebtRecord, DebtStatus, SummaryMetric, UpcomingDebtPayment } from "@/types/finance";
 
 export type { DebtInterestRatePeriod } from "@/lib/debts/emi";
@@ -404,21 +405,35 @@ function mapDebt(
 }
 
 export async function getDebts(supabase: SupabaseClient, userId: string, categories: CategoryRecord[], options: { limit?: number } = {}) {
-  let debtsQuery = supabase.from("debts").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
-  if (options.limit) debtsQuery = debtsQuery.limit(options.limit);
-
-  const [debtsResult, transactionsResult, debtPaymentsResult] = await Promise.all([
-    debtsQuery,
-    supabase.from("transactions").select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date").eq("user_id", userId).is("deleted_at", null),
-    supabase.from("debt_payments").select("id,debt_id,transaction_id,amount,payment_date").eq("user_id", userId),
+  const [debtRows, transactionRows, debtPaymentRows] = await Promise.all([
+    fetchSupabaseRows<DebtRow>(
+      (from, to) => supabase
+        .from("debts")
+        .select("*")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .range(from, to),
+      { limit: options.limit },
+    ),
+    fetchSupabaseRows<LinkedTransactionRow>((from, to) => supabase
+      .from("transactions")
+      .select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
+    fetchSupabaseRows<Parameters<typeof standaloneDebtPaymentTransactions>[0][number]>((from, to) => supabase
+      .from("debt_payments")
+      .select("id,debt_id,transaction_id,amount,payment_date")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
   ]);
-  const error = debtsResult.error ?? transactionsResult.error ?? debtPaymentsResult.error;
-  if (error) throw new Error(error.message);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
-  const debtRows = debtsResult.data as DebtRow[];
   const transactionLedgers = buildDebtTransactionLedgers([
-    ...(transactionsResult.data as LinkedTransactionRow[]),
-    ...standaloneDebtPaymentTransactions(debtPaymentsResult.data ?? []),
+    ...transactionRows,
+    ...standaloneDebtPaymentTransactions(debtPaymentRows),
   ], debtRows);
   return debtRows
     .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id)))

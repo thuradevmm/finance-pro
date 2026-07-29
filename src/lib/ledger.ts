@@ -64,6 +64,12 @@ export type FinancialPositionSummary = {
 };
 
 export type CreditCardDebtImpact = "charge" | "repayment" | "";
+export type AccountingClass =
+  | "financing_payment"
+  | "financing_receipt"
+  | "operating_expense"
+  | "operating_income"
+  | "transfer";
 
 type LedgerEffect = {
   accountId: string;
@@ -84,10 +90,14 @@ export function metadataRecord(metadata: unknown) {
 
 const ledgerRelevantMetadataKeys = [
   "account_amount_type",
+  "accounting_class",
+  "accounting_version",
   "credit_card_account_id",
   "credit_card_debt_id",
   "credit_card_debt_impact",
   "credit_card_payment",
+  "debt_interest_amount",
+  "debt_principal_amount",
   "financial_event",
   "future_link_amount_snapshot",
   "future_link_label",
@@ -198,6 +208,33 @@ export function isCreditCardPayment(metadata: Record<string, unknown>) {
   return metadata.credit_card_payment === true || metadata.financial_event === "credit_card_payment";
 }
 
+export function accountingClass(metadata: Record<string, unknown>): AccountingClass | "" {
+  const value = typeof metadata.accounting_class === "string"
+    ? metadata.accounting_class.trim().toLowerCase()
+    : "";
+  return [
+    "financing_payment",
+    "financing_receipt",
+    "operating_expense",
+    "operating_income",
+    "transfer",
+  ].includes(value)
+    ? value as AccountingClass
+    : "";
+}
+
+function debtInterestAmount(metadata: Record<string, unknown>, amount: number) {
+  if (metadata.debt_interest_amount == null || metadata.debt_interest_amount === "") return 0;
+  return roundCurrencyValue(Math.min(Math.max(numericValue(metadata.debt_interest_amount), 0), amount));
+}
+
+function debtPrincipalAmount(metadata: Record<string, unknown>, amount: number) {
+  if (metadata.debt_principal_amount != null && metadata.debt_principal_amount !== "") {
+    return roundCurrencyValue(Math.min(Math.max(numericValue(metadata.debt_principal_amount), 0), amount));
+  }
+  return roundCurrencyValue(Math.max(amount - debtInterestAmount(metadata, amount), 0));
+}
+
 export function reversedTransactionType(transaction: Pick<LedgerTransactionInput, "metadata" | "type">) {
   const metadata = metadataRecord(transaction.metadata);
   if (typeof metadata.reversed_transaction_id !== "string" || !metadata.reversed_transaction_id) return "";
@@ -253,6 +290,17 @@ export function financingTransactionDelta(transaction: LedgerTransactionInput): 
   if (amount <= 0) return empty;
 
   const metadata = metadataRecord(transaction.metadata);
+  const explicitClass = accountingClass(metadata);
+  if (explicitClass) {
+    const isTransferCredit = String(transaction.type ?? "").trim().toLowerCase() === "transfer"
+      && transferDirection(metadata) === "credit";
+    if (isTransferCredit || !["financing_payment", "financing_receipt"].includes(explicitClass)) return empty;
+    const principalAmount = debtPrincipalAmount(metadata, amount);
+    const sign = reversedTransactionType(transaction) ? -1 : 1;
+    return explicitClass === "financing_payment"
+      ? { paymentDelta: roundCurrencyValue(sign * principalAmount), receiptDelta: 0 }
+      : { paymentDelta: 0, receiptDelta: roundCurrencyValue(sign * principalAmount) };
+  }
   if (!debtFinancingMovement(transaction, metadata)) return empty;
 
   const reversalType = reversedTransactionType(transaction);
@@ -287,7 +335,28 @@ export function economicTransactionDelta(transaction: LedgerTransactionInput): E
   const amount = roundCurrencyValue(Math.abs(numericValue(transaction.amount)));
   if (amount <= 0) return empty;
 
+  const metadata = metadataRecord(transaction.metadata);
   const reversalType = reversedTransactionType(transaction);
+  const explicitClass = accountingClass(metadata);
+  if (explicitClass) {
+    const sign = reversalType ? -1 : 1;
+    if (explicitClass === "operating_expense") {
+      return { expenseDelta: roundCurrencyValue(sign * amount), incomeDelta: 0 };
+    }
+    if (explicitClass === "operating_income") {
+      return { expenseDelta: 0, incomeDelta: roundCurrencyValue(sign * amount) };
+    }
+    if (
+      explicitClass === "financing_payment"
+      && !(String(transaction.type ?? "").trim().toLowerCase() === "transfer" && transferDirection(metadata) === "credit")
+    ) {
+      return {
+        expenseDelta: roundCurrencyValue(sign * debtInterestAmount(metadata, amount)),
+        incomeDelta: 0,
+      };
+    }
+    return empty;
+  }
   const financing = financingTransactionDelta(transaction);
   if (financing.paymentDelta !== 0 || financing.receiptDelta !== 0) return empty;
 
@@ -586,14 +655,14 @@ export function summarizeCashflowTransactions(
 }
 
 /**
- * Transaction cards show literal Income and Expense transaction-type totals.
- * Financing detail remains available to reconciliation consumers, while the
+ * Transaction cards show economic income and expense. Principal movements and
+ * card settlements remain available to reconciliation consumers, while the
  * displayed arithmetic invariant is always Net = Income - Expenses.
  */
 export function summarizeTransactionCards(
   transactions: LedgerTransactionInput[],
 ): TransactionCardSummary {
-  const typeTotals = summarizeCashflowTransactions(transactions);
+  const typeTotals = summarizeLedgerTransactions(transactions);
   let financingPayments = 0;
   let financingReceipts = 0;
   for (const transaction of transactions) {

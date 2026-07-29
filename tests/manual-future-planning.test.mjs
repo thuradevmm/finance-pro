@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildManualFuturePlanningTable, normalizePlanningYears } from "../src/lib/future-planning/manual-table.ts";
+import { buildManualFuturePlanningTable, movePlanningColumn, normalizePlanningYears } from "../src/lib/future-planning/manual-table.ts";
 
 const columns = [
   { direction: "income", id: "salary", name: "Salary", sortOrder: 0 },
@@ -14,6 +14,25 @@ test("planning years support arbitrary mixed selections", () => {
   assert.deepEqual(normalizePlanningYears([2027, 2026, 2027, Number.NaN]), [2026, 2027]);
   assert.deepEqual(normalizePlanningYears([], 2028), [2028]);
   assert.equal(buildManualFuturePlanningTable([], [], [2026, 2028]).length, 24);
+});
+
+test("planning columns move left and right without losing their records", () => {
+  assert.deepEqual(
+    movePlanningColumn(columns, "rent", "left").map((column) => column.id),
+    ["salary", "rent", "freelance", "reserve"],
+  );
+  assert.deepEqual(
+    movePlanningColumn(columns, "salary", "right").map((column) => column.id),
+    ["freelance", "salary", "rent", "reserve"],
+  );
+  assert.deepEqual(
+    movePlanningColumn(columns, "salary", "left").map((column) => column.id),
+    columns.map((column) => column.id),
+  );
+  assert.deepEqual(
+    movePlanningColumn(columns, "missing", "right").map((column) => column.id),
+    columns.map((column) => column.id),
+  );
 });
 
 test("manual amounts provide multiple types under income, expense, and saving totals", () => {

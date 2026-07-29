@@ -6,9 +6,11 @@ import { useMemo, useState, type FormEvent } from "react";
 import {
   archiveFuturePlanningColumn,
   createFuturePlanningColumn,
+  moveFuturePlanningColumn,
   saveFuturePlanningAmount,
   saveFuturePlanningYears,
 } from "@/app/future-planning/settings-actions";
+import { Icon } from "@/components/ui/icon";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { useToast } from "@/components/ui/toast-provider";
 import { cleanAmountInputValue, formatAmountInputValue, formatMmk, parseAmountInputValue } from "@/lib/currency";
@@ -18,6 +20,7 @@ import {
   type FuturePlanningAmount,
   type FuturePlanningColumn,
   type FuturePlanningColumnDirection,
+  type FuturePlanningColumnMoveDirection,
 } from "@/lib/future-planning/manual-table";
 
 type FuturePlanningPageContentProps = {
@@ -129,8 +132,13 @@ function ManualPlanningSettings({
 function ManualPlanTable({
   amounts,
   columns,
+  movingColumnId,
+  onMoveColumn,
   selectedYears,
-}: FuturePlanningPageContentProps) {
+}: FuturePlanningPageContentProps & {
+  movingColumnId: string;
+  onMoveColumn: (columnId: string, direction: FuturePlanningColumnMoveDirection) => Promise<void>;
+}) {
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const rows = useMemo(
@@ -200,7 +208,40 @@ function ManualPlanTable({
               <th className="px-4 py-3 text-right">Total income</th>
               <th className="px-4 py-3 text-right">Total expense</th>
               <th className="px-4 py-3 text-right">Total saving</th>
-              {columns.map((column) => <th className="min-w-52 px-4 py-3 text-right" key={column.id}>{column.name}<span className="block text-[10px] normal-case text-[#76777d]">{directionLabel(column.direction)}</span></th>)}
+              {columns.map((column, columnIndex) => (
+                <th className="min-w-52 px-4 py-3 text-right" key={column.id}>
+                  <span className="flex items-start justify-end gap-2">
+                    <span>
+                      {column.name}
+                      <span className="block text-[10px] normal-case text-[#76777d]">
+                        {movingColumnId === column.id ? "Moving…" : directionLabel(column.direction)}
+                      </span>
+                    </span>
+                    <span className="inline-flex overflow-hidden rounded-md border border-[#c6c6cd] bg-white">
+                      <button
+                        aria-label={`Move ${column.name} left`}
+                        className="grid size-8 place-items-center text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-35"
+                        disabled={columnIndex === 0 || Boolean(movingColumnId)}
+                        onClick={() => onMoveColumn(column.id, "left")}
+                        title="Move planning type left"
+                        type="button"
+                      >
+                        <Icon className="size-4" name="chevronLeft" />
+                      </button>
+                      <button
+                        aria-label={`Move ${column.name} right`}
+                        className="grid size-8 place-items-center border-l border-[#c6c6cd] text-[#45464d] transition hover:bg-[#eff4ff] disabled:cursor-not-allowed disabled:opacity-35"
+                        disabled={columnIndex === columns.length - 1 || Boolean(movingColumnId)}
+                        onClick={() => onMoveColumn(column.id, "right")}
+                        title="Move planning type right"
+                        type="button"
+                      >
+                        <Icon className="size-4" name="chevronRight" />
+                      </button>
+                    </span>
+                  </span>
+                </th>
+              ))}
               <th className="px-4 py-3 text-right">Net</th>
             </tr>
           </thead>
@@ -263,7 +304,19 @@ export function FuturePlanningPageContent({ amounts, columns, selectedYears }: F
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const [archivedColumnIds, setArchivedColumnIds] = useState<string[]>([]);
-  const visibleColumns = columns.filter((column) => !archivedColumnIds.includes(column.id));
+  const [columnOrder, setColumnOrder] = useState(columns.map((column) => column.id));
+  const [movingColumnId, setMovingColumnId] = useState("");
+  const orderByColumnId = new Map(columnOrder.map((columnId, index) => [columnId, index]));
+  const visibleColumns = columns
+    .filter((column) => !archivedColumnIds.includes(column.id))
+    .sort((first, second) => {
+      const firstOrder = orderByColumnId.get(first.id);
+      const secondOrder = orderByColumnId.get(second.id);
+      if (firstOrder != null && secondOrder != null) return firstOrder - secondOrder;
+      if (firstOrder != null) return -1;
+      if (secondOrder != null) return 1;
+      return first.sortOrder - second.sortOrder;
+    });
 
   async function handleArchiveColumn(columnId: string) {
     const result = await archiveFuturePlanningColumn(columnId);
@@ -273,10 +326,26 @@ export function FuturePlanningPageContent({ amounts, columns, selectedYears }: F
     router.refresh();
   }
 
+  async function handleMoveColumn(columnId: string, direction: FuturePlanningColumnMoveDirection) {
+    setMovingColumnId(columnId);
+    const result = await moveFuturePlanningColumn({ columnId, direction });
+    setMovingColumnId("");
+    if (result.error) return showError(result.error);
+    if (result.orderedColumnIds) setColumnOrder(result.orderedColumnIds);
+    showSuccess(`Planning type moved ${direction}.`);
+    router.refresh();
+  }
+
   return (
     <>
       <ManualPlanningSettings columns={visibleColumns} onArchiveColumn={handleArchiveColumn} selectedYears={selectedYears} />
-      <ManualPlanTable amounts={amounts} columns={visibleColumns} selectedYears={selectedYears} />
+      <ManualPlanTable
+        amounts={amounts}
+        columns={visibleColumns}
+        movingColumnId={movingColumnId}
+        onMoveColumn={handleMoveColumn}
+        selectedYears={selectedYears}
+      />
     </>
   );
 }

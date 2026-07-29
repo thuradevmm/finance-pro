@@ -7,6 +7,7 @@ import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financia
 import { formatMmk } from "@/lib/currency";
 import { formatDisplayDate } from "@/lib/date-format";
 import { creditCardOpeningBalancesByAccount } from "@/lib/debts/transactions";
+import { fetchSupabaseRows } from "@/lib/supabase/pagination";
 import {
   buildAccountLedgerActivities,
   deriveCreditCardDebtMetadata,
@@ -302,43 +303,42 @@ function mapAccount(row: AccountRow, activity: LedgerAccountActivity = emptyActi
 }
 
 export async function getAccounts(supabase: SupabaseClient, userId: string, options: { limit?: number } = {}) {
-  let accountsQuery = supabase
-    .from("accounts")
-    .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
-
-  if (options.limit) accountsQuery = accountsQuery.limit(options.limit);
-
-  const [accountsResult, transactionsResult, debtsResult, categoriesResult] = await Promise.all([
-    accountsQuery,
-    supabase
+  const [accountRows, transactionRows, debtRows, categoryRows] = await Promise.all([
+    fetchSupabaseRows<AccountRow>(
+      (from, to) => supabase
+        .from("accounts")
+        .select("id,name,type,currency_code,initial_balance,description,color,icon,is_active,metadata,created_at,updated_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true })
+        .range(from, to),
+      { limit: options.limit },
+    ),
+    fetchSupabaseRows<AccountTransactionRow>((from, to) => supabase
       .from("transactions")
       .select("account_id,transfer_account_id,amount,type,metadata,status,related_entity_id,related_entity_type")
       .eq("user_id", userId)
-      .is("deleted_at", null),
-    supabase
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
+    fetchSupabaseRows<AccountDebtRow>((from, to) => supabase
       .from("debts")
       .select("id,payment_account_id,total_amount,repaid_amount,type,metadata")
       .eq("user_id", userId)
-      .is("deleted_at", null),
-    supabase
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
+    fetchSupabaseRows<{ id: string; name: string }>((from, to) => supabase
       .from("categories")
       .select("id,name")
       .eq("user_id", userId)
-      .is("deleted_at", null),
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .range(from, to)),
   ]);
 
-  if (accountsResult.error) throw new Error(accountsResult.error.message);
-  if (transactionsResult.error) throw new Error(transactionsResult.error.message);
-  if (debtsResult.error) throw new Error(debtsResult.error.message);
-  if (categoriesResult.error) throw new Error(categoriesResult.error.message);
-
-  const accountRows = accountsResult.data as AccountRow[];
-  const debtRows = debtsResult.data as AccountDebtRow[];
-  const transactions = (transactionsResult.data as AccountTransactionRow[]).map((transaction) => ({
+  const transactions = transactionRows.map((transaction) => ({
     ...transaction,
     metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
   }));
@@ -351,7 +351,7 @@ export async function getAccounts(supabase: SupabaseClient, userId: string, opti
     activity.creditUsed = roundCurrencyValue(activity.creditUsed + openingBalance);
     activities.set(accountId, activity);
   }
-  const categoryNames = new Map((categoriesResult.data as Array<{ id: string; name: string }>).map((category) => [category.id, category.name]));
+  const categoryNames = new Map(categoryRows.map((category) => [category.id, category.name]));
   return accountRows.map((account) => mapAccount(account, activities.get(account.id), categoryNames));
 }
 
