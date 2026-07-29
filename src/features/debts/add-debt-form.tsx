@@ -89,7 +89,9 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const categoryHasError = showErrors && !debt && !selectedCategory;
   const total = parseAmount(totalAmount);
   const repaid = parseAmount(repaidAmount);
-  const paymentAccountHasError = showErrors && semanticIsCreditCard && !selectedPaymentAccount;
+  const paymentAccountHasError = showErrors
+    && (semanticIsCreditCard || effectiveNature === "Lending")
+    && !selectedPaymentAccount;
   const parsedInterestRateValue = interestRate.trim() ? Number(interestRate) : 0;
   const parsedInterestRate = Number.isFinite(parsedInterestRateValue) ? parsedInterestRateValue : 0;
   const repaymentSchedule = buildEmiSchedule({
@@ -128,7 +130,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const totalInterestValue = semanticIsCreditCard || isOneTime ? 0 : repaymentSchedule.totalInterest;
 
   async function handleSaveDebt(addAnother = false) {
-    const hasErrors = name.trim() === "" || lender.trim() === "" || !Number.isFinite(total) || total <= 0 || !Number.isFinite(repaid) || repaid < 0 || parsedInterestRate < 0 || (!isOneTime && (durationMonths.trim() === "" || normalizedDurationMonths <= 0)) || (isOneTime && (!oneTimeRepaymentDate || oneTimeRepaymentDate < startDate)) || (!debt && !selectedCategory) || (semanticIsCreditCard && !selectedPaymentAccount);
+    const hasErrors = name.trim() === "" || lender.trim() === "" || !Number.isFinite(total) || total <= 0 || !Number.isFinite(repaid) || repaid < 0 || parsedInterestRate < 0 || (!isOneTime && (durationMonths.trim() === "" || normalizedDurationMonths <= 0)) || (isOneTime && (!oneTimeRepaymentDate || oneTimeRepaymentDate < startDate)) || (!debt && !selectedCategory) || ((semanticIsCreditCard || effectiveNature === "Lending") && !selectedPaymentAccount);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -264,11 +266,11 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
           </div>
           <div className="mt-5">
             <div>
-              <SelectInput label={nature === "Lending" ? "Return Account" : "Payment Account"} onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccountOptions} value={paymentAccountValue} />
-              {paymentAccountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Select a credit card account for this credit card debt.</p> : null}
+              <SelectInput label={effectiveNature === "Lending" ? "Funding / Return Account" : "Payment Account"} onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccountOptions} value={paymentAccountValue} />
+              {paymentAccountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{effectiveNature === "Lending" ? "Select the account that funds this lending record." : "Select a credit card account for this credit card debt."}</p> : null}
             </div>
             {selectedPaymentAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedPaymentAccount)}</p> : null}
-            {nature === "Lending" ? <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">Returned money will be received here. Creating a lending record does not infer an earlier cash payment from this account.</p> : null}
+            {effectiveNature === "Lending" ? <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">Saving creates a cleared Debit from this account on the lending date. Returned money can be received into the same account.</p> : null}
           </div>
           <div className="mt-5">
             <TextAreaInput label="Notes" onChange={setNotes} placeholder="Optional repayment notes..." value={notes} />

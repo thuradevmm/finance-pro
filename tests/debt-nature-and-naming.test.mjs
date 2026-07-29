@@ -20,7 +20,7 @@ test("legacy lending names become income-linked receivables", () => {
   assert.equal(normalizeDebtNature(undefined, "Lending Mom"), "Lending");
   assert.equal(normalizeDebtNature("borrowing", "Lending Dad"), "Borrowing");
   assert.equal(debtRepaymentTransactionType("Lending"), "Income");
-  assert.equal(debtOriginationTransactionType("Lending"), null);
+  assert.equal(debtOriginationTransactionType("Lending"), "Expense");
   assert.equal(debtOriginationTransactionType("Borrowing"), "Income");
   assert.equal(normalizeDebtRepaymentFrequency("one_time"), "One-time");
 });

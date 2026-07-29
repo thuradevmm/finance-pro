@@ -127,6 +127,7 @@ function payload(input: DebtFormData, cardTerms: DebtCardTerms = {}): DebtPayloa
       interest_rate: input.interestRate,
       interest_rate_period: input.interestRatePeriod.toLowerCase(),
       lender: input.lender.trim(),
+      lending_funding_confirmed: input.nature === "Lending" && Boolean(input.paymentAccountId),
       monthly_payment: input.monthlyPayment,
       next_payment_date: input.nextPaymentDate || null,
       notes: input.notes.trim(),
@@ -187,8 +188,9 @@ async function syncDebtOriginationTransaction(
   const existing = (existingRows ?? []).find((transaction) => {
     return metadataRecord(transaction.metadata).financial_event === "debt_origination";
   });
+  const isLending = input.nature === "Lending";
   const originationTransactionType = debtOriginationTransactionType(input.nature);
-  if (input.isCreditCardDebt || !originationTransactionType || !account || input.totalAmount <= 0) {
+  if (input.isCreditCardDebt || !account || input.totalAmount <= 0) {
     if (!existing) return null;
     const { error } = await supabase
       .from("transactions")
@@ -203,22 +205,24 @@ async function syncDebtOriginationTransaction(
     amount: input.totalAmount,
     category_id: input.categoryId || null,
     deleted_at: null,
-    description: `Borrowed money received · ${input.name.trim()}`,
+    description: `${isLending ? "Money lent" : "Borrowed money received"} · ${input.name.trim()}`,
     metadata: {
       account_amount_type: firstAccountAmountType(account.metadata),
-      accounting_class: "financing_receipt",
+      accounting_class: isLending ? "financing_payment" : "financing_receipt",
       accounting_version: 1,
+      cash_flow_treatment: isLending ? "explicit_funding" : "borrowing_receipt",
       debt_interest_amount: 0,
       debt_principal_amount: input.totalAmount,
-      debt_nature: "borrowing",
+      debt_nature: isLending ? "lending" : "borrowing",
       financial_event: "debt_origination",
+      lending_funding_confirmed: isLending,
       system_managed: true,
     },
     note: input.notes.trim() || null,
     related_entity_id: debtId,
     related_entity_type: "debt",
     status: "cleared",
-    title: `${input.name.trim()} · borrowing received`,
+    title: `${input.name.trim()} · ${isLending ? "lending funded" : "borrowing received"}`,
     transaction_date: input.startDate,
     transfer_account_id: null,
     type: originationTransactionType,
@@ -378,9 +382,13 @@ async function validatePaymentAccount(
   allowedArchivedAccountId = "",
 ) {
   if (!input.paymentAccountId) {
-    return input.isCreditCardDebt
-      ? { error: "A credit card debt must be linked to a credit card account." }
-      : { account: null as DebtPaymentAccountRow | null };
+    if (input.isCreditCardDebt) {
+      return { error: "A credit card debt must be linked to a credit card account." };
+    }
+    if (input.nature === "Lending") {
+      return { error: "Select the account that funds this lending record." };
+    }
+    return { account: null as DebtPaymentAccountRow | null };
   }
   const { data, error } = await supabase
     .from("accounts")

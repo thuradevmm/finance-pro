@@ -123,6 +123,11 @@ reverse operations so a navigation or refresh receives the updated values.
   separately. Both rates must be available. A credit-card-to-cash/account
   Transfer is classified as a cash advance: it increases card liability,
   credits the destination, and remains financing rather than operating Debit.
+- Creating a lending record requires an explicit funding account and creates
+  one linked, finalized Debit on the lending date. The Debit reduces cash while
+  the lending receivable increases assets by the same principal, so net worth
+  remains reconciled. It is classified as a financing payment, not operating
+  spending. Editing the lending record updates the same managed transaction.
 - Reports group finalized, non-reversed Credits and Debits by month, category,
   or account. The exact report data can be downloaded as CSV, XLSX, or PDF;
   transaction-level CSV export includes native and base-currency columns.
