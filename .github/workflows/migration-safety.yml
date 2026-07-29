@@ -77,7 +77,13 @@ jobs:
             cat "$diagnostic_file"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").slice(-30000).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"); console.log(`::error title=Supabase startup diagnostics::${text}`)' "$diagnostic_file"
+          annotation_file="$RUNNER_TEMP/supabase-startup-errors.txt"
+          grep -i -E -B 8 -A 8 'error|failed|failure|does not exist|cannot|syntax|duplicate|sqlstate' "$diagnostic_file" \
+            | tail -n 120 > "$annotation_file" || true
+          if ! test -s "$annotation_file"; then
+            tail -n 80 "$diagnostic_file" > "$annotation_file"
+          fi
+          node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").slice(-12000).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"); console.log(`::error title=Supabase startup diagnostics::${text}`)' "$annotation_file"
 
       - name: Replay all migrations from zero
         run: npm run db:local:reset:ci
