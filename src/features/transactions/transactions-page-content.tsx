@@ -184,7 +184,7 @@ export function TransactionsPageContent({
   return (
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={transactionTabs} />
-      <SummaryCards columns={3} summaries={filteredSummaries} />
+      <SummaryCards columns={6} summaries={filteredSummaries} />
       <TransactionsFilters
         filterOptions={effectiveFilterOptions}
         filters={draftFilters}

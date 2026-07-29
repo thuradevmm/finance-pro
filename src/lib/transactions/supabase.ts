@@ -12,6 +12,7 @@ import {
   deriveCreditCardDebtMetadata,
   isCreditCardPayment,
   ledgerRelevantMetadata,
+  roundCurrencyValue,
   summarizeTransactionCards,
 } from "@/lib/ledger";
 import { fetchSupabaseRows } from "@/lib/supabase/pagination";
@@ -414,10 +415,20 @@ export function getTransactionSummaryValues(transactions: TransactionRecord[]) {
 }
 
 export function getTransactionSummaries(transactions: TransactionRecord[]): SummaryMetric[] {
-  const { expenses, income, net } = getTransactionSummaryValues(transactions);
+  const {
+    expenses,
+    financingPayments,
+    financingReceipts,
+    income,
+    net,
+  } = getTransactionSummaryValues(transactions);
+  const netFinancing = roundCurrencyValue(financingReceipts - financingPayments);
   return [
-    { label: "Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Net", value: formatMmk(net), icon: "savings", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
+    { label: "Operating Income", value: formatMmkPreview(income, "positive"), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Operating Expenses", value: formatMmkPreview(expenses, "negative"), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Net Income", value: formatMmk(net), icon: "savings", tone: net < 0 ? "text-[#b42318]" : "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Financing Receipts", value: formatMmkPreview(financingReceipts, "positive"), icon: "trendingUp", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
+    { label: "Financing Payments", value: formatMmkPreview(financingPayments, "negative"), icon: "trendingDown", tone: "text-[#b45309]", bg: "bg-[#fffbeb]" },
+    { label: "Net Financing", value: formatMmk(netFinancing), icon: "timeline", tone: netFinancing < 0 ? "text-[#b45309]" : "text-[#7c3aed]", bg: "bg-[#f8f9ff]" },
   ];
 }

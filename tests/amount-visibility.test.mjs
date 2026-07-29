@@ -54,12 +54,13 @@ test("shared summary cards use compact spacing and a consistent prominent amount
   assert.doesNotMatch(source, /amount-value[^\n]*(?:overflow-hidden|truncate|whitespace-nowrap)/);
 });
 
-test("transaction income, expense, and net cards align as three equal columns", async () => {
+test("transaction operating and financing cards align as six responsive columns", async () => {
   const [summaryCards, transactionContent] = await Promise.all([
     readFile(summaryCardsPath, "utf8"),
     readFile(transactionContentPath, "utf8"),
   ]);
 
-  assert.match(summaryCards, /columns === 3 \? "md:grid-cols-3"/);
-  assert.match(transactionContent, /<SummaryCards columns=\{3\} summaries=\{filteredSummaries\}/);
+  assert.match(summaryCards, /columns === 6/);
+  assert.match(summaryCards, /lg:grid-cols-3 2xl:grid-cols-6/);
+  assert.match(transactionContent, /<SummaryCards columns=\{6\} summaries=\{filteredSummaries\}/);
 });
