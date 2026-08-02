@@ -4,6 +4,7 @@ import test from "node:test";
 
 const sourcePath = new URL("../src/features/future-planning/future-planning-page-content.tsx", import.meta.url);
 const actionsPath = new URL("../src/app/future-planning/settings-actions.ts", import.meta.url);
+const dataPath = new URL("../src/lib/future-planning/supabase.ts", import.meta.url);
 
 test("future planning sticky columns use matched widths and offsets", async () => {
   const source = await readFile(sourcePath, "utf8");
@@ -32,5 +33,22 @@ test("future planning headers expose persistent left and right column controls",
   assert.match(actions, /export async function moveFuturePlanningColumn/);
   assert.match(actions, /\.eq\("user_id", user\.id\)[\s\S]*\.eq\("is_active", true\)/);
   assert.match(actions, /reordered\.map\(\(column, sortOrder\) => \(\{[\s\S]*sort_order: sortOrder/);
+  assert.match(actions, /category_id: column\.category_id/);
   assert.match(actions, /\{ onConflict: "id" \}/);
+});
+
+test("future planning types are restricted to linked active categories", async () => {
+  const [source, actions, data] = await Promise.all([
+    readFile(sourcePath, "utf8"),
+    readFile(actionsPath, "utf8"),
+    readFile(dataPath, "utf8"),
+  ]);
+
+  assert.match(source, /label="Category"/);
+  assert.match(source, /\["Expense", "Income", "Savings Goal"\]\.includes\(category\.type\)/);
+  assert.doesNotMatch(source, /Custom planning type/i);
+  assert.match(actions, /createFuturePlanningColumn\(input: \{\s*categoryId: string;?\s*\}\)/);
+  assert.match(actions, /category_id: category\.id/);
+  assert.match(data, /columns\.flatMap\(\(column\) => selectedYears\.flatMap/);
+  assert.match(data, /actualByCategoryMonth\.get\(`\$\{column\.categoryId\}:\$\{monthKey\}`\)/);
 });

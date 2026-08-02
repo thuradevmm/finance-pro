@@ -1262,7 +1262,7 @@ export default function AccountsPage() {
       <SummaryCards summaries={accountSummaries} />
       {missingRateCurrencies.length > 0 ? (
         <div className="mb-6 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-sm text-[#92400e]">
-          Cross-account totals exclude {missingRateCurrencies.join(", ")} accounts until their exchange rates are added in <Link className="font-bold underline" href="/settings">Settings</Link>.
+          Cross-account totals exclude {missingRateCurrencies.join(", ")} accounts because their dated exchange rates are missing. Currency settings are temporarily closed.
         </div>
       ) : null}
 

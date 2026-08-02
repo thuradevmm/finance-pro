@@ -59,10 +59,7 @@ function revalidateAccountPaths(extraPaths: string[] = []) {
     "/dashboard",
     "/debts",
     "/future-planning",
-    "/people-payments",
-    "/reports",
     "/savings-goals",
-    "/scenario-budgeting",
     "/subscriptions",
     "/transactions",
     ...extraPaths,
@@ -110,7 +107,7 @@ async function activeAccountDependents(
   userId: string,
   accountId: string,
 ) {
-  const [transactionsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult] = await Promise.all([
+  const [transactionsResult, debtsResult, goalsResult, subscriptionsResult, settingsResult] = await Promise.all([
     supabase
       .from("transactions")
       .select("id,status,metadata")
@@ -126,10 +123,9 @@ async function activeAccountDependents(
       .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`),
     supabase.from("savings_goals").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
     supabase.from("subscriptions").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
-    supabase.from("scenario_items").select("id,scenario_id").eq("user_id", userId).eq("account_id", accountId),
     supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
   ]);
-  const firstError = [transactionsResult, debtsResult, goalsResult, subscriptionsResult, scenarioItemsResult, settingsResult]
+  const firstError = [transactionsResult, debtsResult, goalsResult, subscriptionsResult, settingsResult]
     .find((result) => result.error)?.error;
   if (firstError) return { dependencies: [] as string[], error: firstError.message };
 
@@ -149,19 +145,6 @@ async function activeAccountDependents(
     dependencies.push("active subscriptions");
   }
 
-  const scenarioIds = Array.from(new Set((scenarioItemsResult.data ?? []).map((item) => item.scenario_id).filter(Boolean)));
-  if (scenarioIds.length > 0) {
-    const { data: scenarios, error: scenariosError } = await supabase
-      .from("financial_scenarios")
-      .select("id,status")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .in("id", scenarioIds);
-    if (scenariosError) return { dependencies: [], error: scenariosError.message };
-    if ((scenarios ?? []).some((scenario) => ["active", "running", "scheduled"].includes(normalizedStatus(scenario.status)))) {
-      dependencies.push("active scenarios");
-    }
-  }
   if ((settingsResult.data?.length ?? 0) > 0) dependencies.push("the default account setting");
   return { dependencies, error: "" };
 }

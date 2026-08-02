@@ -17,6 +17,7 @@ export type SavingsGoalRecord = SavingsGoal & {
   accountId: string;
   cashReserveAmountValue: number;
   categoryId: string;
+  categoryName: string;
   createdAtValue: string;
   description: string;
   linkedSavedAmountValue: number;
@@ -155,6 +156,7 @@ function mapGoal(
     accountId,
     cashReserveAmountValue,
     categoryId,
+    categoryName: category?.name ?? "Uncategorized goal",
     createdAtValue: row.created_at ?? "",
     description: row.description ?? (typeof metadata.description === "string" ? metadata.description : ""),
     id: row.id,

@@ -6,7 +6,7 @@ const hasAuthentication = existsSync(".auth/user.json")
 
 test.skip(!hasAuthentication, "Set E2E_EMAIL/E2E_PASSWORD or provide .auth/user.json.");
 
-for (const route of ["/dashboard", "/accounts", "/transactions", "/reports", "/settings"]) {
+for (const route of ["/dashboard", "/accounts", "/transactions", "/future-planning", "/assets", "/notifications"]) {
   test(`${route} is responsive and visually stable`, async ({ page }, testInfo) => {
     await page.goto(route);
     await expect(page).not.toHaveURL(/\/login/);

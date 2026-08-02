@@ -744,6 +744,7 @@ export type Database = {
           column_id: string
           created_at: string
           id: string
+          metadata: Json
           period_month: string
           updated_at: string
           user_id: string
@@ -753,6 +754,7 @@ export type Database = {
           column_id: string
           created_at?: string
           id?: string
+          metadata?: Json
           period_month: string
           updated_at?: string
           user_id: string
@@ -762,6 +764,7 @@ export type Database = {
           column_id?: string
           created_at?: string
           id?: string
+          metadata?: Json
           period_month?: string
           updated_at?: string
           user_id?: string
@@ -778,6 +781,7 @@ export type Database = {
       }
       future_planning_columns: {
         Row: {
+          category_id: string
           created_at: string
           direction: string
           id: string
@@ -789,6 +793,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category_id: string
           created_at?: string
           direction?: string
           id?: string
@@ -800,6 +805,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category_id?: string
           created_at?: string
           direction?: string
           id?: string
@@ -810,7 +816,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "future_planning_columns_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       future_planning_settings: {
         Row: {

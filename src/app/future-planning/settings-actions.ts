@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache";
 import {
   movePlanningColumn,
   normalizePlanningYears,
-  type FuturePlanningColumnDirection,
   type FuturePlanningColumnMoveDirection,
 } from "@/lib/future-planning/manual-table";
+import { planningDirectionForCategoryType } from "@/lib/future-planning/category-controls";
 import { getUserSafely } from "@/lib/supabase/auth";
 import {
   isMissingDatabaseObject,
@@ -17,7 +17,17 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 type SettingsActionResult = { error?: string };
-const columnDirections = new Set<FuturePlanningColumnDirection>(["expense", "income", "neutral", "saving"]);
+
+function metadataRecord(metadata: unknown) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+}
+
+function normalizedCategoryType(row: { category_type?: string | null; metadata: unknown; type: string }) {
+  const metadata = metadataRecord(row.metadata);
+  return String(row.category_type ?? metadata.category_type ?? row.type).trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
 
 async function authenticatedClient() {
   const supabase = await createClient();
@@ -27,6 +37,7 @@ async function authenticatedClient() {
 
 function revalidateFuturePlanning() {
   revalidatePath("/future-planning");
+  revalidatePath("/notifications");
 }
 
 export async function saveFuturePlanningYears(years: number[]): Promise<SettingsActionResult> {
@@ -67,15 +78,44 @@ export async function saveFuturePlanningYears(years: number[]): Promise<Settings
 }
 
 export async function createFuturePlanningColumn(input: {
-  direction: FuturePlanningColumnDirection;
-  name: string;
+  categoryId: string;
 }): Promise<SettingsActionResult> {
-  const name = input.name?.trim() ?? "";
-  if (!name || name.length > 80) return { error: "Enter a column name up to 80 characters." };
-  if (!columnDirections.has(input.direction)) return { error: "Choose a valid column direction." };
+  if (!input.categoryId?.trim()) return { error: "Choose a category." };
 
   const { authError, supabase, user } = await authenticatedClient();
   if (authError || !user) return { error: authError ?? "You must be signed in." };
+
+  const { data: category, error: categoryError } = await supabase
+    .from("categories")
+    .select("id,name,type,category_type,is_active,metadata")
+    .eq("id", input.categoryId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (categoryError) return { error: categoryError.message };
+  if (!category || category.is_active === false) return { error: "Choose an active category." };
+  const categoryType = normalizedCategoryType(category);
+  if (!["expense", "income", "savings_goal"].includes(categoryType)) {
+    return { error: "Future Planning supports Credit, Debit, and Savings Goal categories." };
+  }
+  const direction = planningDirectionForCategoryType(categoryType);
+
+  const { data: existingColumn, error: existingColumnError } = await supabase
+    .from("future_planning_columns")
+    .select("id,is_active")
+    .eq("user_id", user.id)
+    .eq("category_id", category.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingColumnError) {
+    return {
+      error: isMissingDatabaseObject(existingColumnError, ["category_id"])
+        ? schemaUpgradeRequiredMessage("Category-based future planning")
+        : existingColumnError.message,
+    };
+  }
+  if (existingColumn?.is_active) return { error: "This category is already in Future Planning." };
 
   const { data: finalColumn, error: finalColumnError } = await supabase
     .from("future_planning_columns")
@@ -87,21 +127,26 @@ export async function createFuturePlanningColumn(input: {
   if (finalColumnError) {
     return {
       error: isMissingDatabaseObject(finalColumnError, ["future_planning_columns"])
-        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        ? schemaUpgradeRequiredMessage("Category-based future planning")
         : finalColumnError.message,
     };
   }
-  const { error } = await supabase.from("future_planning_columns").insert({
-    direction: input.direction,
-    name,
+  const payload = {
+    category_id: category.id,
+    direction,
+    is_active: true,
+    name: category.name,
     sort_order: (finalColumn?.sort_order ?? -1) + 1,
     user_id: user.id,
-  });
+  };
+  const { error } = existingColumn
+    ? await supabase.from("future_planning_columns").update(payload).eq("id", existingColumn.id).eq("user_id", user.id)
+    : await supabase.from("future_planning_columns").insert(payload);
   if (error) {
-    if (isMissingDatabaseObject(error, ["future_planning_columns"])) {
-      return { error: schemaUpgradeRequiredMessage("Custom future-planning columns") };
+    if (isMissingDatabaseObject(error, ["future_planning_columns", "category_id"])) {
+      return { error: schemaUpgradeRequiredMessage("Category-based future planning") };
     }
-    return { error: error.code === "23505" ? "An active column already uses that name." : error.message };
+    return { error: error.code === "23505" ? "This category is already in Future Planning." : error.message };
   }
   revalidateFuturePlanning();
   return {};
@@ -111,14 +156,14 @@ export async function moveFuturePlanningColumn(input: {
   columnId: string;
   direction: FuturePlanningColumnMoveDirection;
 }): Promise<SettingsActionResult & { orderedColumnIds?: string[] }> {
-  if (!input.columnId?.trim()) return { error: "Planning type not found." };
+  if (!input.columnId?.trim()) return { error: "Planning category not found." };
   if (input.direction !== "left" && input.direction !== "right") return { error: "Choose a valid move direction." };
 
   const { authError, supabase, user } = await authenticatedClient();
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const { data, error } = await supabase
     .from("future_planning_columns")
-    .select("id,name,direction,sort_order,is_active,created_at")
+    .select("id,name,direction,category_id,sort_order,is_active,created_at")
     .eq("user_id", user.id)
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
@@ -127,13 +172,13 @@ export async function moveFuturePlanningColumn(input: {
   if (error) {
     return {
       error: isMissingDatabaseObject(error, ["future_planning_columns"])
-        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        ? schemaUpgradeRequiredMessage("Category-based future planning")
         : error.message,
     };
   }
 
   const columns = data ?? [];
-  if (!columns.some((column) => column.id === input.columnId)) return { error: "Planning type not found." };
+  if (!columns.some((column) => column.id === input.columnId)) return { error: "Planning category not found." };
   const reordered = movePlanningColumn(columns, input.columnId, input.direction);
   const orderedColumnIds = reordered.map((column) => column.id);
   if (orderedColumnIds.every((columnId, index) => columnId === columns[index]?.id)) {
@@ -143,6 +188,7 @@ export async function moveFuturePlanningColumn(input: {
   const { error: updateError } = await supabase.from("future_planning_columns").upsert(
     reordered.map((column, sortOrder) => ({
       direction: column.direction,
+      category_id: column.category_id,
       id: column.id,
       is_active: true,
       name: column.name,
@@ -161,7 +207,7 @@ export async function saveFuturePlanningAmount(input: {
   columnId: string;
   periodMonth: string;
 }): Promise<SettingsActionResult & { id?: string }> {
-  if (!input.columnId?.trim()) return { error: "Planning type not found." };
+  if (!input.columnId?.trim()) return { error: "Planning category not found." };
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(input.periodMonth)) return { error: "Choose a valid planning month." };
   if (!Number.isFinite(input.amount) || input.amount < 0 || input.amount > 1_000_000_000_000_000) {
     return { error: "Enter a valid planned amount of zero or more." };
@@ -171,13 +217,13 @@ export async function saveFuturePlanningAmount(input: {
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const { data: column, error: columnError } = await supabase
     .from("future_planning_columns")
-    .select("id")
+    .select("id,category_id")
     .eq("id", input.columnId)
     .eq("user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
   if (columnError) return { error: columnError.message };
-  if (!column) return { error: "Planning type not found." };
+  if (!column) return { error: "Planning category not found." };
 
   const { data, error } = await supabase
     .from("future_planning_amounts")
@@ -216,7 +262,7 @@ export async function archiveFuturePlanningColumn(columnId: string): Promise<Set
   if (error) {
     return {
       error: isMissingDatabaseObject(error, ["future_planning_columns"])
-        ? schemaUpgradeRequiredMessage("Custom future-planning columns")
+        ? schemaUpgradeRequiredMessage("Category-based future planning")
         : error.message,
     };
   }

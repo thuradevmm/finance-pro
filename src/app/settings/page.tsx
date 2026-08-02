@@ -1,18 +1,15 @@
-import { AppShell } from "@/components/app/app-shell";
-import { PageHeader } from "@/components/app/page-header";
-import { CurrencySettingsForm } from "@/features/settings/currency-settings-form";
-import { getCurrencySettings } from "@/lib/currency-settings";
-import { getUserSafely } from "@/lib/supabase/auth";
-import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
-export default async function SettingsPage() {
-  const supabase = await createClient();
-  const { user } = await getUserSafely(supabase);
-  const settings = user ? await getCurrencySettings(supabase, user.id) : { baseCurrency: "MMK", rates: [] };
+import { StatusPage } from "@/components/app/status-page";
+
+export default function SettingsPage() {
   return (
-    <AppShell activeNavLabel="Settings" mobileSubtitle="Settings">
-      <PageHeader description="Manage the base currency and dated exchange rates used by account totals, dashboards, reports, and exports." title="Settings" />
-      <CurrencySettingsForm settings={settings} />
-    </AppShell>
+    <StatusPage
+      actions={<Link className="inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/dashboard">Back to dashboard</Link>}
+      badge="Temporarily closed"
+      description="Settings are temporarily unavailable while system preferences are being reorganized. Your saved currency and profile values remain unchanged."
+      icon="settings"
+      title="Settings are temporarily closed"
+    />
   );
 }

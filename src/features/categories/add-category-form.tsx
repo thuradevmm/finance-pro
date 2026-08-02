@@ -146,7 +146,7 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
 
         <FormCard title="Category Usage">
           <p className="text-sm leading-6 text-[#45464d]">
-            Category usage is controlled by category type. Credit and Debit categories are used only by transaction-related pages. Page categories such as Account, Asset, Debt, Savings Goal, and Subscription stay separate.
+            Category usage is controlled by category type. Credit and Debit categories are used only by transaction-related pages. Page categories such as Account, Asset, Borrowing &amp; Lending, Savings Goal, and Subscription stay separate.
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
             Credit and Debit monthly averages use the full calendar span between the first and latest posted transaction, including zero-activity months. Page categories show the related module&apos;s tracked value and record count.

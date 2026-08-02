@@ -5,7 +5,6 @@ import test from "node:test";
 const featureFiles = {
   accounts: new URL("../src/app/accounts/page.tsx", import.meta.url),
   assets: new URL("../src/features/assets/assets-page-content.tsx", import.meta.url),
-  budgets: new URL("../src/features/budgets/budgets-page-content.tsx", import.meta.url),
   debts: new URL("../src/features/debts/debts-page-content.tsx", import.meta.url),
   subscriptions: new URL("../src/features/subscriptions/subscriptions-page-content.tsx", import.meta.url),
 };
@@ -23,7 +22,6 @@ test("responsive register cards preserve interactive sorting below xl", async ()
   const configurations = [
     { feature: "account", file: featureFiles.accounts, type: "AccountSortKey" },
     { feature: "asset", file: featureFiles.assets, type: "AssetSortKey" },
-    { feature: "budget", file: featureFiles.budgets, type: "BudgetSortKey" },
     { feature: "debt", file: featureFiles.debts, type: "DebtSortKey" },
     { feature: "subscription", file: featureFiles.subscriptions, type: "SubscriptionSortKey" },
   ];
@@ -106,7 +104,7 @@ test("savings and asset metric grids become a single readable column on narrow p
 
   assert.match(savings, /grid-cols-1[^"\n]*min-\[420px\]:grid-cols-2/);
   assert.match(assets, /grid-cols-1[^"\n]*min-\[420px\]:grid-cols-2/);
-  assert.match(assets, />Purchase Date<\/dt>/);
+  assert.match(assets, />Purchased \{asset\.purchaseDate\}<\/p>/);
 });
 
 test("subscription form preview protects the calculated MMK equivalent", async () => {

@@ -111,9 +111,10 @@ function normalizeCategoryType(categoryType: unknown, rowType: string, scopes: C
 
 function mapCategory(row: CategoryRow, categoryNames: Map<string, string>, activity?: CategoryActivity): CategoryRecord {
   const metadata = metadataRecord(row.metadata);
+  const supportedScopes = new Set<CategoryScope>(["Accounts", "Assets", "Debts", "Savings Goals", "Subscriptions", "Transactions"]);
   const scopes = Array.isArray(metadata.scopes)
-    ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string")
-    : ["Transactions", "Reports"] as CategoryScope[];
+    ? metadata.scopes.filter((scope): scope is CategoryScope => typeof scope === "string" && supportedScopes.has(scope as CategoryScope))
+    : ["Transactions"] as CategoryScope[];
   const type = normalizeCategoryType(row.category_type, row.type, scopes, metadata);
   const style = getCategoryTypeStyle(type);
   const isTransactionCategory = type === "Expense" || type === "Income";

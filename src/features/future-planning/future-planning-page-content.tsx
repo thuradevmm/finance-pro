@@ -14,6 +14,8 @@ import { Icon } from "@/components/ui/icon";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { useToast } from "@/components/ui/toast-provider";
 import { cleanAmountInputValue, formatAmountInputValue, formatMmk, parseAmountInputValue } from "@/lib/currency";
+import type { CategoryRecord } from "@/lib/categories/supabase";
+import { planningControlStatus } from "@/lib/future-planning/category-controls";
 import {
   buildManualFuturePlanningTable,
   normalizePlanningYears,
@@ -22,15 +24,15 @@ import {
   type FuturePlanningColumnDirection,
   type FuturePlanningColumnMoveDirection,
 } from "@/lib/future-planning/manual-table";
-import { planningDirectionLabel } from "@/lib/transactions/terminology";
+import { categoryTypeLabel, planningDirectionLabel } from "@/lib/transactions/terminology";
 
 type FuturePlanningPageContentProps = {
   amounts: FuturePlanningAmount[];
+  categories: CategoryRecord[];
   columns: FuturePlanningColumn[];
   selectedYears: number[];
 };
 
-const directionLabels = ["Credit", "Debit", "Saving"];
 const stickyYearColumnWidth = 84;
 const stickyMonthColumnWidth = 144;
 
@@ -51,11 +53,28 @@ function comparison(actual: number, planned: number) {
   );
 }
 
+function controlComparison(actual: number, planned: number, direction: FuturePlanningColumnDirection) {
+  const control = planningControlStatus(actual, planned, direction);
+  const statusTone = control.label === "Over plan" || control.label === "Below target" || control.label === "Plan needed"
+    ? "text-[#b42318]"
+    : control.label === "Near limit"
+      ? "text-[#92400e]"
+      : "text-[#047857]";
+  return (
+    <span className="mt-1 block text-[11px] font-semibold text-[#45464d]">
+      Actual {formatMmk(actual)} · <span className={statusTone}>{control.label}</span>
+      {planned > 0 ? <span className="block">{control.usagePercent}% used · {formatMmk(control.remaining)} remaining</span> : null}
+    </span>
+  );
+}
+
 function ManualPlanningSettings({
+  categories,
   columns,
   onArchiveColumn,
   selectedYears,
 }: {
+  categories: CategoryRecord[];
   columns: FuturePlanningColumn[];
   onArchiveColumn: (columnId: string) => Promise<void>;
   selectedYears: number[];
@@ -63,8 +82,11 @@ function ManualPlanningSettings({
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const [yearInput, setYearInput] = useState(selectedYears.join(", "));
-  const [columnName, setColumnName] = useState("");
-  const [direction, setDirection] = useState("Debit");
+  const eligibleCategories = categories.filter((category) => category.status === "Active"
+    && ["Expense", "Income", "Savings Goal"].includes(category.type)
+    && !columns.some((column) => column.categoryId === category.id));
+  const categoryOptions = eligibleCategories.map((category) => `${categoryTypeLabel(category.type)} · ${category.name}`);
+  const [categoryOption, setCategoryOption] = useState(categoryOptions[0] ?? "No available categories");
   const [isSavingYears, setIsSavingYears] = useState(false);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
 
@@ -82,15 +104,14 @@ function ManualPlanningSettings({
 
   async function handleAddColumn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const effectiveCategoryOption = categoryOptions.includes(categoryOption) ? categoryOption : categoryOptions[0];
+    const category = eligibleCategories.find((item) => `${categoryTypeLabel(item.type)} · ${item.name}` === effectiveCategoryOption);
+    if (!category) return showError("Create or restore a Credit, Debit, or Savings Goal category first.");
     setIsAddingColumn(true);
-    const result = await createFuturePlanningColumn({
-      direction: direction === "Credit" ? "income" : direction === "Debit" ? "expense" : "saving",
-      name: columnName,
-    });
+    const result = await createFuturePlanningColumn({ categoryId: category.id });
     setIsAddingColumn(false);
     if (result.error) return showError(result.error);
-    setColumnName("");
-    showSuccess("Planning type added.");
+    showSuccess("Category added to Future Planning.");
     router.refresh();
   }
 
@@ -106,21 +127,24 @@ function ManualPlanningSettings({
       </form>
 
       <form className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm sm:p-5" onSubmit={handleAddColumn}>
-        <h2 className="text-lg font-semibold text-[#0b1c30]">Planning types</h2>
-        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Create as many Credit, Debit, or Saving types as you need. They are independent and never pull amounts from another page.</p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextInput label="Type name" onChange={setColumnName} placeholder="Salary, Rent, Emergency fund…" value={columnName} />
-          <SelectInput label="Total group" onChange={setDirection} options={directionLabels} value={direction} />
-        </div>
+        <h2 className="text-lg font-semibold text-[#0b1c30]">Planning categories</h2>
+        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Choose an existing category. Names and Credit, Debit, or Saving behavior stay synchronized with Categories.</p>
+        <SelectInput
+          disabled={eligibleCategories.length === 0}
+          label="Category"
+          onChange={setCategoryOption}
+          options={categoryOptions.length > 0 ? categoryOptions : ["No available categories"]}
+          value={categoryOptions.includes(categoryOption) ? categoryOption : categoryOptions[0] ?? "No available categories"}
+        />
         <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={isAddingColumn} type="submit">
-          {isAddingColumn ? "Adding…" : "Add planning type"}
+          {isAddingColumn ? "Adding…" : "Add category"}
         </button>
         {columns.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2 border-t border-[#c6c6cd]/50 pt-4">
             {columns.map((column) => (
               <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] pl-3 text-xs font-semibold text-[#0b1c30]" key={column.id}>
                 {column.name} · {directionLabel(column.direction)}
-                <button className="min-h-9 rounded-r-md px-3 text-[#b42318] hover:bg-[#fff1f0]" onClick={() => onArchiveColumn(column.id)} type="button">Remove</button>
+                <button className="min-h-9 rounded-r-md px-3 text-[#b42318] hover:bg-[#fff1f0]" onClick={() => onArchiveColumn(column.id)} type="button">Remove from plan</button>
               </span>
             ))}
           </div>
@@ -136,7 +160,7 @@ function ManualPlanTable({
   movingColumnId,
   onMoveColumn,
   selectedYears,
-}: FuturePlanningPageContentProps & {
+}: Omit<FuturePlanningPageContentProps, "categories"> & {
   movingColumnId: string;
   onMoveColumn: (columnId: string, direction: FuturePlanningColumnMoveDirection) => Promise<void>;
 }) {
@@ -166,9 +190,9 @@ function ManualPlanTable({
   };
   const tableWidth = Math.max(1040, 760 + columns.length * 210);
 
-  async function persistAmount(columnId: string, monthKey: string) {
+  async function persistAmount(columnId: string, monthKey: string, overrideValue?: number) {
     const key = amountKey(columnId, monthKey);
-    const value = drafts[key]?.trim() ? parseAmountInputValue(drafts[key]) : 0;
+    const value = overrideValue ?? (drafts[key]?.trim() ? parseAmountInputValue(drafts[key]) : 0);
     if (!Number.isFinite(value) || value < 0) return showError("Enter a valid planned amount of zero or more.");
     setSavingKey(key);
     const result = await saveFuturePlanningAmount({ amount: value, columnId, periodMonth: `${monthKey}-01` });
@@ -181,8 +205,8 @@ function ManualPlanTable({
   if (columns.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-8 text-center">
-        <h2 className="text-lg font-semibold text-[#0b1c30]">Add your first planning type</h2>
-        <p className="mt-1 text-sm text-[#45464d]">Create a Credit, Debit, or Saving type above, then enter its monthly predefined amounts here.</p>
+        <h2 className="text-lg font-semibold text-[#0b1c30]">Add your first planning category</h2>
+        <p className="mt-1 text-sm text-[#45464d]">Choose a category above, then enter its monthly budget-control amount here.</p>
       </section>
     );
   }
@@ -191,7 +215,7 @@ function ManualPlanTable({
     <section className="min-w-0 max-w-full overflow-hidden rounded-lg border border-[#c6c6cd]/70 bg-white shadow-sm" aria-labelledby="manual-plan-table-title">
       <div className="border-b border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-4">
         <h2 className="text-lg font-semibold text-[#0b1c30]" id="manual-plan-table-title">Planned versus actual</h2>
-        <p className="mt-1 text-sm leading-6 text-[#45464d]">Edit predefined amounts directly. Actual values come only from transactions explicitly linked to that monthly amount and may be higher or lower.</p>
+        <p className="mt-1 text-sm leading-6 text-[#45464d]">Planned amounts are your monthly controls. Actual usage rolls up automatically by category; the six-month average helps you set a realistic amount.</p>
       </div>
       <div
         className="relative isolate max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]"
@@ -217,6 +241,12 @@ function ManualPlanTable({
                       <span className="block text-[10px] normal-case text-[#76777d]">
                         {movingColumnId === column.id ? "Moving…" : directionLabel(column.direction)}
                       </span>
+                      <span className="mt-1 block text-[10px] normal-case text-[#0058be]">6-mo avg {formatMmk(column.monthlyAverage)}</span>
+                      {column.linkedSavingsGoals.length > 0 ? (
+                        <span className="mt-1 block max-w-52 text-[10px] normal-case leading-4 text-[#4f46e5]">
+                          Goals: {column.linkedSavingsGoals.map((goal) => goal.name).join(", ")}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="inline-flex overflow-hidden rounded-md border border-[#c6c6cd] bg-white">
                       <button
@@ -270,7 +300,17 @@ function ManualPlanTable({
                         type="text"
                         value={formatAmountInputValue(drafts[key] ?? (planned === 0 ? "" : String(planned)))}
                       />
-                      {savingKey === key ? <span className="mt-1 block text-[11px] font-semibold text-[#0058be]">Saving…</span> : comparison(actual, planned)}
+                      {column.monthlyAverage > 0 ? (
+                        <button
+                          className="mt-1 text-[11px] font-semibold text-[#0058be] hover:underline"
+                          onClick={() => {
+                            setDrafts((current) => ({ ...current, [key]: String(column.monthlyAverage) }));
+                            void persistAmount(column.id, row.monthKey, column.monthlyAverage);
+                          }}
+                          type="button"
+                        >Use 6-mo average</button>
+                      ) : null}
+                      {savingKey === key ? <span className="mt-1 block text-[11px] font-semibold text-[#0058be]">Saving…</span> : controlComparison(actual, planned, column.direction)}
                     </td>
                   );
                 })}
@@ -301,7 +341,7 @@ function ManualPlanTable({
   );
 }
 
-export function FuturePlanningPageContent({ amounts, columns, selectedYears }: FuturePlanningPageContentProps) {
+export function FuturePlanningPageContent({ amounts, categories, columns, selectedYears }: FuturePlanningPageContentProps) {
   const router = useRouter();
   const { showError, showSuccess } = useToast();
   const [archivedColumnIds, setArchivedColumnIds] = useState<string[]>([]);
@@ -339,7 +379,7 @@ export function FuturePlanningPageContent({ amounts, columns, selectedYears }: F
 
   return (
     <>
-      <ManualPlanningSettings columns={visibleColumns} onArchiveColumn={handleArchiveColumn} selectedYears={selectedYears} />
+      <ManualPlanningSettings categories={categories} columns={visibleColumns} onArchiveColumn={handleArchiveColumn} selectedYears={selectedYears} />
       <ManualPlanTable
         amounts={amounts}
         columns={visibleColumns}

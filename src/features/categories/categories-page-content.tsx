@@ -26,6 +26,7 @@ function categoryTypeFromTab(tab: string): CategoryType {
   const label = tab.replace(/ Categories$/, "");
   if (label === "Credit" || label === "Income") return "Income";
   if (label === "Debit" || label === "Expense") return "Expense";
+  if (label === "Borrowing & Lending") return "Debt";
   return categoryTypes.find((type) => type === label) ?? "Expense";
 }
 
@@ -103,7 +104,7 @@ function CategoryLifecycleActions({
         confirmLabel={isHidden ? "Restore" : "Hide"}
         description={isHidden
           ? `Restore ${category.name} so it can be selected for new records again. Historical data is already preserved.`
-          : `Hide ${category.name} from new-entry selectors while keeping all historical transactions, reports, and linked records unchanged.`}
+          : `Hide ${category.name} from new-entry selectors while keeping all historical transactions and linked records unchanged.`}
         icon={isHidden ? "eye" : "eyeOff"}
         isOpen={isLifecycleOpen}
         isPending={isPending}

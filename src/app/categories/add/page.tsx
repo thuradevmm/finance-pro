@@ -12,7 +12,7 @@ export default function AddCategoryPage() {
       topSearchLabel="Search categories"
       topSearchPlaceholder="Search categories..."
     >
-      <PageHeader description="Create a reusable classification for Credits, Debits, budgets, and reports." title="Add Category" />
+      <PageHeader description="Create a reusable classification for transactions, future planning, and linked financial records." title="Add Category" />
       <AddCategoryForm />
     </AppShell>
   );

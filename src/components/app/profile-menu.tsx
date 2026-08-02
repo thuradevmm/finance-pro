@@ -16,7 +16,6 @@ type ProfileMenuProps = {
 
 const menuItems = [
   { label: "Profile", href: "/profile", icon: "account" as const },
-  { label: "Settings", href: "/settings", icon: "settings" as const },
 ];
 
 export function ProfileMenu({ compact = false }: ProfileMenuProps) {

@@ -1,11 +1,21 @@
 import type { FutureTransactionRecord } from "./records.ts";
+import type { CategoryType } from "../../types/finance.ts";
 
 export type FuturePlanningColumnDirection = "expense" | "income" | "neutral" | "saving";
 export type FuturePlanningColumnMoveDirection = "left" | "right";
 
 export type FuturePlanningColumn = {
+  categoryId: string;
+  categoryType: CategoryType;
   direction: FuturePlanningColumnDirection;
   id: string;
+  linkedSavingsGoals: Array<{
+    id: string;
+    monthlyContribution: number;
+    name: string;
+    targetDate: string;
+  }>;
+  monthlyAverage: number;
   name: string;
   sortOrder: number;
 };

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { convertToBaseCurrency, exchangeRateFor, missingCurrencyRates } from "../src/lib/currency-conversion.ts";
 import { exportTableToCsv, exportTableToPdf, exportTableToXlsx } from "../src/lib/exports/financial-export.ts";
-import { buildFinancialReport } from "../src/lib/reports/financial-report.ts";
 import { parseTransactionImportCsv, transactionImportTemplate } from "../src/lib/transactions/import.ts";
 
 test("CSV import accepts Credit/Debit terminology and validates transfer counterparts", () => {
@@ -31,31 +30,6 @@ test("dated exchange rates convert historically and report missing currencies", 
   assert.equal(exchangeRateFor(settings, "USD", "2026-06-30"), 4000);
   assert.equal(convertToBaseCurrency(2, "USD", settings, "2026-07-29"), 9000);
   assert.deepEqual(missingCurrencyRates(["USD", "EUR", "MMK"], settings, "2026-07-29"), ["EUR"]);
-});
-
-test("financial reports exclude transfers, reversals, pending rows, and missing FX rates", () => {
-  const base = {
-    account: "Cash",
-    amountBaseValue: 0,
-    category: "Other",
-    dateValue: "2026-07-10",
-    hasExchangeRate: true,
-    isReversal: false,
-    isReversed: false,
-    status: "cleared",
-  };
-  const report = buildFinancialReport([
-    { ...base, amountBaseValue: 100, category: "Salary", type: "Income" },
-    { ...base, amountBaseValue: 40, category: "Food", type: "Expense" },
-    { ...base, amountBaseValue: 10, type: "Transfer" },
-    { ...base, amountBaseValue: 20, status: "pending", type: "Expense" },
-    { ...base, amountBaseValue: 50, hasExchangeRate: false, type: "Expense" },
-  ], { dateFrom: "2026-07-01", dateTo: "2026-07-31", group: "category" });
-  assert.equal(report.credit, 100);
-  assert.equal(report.debit, 40);
-  assert.equal(report.net, 60);
-  assert.equal(report.excludedMissingRates, 1);
-  assert.equal(report.transactionCount, 2);
 });
 
 test("CSV, XLSX, and PDF exports produce valid downloadable formats", async () => {

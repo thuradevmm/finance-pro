@@ -2,7 +2,7 @@ import type { AccountAmountType, TransactionType } from "@/types/finance";
 
 export type FutureRecurrence = "Monthly" | "Once" | "Weekly" | "Yearly";
 export type FuturePlanStatus = "Active" | "Paused";
-export type FuturePlanRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
+export type FuturePlanRelatedEntityType = "asset" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type FuturePlanLinkOption = {
   amount: number;

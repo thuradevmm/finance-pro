@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const filesUsingSubmittedSearch = [
-  "src/features/assets/assets-page-content.tsx",
-  "src/features/budgets/budgets-page-content.tsx",
   "src/features/debts/debts-page-content.tsx",
   "src/features/savings-goals/savings-goals-grid.tsx",
   "src/features/subscriptions/subscriptions-page-content.tsx",
@@ -33,7 +31,9 @@ test("multi-control module filters submit named controls and expose reset action
   assert.match(categories, />\s*Reset\s*</);
 
   const assets = readFileSync(new URL("../src/features/assets/assets-page-content.tsx", import.meta.url), "utf8");
-  for (const name of ["search", "category", "year", "amountRange"]) {
+  for (const name of ["q", "status"]) {
     assert.match(assets, new RegExp(`name="${name}"`));
   }
+  assert.doesNotMatch(assets, /name="(?:category|year|amountRange)"/);
+  assert.match(assets, /<FilterActions/);
 });

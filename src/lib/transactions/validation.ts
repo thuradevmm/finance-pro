@@ -45,7 +45,7 @@ export function validateTransactionInput(input: ValidatableTransactionInput) {
     if (input.transferAccountId) return "Only transfers can have a destination account.";
   }
 
-  const relatedTypes = ["asset", "budget", "debt", "none", "savings_goal", "subscription"];
+  const relatedTypes = ["asset", "debt", "none", "savings_goal", "subscription"];
   if (!relatedTypes.includes(input.relatedEntityType)) return "Choose a supported linked record type.";
   if (input.relatedEntityType !== "none" && input.relatedEntityType !== "debt" && !input.relatedEntityId) {
     return "Select the linked record.";

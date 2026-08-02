@@ -65,7 +65,7 @@ export type TransactionRecord = Transaction & {
   subscriptionPayment?: TransactionSubscriptionPaymentSnapshot;
 };
 
-export type TransactionRelatedEntityType = "asset" | "budget" | "debt" | "none" | "savings_goal" | "subscription";
+export type TransactionRelatedEntityType = "asset" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type TransactionRelatedOption = {
   categoryId?: string;
@@ -190,7 +190,7 @@ function normalizeType(value: string): TransactionType {
 }
 
 function normalizeRelatedType(value: string | null): TransactionRelatedEntityType {
-  if (value === "asset" || value === "budget" || value === "debt" || value === "savings_goal" || value === "subscription") return value;
+  if (value === "asset" || value === "debt" || value === "savings_goal" || value === "subscription") return value;
   return "none";
 }
 
@@ -359,7 +359,6 @@ function mapTransaction(
     type,
     ...(subscriptionPayment ? { subscriptionPayment } : {}),
     ...(row.related_entity_type === "asset" ? { linkedAssetId: row.related_entity_id ?? undefined } : {}),
-    ...(row.related_entity_type === "budget" ? { linkedBudgetId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "debt" ? { linkedDebtId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "savings_goal" ? { linkedSavingsGoalId: row.related_entity_id ?? undefined } : {}),
     ...(row.related_entity_type === "subscription" ? { linkedSubscriptionId: row.related_entity_id ?? undefined } : {}),

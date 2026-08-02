@@ -47,7 +47,6 @@ export type FinancialSkeletonRouteKind =
   | "dashboard"
   | "detail"
   | "form"
-  | "report"
   | "settings"
   | "status"
   | "subscriptions"
@@ -306,18 +305,6 @@ function SettingsSkeleton() {
   );
 }
 
-function ReportSkeleton() {
-  return (
-    <>
-      <SummarySkeleton count={3} />
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <SkeletonBlock className="h-80 rounded-lg" />
-        <SkeletonBlock className="h-80 rounded-lg" />
-      </div>
-    </>
-  );
-}
-
 function DetailSkeleton() {
   return (
     <div className="rounded-lg border border-[#c6c6cd]/70 bg-white p-6 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
@@ -339,7 +326,6 @@ function RouteBodySkeleton({ kind }: { kind: FinancialSkeletonRouteKind }) {
   if (kind === "coming-soon") return <ComingSoonSkeleton />;
   if (kind === "dashboard") return <DashboardSkeleton />;
   if (kind === "form") return <FormSkeleton />;
-  if (kind === "report") return <ReportSkeleton />;
   if (kind === "settings") return <SettingsSkeleton />;
   if (kind === "subscriptions") return <SubscriptionSkeleton />;
   if (kind === "detail") return <DetailSkeleton />;

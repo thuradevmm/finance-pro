@@ -51,7 +51,7 @@ export function CurrencySettingsForm({ settings }: { settings: CurrencySettings 
     <div className="grid gap-6 lg:grid-cols-12">
       <section className="rounded-xl border border-[#c6c6cd]/70 bg-white p-5 shadow-sm lg:col-span-5">
         <h2 className="text-lg font-semibold text-[#0b1c30]">Base currency</h2>
-        <p className="mt-1 text-sm leading-6 text-[#45464d]">All cross-account totals and reports convert into this currency. Native account values remain unchanged.</p>
+        <p className="mt-1 text-sm leading-6 text-[#45464d]">All cross-account totals and dashboard summaries convert into this currency. Native account values remain unchanged.</p>
         <label className="mt-5 block text-xs font-bold uppercase text-[#45464d]" htmlFor="base-currency">Currency</label>
         <select className="mt-2 h-12 w-full rounded-lg border border-[#c6c6cd] bg-white px-4" id="base-currency" onChange={(event) => setBaseCurrencyValue(event.target.value)} value={baseCurrency}>
           {supportedCurrencies.map((currency) => <option key={currency}>{currency}</option>)}

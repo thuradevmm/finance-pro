@@ -546,12 +546,6 @@ export function AddAccountForm({
               <SelectInput label="Account Category" onChange={(name) => setSelectedCategoryId(scopedCategories.find((category) => category.name === name)?.id ?? "")} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory?.name || "No account categories"} />
             </div>
 
-            {!isCreditCard ? (
-              <div className="mt-5">
-                <TextInput label="Monthly Budget Limit" onChange={setMonthlyBudgetLimit} placeholder="Optional" type="amount" value={monthlyBudgetLimit} />
-              </div>
-            ) : null}
-
             <div className="mt-5">
               <FieldLabel htmlFor={notesInputId}>Notes</FieldLabel>
               <textarea

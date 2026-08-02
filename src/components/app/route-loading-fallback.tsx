@@ -13,13 +13,12 @@ function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
   if (pathname === "/transactions/import") return "form";
   if (pathname === "/subscriptions") return "subscriptions";
   if (pathname === "/future-planning") return "planning";
-  if (pathname === "/reports") return "dashboard";
+  if (pathname === "/notifications") return "table";
   if (pathname === "/settings") return "form";
   if (pathname === "/profile") return "coming-soon";
   if (pathname.includes("/add") || pathname.includes("/edit")) return "form";
   if (pathname === "/forgot-password" || pathname === "/login" || pathname === "/register" || pathname === "/update-password") return "auth";
   if (pathname === "/unavailable" || pathname === "/auth/callback") return "status";
-  if (pathname === "/scenario-budgeting" || pathname === "/documents" || pathname === "/people-payments") return "coming-soon";
   return "table";
 }
 

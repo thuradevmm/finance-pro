@@ -4,7 +4,6 @@ import { AddTransactionForm, type TransactionFormInitialValues } from "@/feature
 import { getAccounts } from "@/lib/accounts/supabase";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { getAssets } from "@/lib/assets/supabase";
-import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getCurrencySettings } from "@/lib/currency-settings";
 import { getDebts } from "@/lib/debts/supabase";
@@ -17,7 +16,6 @@ import type { TransactionRelatedOption } from "@/lib/transactions/supabase";
 
 function relatedOptions(
   accounts: Awaited<ReturnType<typeof getAccounts>>,
-  budgets: Awaited<ReturnType<typeof getBudgets>>,
   savingsGoals: Awaited<ReturnType<typeof getSavingsGoals>>,
   debts: Awaited<ReturnType<typeof getDebts>>,
   subscriptions: Awaited<ReturnType<typeof getSubscriptions>>,
@@ -25,8 +23,7 @@ function relatedOptions(
 ): TransactionRelatedOption[] {
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...budgets.filter((budget) => budget.planStatus === "Active").map((budget) => ({ categoryId: budget.categoryId, label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
-    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
     ...debts.filter((debt) => debt.status !== "Paid").map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
@@ -84,9 +81,8 @@ export default async function AddTransactionPage({
   const allAccounts = user ? await getAccounts(supabase, user.id) : [];
   const accounts = allAccounts.filter((account) => accountStatusContributesToCurrentTotals(account.status));
   const categories = user ? await getCategories() : [];
-  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = user
+  const [savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = user
     ? await Promise.all([
-      getBudgets(supabase, user.id),
       getSavingsGoals(supabase, user.id, accounts, categories),
       getDebts(supabase, user.id, categories),
       getSubscriptions(supabase, user.id, accounts, categories),
@@ -94,7 +90,7 @@ export default async function AddTransactionPage({
       getFuturePlanningTransactionOptions(supabase, user.id),
       getCurrencySettings(supabase, user.id),
     ])
-    : [[], [], [], [], [], [], { baseCurrency: "MMK", rates: [] }];
+    : [[], [], [], [], [], { baseCurrency: "MMK", rates: [] }];
   const requestedSubscription = requestedSubscriptionId ? subscriptions.find((subscription) => subscription.id === requestedSubscriptionId) : undefined;
   const initialValues: TransactionFormInitialValues | undefined = requestedSubscription
     ? {
@@ -118,7 +114,7 @@ export default async function AddTransactionPage({
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description={requestedSubscription ? `Record payment for ${requestedSubscription.name}.` : "Record a new financial activity."} title="Add Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} initialValues={initialValues} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets)} />
+      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} initialValues={initialValues} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, savingsGoals, debts, subscriptions, assets)} />
     </AppShell>
   );
 }

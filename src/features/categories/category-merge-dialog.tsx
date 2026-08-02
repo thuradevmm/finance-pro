@@ -57,7 +57,7 @@ export function CategoryMergeDialog({
     >
       <div className="space-y-4">
         <div className="rounded-md border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-sm leading-6 text-[#0b3b75]">
-          All transactions, budgets, linked module records, defaults, and account references will move to the target. {source.name} will remain as a hidden audit record so existing data is never discarded.
+          All transactions, future plans, linked module records, defaults, and account references will move to the target. {source.name} will remain as a hidden audit record so existing data is never discarded.
         </div>
         {targets.length > 0 ? (
           <label className="block">

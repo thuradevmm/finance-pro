@@ -26,6 +26,7 @@ export function categoryTypeLabel(type: CategoryType | string) {
   const normalized = String(type).trim().toLowerCase();
   if (normalized === "income" || normalized === "credit") return "Credit";
   if (normalized === "expense" || normalized === "debit") return "Debit";
+  if (normalized === "debt" || normalized === "debts" || normalized === "borrowing & lending") return "Borrowing & Lending";
   return type;
 }
 

@@ -97,7 +97,6 @@ test("catalog uniqueness supports upsert and category schema keeps metadata mirr
 test("existing records may retain a Hidden category while changed links require Active", () => {
   for (const file of [
     "src/app/assets/actions.ts",
-    "src/app/budgets/actions.ts",
     "src/app/savings-goals/actions.ts",
     "src/app/subscriptions/actions.ts",
     "src/app/transactions/actions.ts",

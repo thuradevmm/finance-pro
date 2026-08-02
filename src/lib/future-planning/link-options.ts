@@ -1,6 +1,5 @@
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import { getAssets } from "@/lib/assets/supabase";
-import { getBudgets } from "@/lib/budgets/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { getDebts } from "@/lib/debts/supabase";
 import type { FuturePlanLinkOption } from "@/lib/future-planning/records";
@@ -18,24 +17,14 @@ export async function getFuturePlanLinkOptions(
   accounts: AccountRecord[],
   categories: CategoryRecord[],
 ): Promise<FuturePlanLinkOption[]> {
-  const [assets, budgets, debts, savingsGoals, subscriptions] = await Promise.all([
+  const [assets, debts, savingsGoals, subscriptions] = await Promise.all([
     getAssets(supabase, userId, categories, { limit: 500 }),
-    getBudgets(supabase, userId, { limit: 500 }),
     getDebts(supabase, userId, categories, { limit: 500 }),
     getSavingsGoals(supabase, userId, accounts, categories, { limit: 500 }),
     getSubscriptions(supabase, userId, accounts, categories, { limit: 500 }),
   ]);
 
   return [
-    ...budgets
-      .filter((budget) => budget.planStatus === "Active" && positiveAmount(budget.amountValue) > 0)
-      .map((budget): FuturePlanLinkOption => ({
-        amount: budget.amountValue,
-        categoryId: budget.categoryId,
-        id: budget.id,
-        label: `Budget · ${budget.category} (${budget.startDate})`,
-        type: "budget",
-      })),
     ...savingsGoals
       .filter((goal) => goal.status !== "Completed")
       .map((goal): FuturePlanLinkOption => ({

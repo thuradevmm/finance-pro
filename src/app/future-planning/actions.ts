@@ -18,7 +18,7 @@ type ActionResult = {
 const recurrenceOptions = new Set(["Monthly", "Once", "Weekly", "Yearly"]);
 const statusOptions = new Set(["Active", "Paused"]);
 const typeOptions = new Set(["Expense", "Income"]);
-const relatedEntityTypes = new Set(["asset", "budget", "debt", "none", "savings_goal", "subscription"]);
+const relatedEntityTypes = new Set(["asset", "debt", "none", "savings_goal", "subscription"]);
 const maximumPlanAmount = 1_000_000_000_000_000;
 
 type ExistingFutureReferences = {
@@ -126,7 +126,7 @@ function accountAmountTypes(account: { metadata: unknown; type: string | null })
 }
 
 function revalidatePlanningPaths() {
-  for (const path of ["/future-planning", "/transactions", "/dashboard", "/reports", "/scenario-budgeting"]) {
+  for (const path of ["/future-planning", "/transactions", "/dashboard", "/notifications"]) {
     revalidatePath(path);
   }
 }
@@ -175,8 +175,6 @@ async function validateOwnedReferences(
     let linkedResult: { data: { id: string } | null; error: { message: string } | null };
     if (input.relatedEntityType === "asset") {
       linkedResult = await supabase.from("assets").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
-    } else if (input.relatedEntityType === "budget") {
-      linkedResult = await supabase.from("budget_items").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
     } else if (input.relatedEntityType === "debt") {
       linkedResult = await supabase.from("debts").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
     } else if (input.relatedEntityType === "savings_goal") {

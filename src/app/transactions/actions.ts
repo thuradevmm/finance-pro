@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 
 import { buildCreditCardDueBuckets, nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
 import { accountAvailableAmountForType } from "@/lib/accounts/amount-types";
-import { effectiveBudgetEndDate } from "@/lib/budgets/calculations";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { SYSTEM_CURRENCY, formatMmk } from "@/lib/currency";
@@ -176,15 +175,12 @@ const transactionLinkedPaths = [
   "/transactions",
   "/accounts",
   "/assets",
-  "/budgets",
   "/categories",
   "/dashboard",
   "/debts",
   "/future-planning",
-  "/people-payments",
-  "/reports",
+  "/notifications",
   "/savings-goals",
-  "/scenario-budgeting",
   "/subscriptions",
 ];
 
@@ -338,7 +334,7 @@ async function validateFuturePlanningAmount(
   if (input.type === "Transfer") return "Transfers cannot be linked to a future-planning amount.";
   const { data: amount, error } = await supabase
     .from("future_planning_amounts")
-    .select("id,column_id")
+    .select("id,column_id,period_month")
     .eq("id", input.futurePlanningAmountId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -346,7 +342,7 @@ async function validateFuturePlanningAmount(
   if (!amount) return "The selected predefined amount is no longer available.";
   const { data: column, error: columnError } = await supabase
     .from("future_planning_columns")
-    .select("id,direction,is_active")
+    .select("id,direction,category_id,is_active")
     .eq("id", amount.column_id)
     .eq("user_id", userId)
     .maybeSingle();
@@ -355,6 +351,27 @@ async function validateFuturePlanningAmount(
   const requiredType = column.direction === "income" ? "Credit" : "Debit";
   if (!futurePlanningDirectionSupportsTransactionType(column.direction, input.type)) {
     return `${directionLabelForError(column.direction)} planning amounts require a ${requiredType} transaction.`;
+  }
+  if (input.date.slice(0, 7) !== String(amount.period_month).slice(0, 7)) {
+    return "The transaction date must be in the selected planning month.";
+  }
+  if (column.direction === "saving") {
+    if (input.relatedEntityType !== "savings_goal" || !input.relatedEntityId) {
+      return "Saving plans must be linked to a Savings Goal transaction.";
+    }
+    const { data: goal, error: goalError } = await supabase
+      .from("savings_goals")
+      .select("id,category_id")
+      .eq("id", input.relatedEntityId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (goalError) return goalError.message;
+    if (!goal || goal.category_id !== column.category_id) {
+      return "Choose a Savings Goal that uses the selected planning category.";
+    }
+  } else if (input.categoryId !== column.category_id) {
+    return "The transaction category must match the selected planning category.";
   }
   return "";
 }
@@ -514,36 +531,6 @@ async function validateAndResolveTransactionReferences(
       const displayType = input.type === "Income" ? "Credit" : input.type === "Expense" ? "Debit" : input.type;
       return { error: `${displayType} transactions require an active ${displayType} category from the Transactions page.`, input };
     }
-  }
-
-  if (input.relatedEntityType === "budget" && input.relatedEntityId) {
-    const { data: item, error: itemError } = await supabase
-      .from("budget_items")
-      .select("id,budget_plan_id,category_id")
-      .eq("id", input.relatedEntityId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (itemError) return { error: itemError.message, input };
-    if (!item) return { error: "The selected budget does not exist.", input };
-    const { data: plan, error: planError } = await supabase
-      .from("budget_plans")
-      .select("id,start_date,end_date,status,period_type")
-      .eq("id", item.budget_plan_id)
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .maybeSingle();
-    if (planError) return { error: planError.message, input };
-    if (!plan || (!preservesExistingRelated && String(plan.status).toLowerCase() !== "active")) return { error: "Only active budgets can receive new transactions.", input };
-    const effectiveEndDate = effectiveBudgetEndDate(
-      plan.start_date,
-      plan.end_date,
-      String(plan.period_type).toLowerCase() === "yearly" ? "Yearly" : "Monthly",
-    );
-    if (!preservesExistingRelated && (input.date < plan.start_date || input.date > effectiveEndDate)) {
-      return { error: "The transaction date must fall within the linked budget period.", input };
-    }
-    if (input.type !== "Expense") return { error: "Budget activity must be recorded as a Debit.", input };
-    return { input: { ...input, categoryId: item.category_id } };
   }
 
   if (input.relatedEntityType === "none" || !input.relatedEntityId) return { input };
@@ -918,7 +905,7 @@ async function findOrCreateCreditCardDebtCategoryId(
   if (preferredCategory) return preferredCategory.id;
 
   const style = getCategoryTypeStyle("Debt");
-  for (const name of ["Credit Card Debt", "Credit Card Liability", "Debt"]) {
+  for (const name of ["Credit Card Borrowing", "Credit Card Liability", "Borrowing & Lending"]) {
     const categoryPayload = {
       color: style.color,
       icon: style.icon,
@@ -927,7 +914,7 @@ async function findOrCreateCreditCardDebtCategoryId(
       metadata: {
         category_type: "Debt",
         description: "Automatically created for credit card debt tracking.",
-        scopes: ["Debts", "Reports"],
+        scopes: ["Debts"],
         system_created: true,
       },
       name,
@@ -2946,6 +2933,6 @@ export async function reverseTransaction(transactionId: string): Promise<ActionR
 }
 
 function normalizeRelatedTypeForAction(value: string | null): TransactionFormData["relatedEntityType"] {
-  if (value === "asset" || value === "budget" || value === "debt" || value === "savings_goal" || value === "subscription") return value;
+  if (value === "asset" || value === "debt" || value === "savings_goal" || value === "subscription") return value;
   return "none";
 }

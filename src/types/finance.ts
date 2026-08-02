@@ -7,7 +7,7 @@ export type TransactionCategoryName = string;
 
 export type CategoryType = "Account" | "Asset" | "Debt" | "Expense" | "Income" | "Savings Goal" | "Subscription";
 
-export type CategoryScope = "Transactions" | "Accounts" | "Budgets" | "Savings Goals" | "Debts" | "Subscriptions" | "Assets" | "Reports";
+export type CategoryScope = "Transactions" | "Accounts" | "Savings Goals" | "Debts" | "Subscriptions" | "Assets";
 
 export type FinancialCategory = {
   id: string;
@@ -25,24 +25,6 @@ export type FinancialCategory = {
   reportingRole: "" | "salary";
   scopes: CategoryScope[];
   status: "Active" | "Hidden";
-};
-
-export type BudgetPeriod = "Monthly" | "Yearly";
-
-export type BudgetStatus = "Under Budget" | "Near Limit" | "Over Budget";
-
-export type BudgetCategory = {
-  id: string;
-  category: string;
-  period: BudgetPeriod;
-  budget: string;
-  actual: string;
-  remaining: string;
-  usagePercent: number;
-  status: BudgetStatus;
-  icon: IconName;
-  tone: string;
-  bg: string;
 };
 
 export type SavingsGoalStatus = "In Progress" | "Behind" | "Completed";
@@ -196,7 +178,6 @@ export type Transaction = {
   status: TransactionStatus;
   attachment?: "receipt" | "document";
   linkedAssetId?: string;
-  linkedBudgetId?: string;
   linkedDebtId?: string;
   linkedSavingsGoalId?: string;
   linkedSubscriptionId?: string;

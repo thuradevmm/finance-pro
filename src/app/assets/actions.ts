@@ -12,7 +12,7 @@ import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 type ActionResult = { error?: string };
 
 function revalidateAssetPaths() {
-  for (const path of ["/assets", "/categories", "/dashboard", "/reports", "/future-planning", "/scenario-budgeting"]) revalidatePath(path);
+  for (const path of ["/assets", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
 }
 
 async function authenticatedClient() {

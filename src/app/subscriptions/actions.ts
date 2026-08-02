@@ -15,7 +15,7 @@ import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 type ActionResult = { error?: string };
 
 function revalidateSubscriptionPaths() {
-  for (const path of ["/subscriptions", "/categories", "/dashboard", "/reports", "/future-planning", "/scenario-budgeting"]) revalidatePath(path);
+  for (const path of ["/subscriptions", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
 }
 
 function storedAccountStatus(account: { is_active: boolean; metadata: unknown }) {

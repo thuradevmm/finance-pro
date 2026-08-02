@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteSavingsGoal } from "@/app/savings-goals/actions";
@@ -54,7 +55,14 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
           <Icon className="size-4" name="calendar" />
           <span className="min-w-0 truncate">Target: {goal.targetDate}</span>
         </div>
-        <div className="mt-4 flex items-center justify-end gap-1">
+        <div className="mt-3 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">
+          Future plan · {goal.categoryName} · {goal.monthlyContribution} / month
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning">
+            <Icon className="size-4" name="timeline" />
+            Open future plan
+          </Link>
           <RecordActions
             deleteDescription={`Deleting ${goal.name} will remove this savings goal from your list.`}
             editHref={`/savings-goals/${goal.id}/edit`}

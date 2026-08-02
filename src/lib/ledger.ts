@@ -347,8 +347,8 @@ export function financingTransactionDelta(transaction: LedgerTransactionInput): 
 }
 
 /**
- * Returns signed economic income and expense deltas for reports, categories,
- * budgets, and forecasts. Reversal rows reduce the original economic bucket;
+ * Returns signed economic income and expense deltas for categories, planning,
+ * and dashboard summaries. Reversal rows reduce the original economic bucket;
  * debt/card settlements and receivable returns are financing movements and
  * therefore contribute to neither operating income nor spending.
  */

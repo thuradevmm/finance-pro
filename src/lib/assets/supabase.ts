@@ -151,14 +151,12 @@ export async function getAsset(supabase: SupabaseClient, userId: string, assetId
 }
 
 export function getAssetSummaries(assets: AssetRecordWithValues[]): SummaryMetric[] {
-  const purchaseValue = assets.reduce((sum, asset) => sum + asset.purchaseAmountValue, 0);
   const currentValue = assets
     .filter((asset) => asset.status === "Active")
     .reduce((sum, asset) => sum + asset.currentValueValue, 0);
   return [
-    { label: "Purchase Value", value: formatMmk(purchaseValue), icon: "box", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
-    { label: "Active Current Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Current Asset Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Assets", value: String(assets.filter((asset) => asset.status === "Active").length), icon: "dashboard", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Archived/Sold", value: String(assets.filter((asset) => asset.status !== "Active").length), icon: "timeline", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Needs Attention", value: String(assets.filter((asset) => asset.status === "Active" && asset.condition === "Needs Repair").length), icon: "bell", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
   ];
 }

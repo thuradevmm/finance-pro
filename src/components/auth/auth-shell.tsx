@@ -12,7 +12,7 @@ type AuthShellProps = {
 
 const highlights = [
   "Accounts and cash flow in one workspace",
-  "Budgets, goals, and debts kept connected",
+  "Plans, goals, and borrowing kept connected",
   "Private financial records with clear controls",
 ];
 

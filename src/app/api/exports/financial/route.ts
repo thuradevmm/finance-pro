@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { exportTableToCsv, exportTableToPdf, exportTableToXlsx, type ExportTable } from "@/lib/exports/financial-export";
-import { buildFinancialReport, type FinancialReportGroup } from "@/lib/reports/financial-report";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTransactions } from "@/lib/transactions/supabase";
@@ -12,10 +11,6 @@ export const dynamic = "force-dynamic";
 
 function safeDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
-}
-
-function reportGroup(value: string | null): FinancialReportGroup {
-  return value === "account" || value === "category" ? value : "month";
 }
 
 function transactionsTable(transactions: Awaited<ReturnType<typeof getTransactions>>, dateFrom?: string, dateTo?: string): ExportTable {
@@ -42,41 +37,24 @@ function transactionsTable(transactions: Awaited<ReturnType<typeof getTransactio
   };
 }
 
-function reportTable(
-  transactions: Awaited<ReturnType<typeof getTransactions>>,
-  group: FinancialReportGroup,
-  dateFrom?: string,
-  dateTo?: string,
-): ExportTable {
-  const report = buildFinancialReport(transactions, { dateFrom, dateTo, group });
-  return {
-    columns: [group[0].toUpperCase() + group.slice(1), "Credits", "Debits", "Net", "Transactions"],
-    rows: report.rows.map((row) => [row.label, row.credit, row.debit, row.net, row.transactionCount]),
-    title: `Financial Report by ${group}`,
-  };
-}
-
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
-  const dataset = request.nextUrl.searchParams.get("dataset") === "transactions" ? "transactions" : "report";
+  const dataset = "transactions";
   const format = request.nextUrl.searchParams.get("format") ?? "csv";
   if (!["csv", "xlsx", "pdf"].includes(format)) {
     return NextResponse.json({ error: "Format must be csv, xlsx, or pdf." }, { status: 400 });
   }
   const dateFrom = safeDate(request.nextUrl.searchParams.get("dateFrom"));
   const dateTo = safeDate(request.nextUrl.searchParams.get("dateTo"));
-  const group = reportGroup(request.nextUrl.searchParams.get("group"));
   const [accounts, categories] = await Promise.all([
     getAccounts(supabase, user.id, { asOfDate: dateTo, limit: 500 }),
     getCategories({ limit: 500 }),
   ]);
   const transactions = await getTransactions(supabase, user.id, accounts, categories);
-  const table = dataset === "transactions"
-    ? transactionsTable(transactions, dateFrom, dateTo)
-    : reportTable(transactions, group, dateFrom, dateTo);
+  const table = transactionsTable(transactions, dateFrom, dateTo);
   const filename = `${dataset}-${new Date().toISOString().slice(0, 10)}.${format}`;
   const headers = {
     "Cache-Control": "private, no-store",

@@ -65,6 +65,7 @@ export function TextInput({
 }
 
 export function SelectInput({
+  disabled = false,
   id,
   label,
   name,
@@ -72,6 +73,7 @@ export function SelectInput({
   options,
   value,
 }: {
+  disabled?: boolean;
   id?: string;
   label: string;
   name?: string;
@@ -88,6 +90,7 @@ export function SelectInput({
       <div className="relative">
         <select
           className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
+          disabled={disabled}
           id={inputId}
           name={name}
           onChange={(event) => onChange?.(event.target.value)}

@@ -11,7 +11,7 @@ export function AppTopBar() {
         <Link
           aria-label="Notifications"
           className="relative grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
-          href="/unavailable?feature=Notifications"
+          href="/notifications"
           title="Notifications"
         >
           <Icon name="bell" />

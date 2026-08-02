@@ -274,8 +274,7 @@ export function AddTransactionForm({
   const effectiveRelatedOption = autoLinksCreditCardDebt && !usesExplicitPageLink && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
     ? impactOptions[0] ?? selectedRelatedOption
     : selectedRelatedOption;
-  const linkedBudgetCategoryId = effectiveRelatedOption?.type === "budget" ? effectiveRelatedOption.categoryId ?? "" : "";
-  const effectiveCategoryId = linkedBudgetCategoryId || categoryId;
+  const effectiveCategoryId = categoryId;
   const selectedCategory = transactionCategories.find((category) => category.id === effectiveCategoryId)
     ?? categories.find((category) => category.id === effectiveCategoryId);
   const debtPayoffSummary = useMemo(() => {
@@ -382,15 +381,16 @@ export function AddTransactionForm({
     }
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
-    if (type !== "Expense" && selectedRelatedOption?.type === "budget") setRelatedOptionValue("none:");
   }
 
   function handleRelatedOptionChange(label: string) {
     const nextOption = impactOptions.find((option) => option.label === label) ?? impactOptions[0] ?? relatedOptions[0];
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
-    if (nextOption.type === "budget") {
-      setSelectedType("Expense");
-      setCategoryId(nextOption.categoryId ?? "");
+    if (nextOption.type === "savings_goal" && nextOption.categoryId) {
+      const matchingPlan = planningOptions.find((option) => option.direction === "saving"
+        && option.categoryId === nextOption.categoryId
+        && option.periodMonth.slice(0, 7) === transactionDate.slice(0, 7));
+      if (matchingPlan) setFuturePlanningAmountId(matchingPlan.id);
     } else if (nextOption.type === "debt" && nextOption.debtRepaymentType) {
       setSelectedType(nextOption.debtRepaymentType);
       const nextCategories = getCategoriesForScope(categories, "Transactions", nextOption.debtRepaymentType);
@@ -441,9 +441,19 @@ export function AddTransactionForm({
   }
 
   function handlePlanningAmountChange(optionId: string) {
-    setFuturePlanningAmountId(
-      availablePlanningOptions.some((option) => option.id === optionId) ? optionId : "",
-    );
+    const option = availablePlanningOptions.find((item) => item.id === optionId);
+    setFuturePlanningAmountId(option?.id ?? "");
+    if (!option) return;
+    if (transactionDate.slice(0, 7) !== option.periodMonth.slice(0, 7)) setTransactionDate(option.periodMonth);
+    if (option.direction === "saving") {
+      const matchingGoal = relatedOptions.find((item) => item.type === "savings_goal" && item.categoryId === option.categoryId);
+      if (matchingGoal) setRelatedOptionValue(`${matchingGoal.type}:${matchingGoal.value}`);
+      return;
+    }
+    const nextType = option.direction === "income" ? "Income" : "Expense";
+    setSelectedType(nextType);
+    const category = getCategoriesForScope(categories, "Transactions", nextType).find((item) => item.id === option.categoryId);
+    if (category) setCategoryId(category.id);
   }
 
   function usePredefinedAmount() {
@@ -570,8 +580,7 @@ export function AddTransactionForm({
                 />
               ) : (
                 <div>
-                  <SelectInput disabled={Boolean(linkedBudgetCategoryId)} label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
-                  {linkedBudgetCategoryId ? <p className="mt-1 text-xs font-medium text-[#45464d]">The linked budget sets this category.</p> : null}
+                  <SelectInput label="Category" onChange={(name) => setCategoryId(transactionCategories.find((category) => category.name === name)?.id ?? "")} options={transactionCategories.length > 0 ? transactionCategories.map((category) => category.name) : ["No categories"]} value={selectedCategory?.name ?? "No categories"} />
                 </div>
               )}
             </div>
@@ -605,7 +614,7 @@ export function AddTransactionForm({
                   </button>
                 </div>
                 <p className="mt-2 text-xs font-semibold leading-5 text-[#45464d]">
-                  This explicit link assigns the actual transaction to the selected planning month. You can keep any transaction date and actual amount.
+                  The transaction month and category must match this control. Saving controls also require a linked Savings Goal that uses the same category.
                 </p>
               </div>
             ) : null}

@@ -21,9 +21,9 @@ type StoredCategoryRow = {
 };
 
 const relatedCategoryPaths = [
-  "/categories", "/accounts", "/assets", "/budgets", "/debts",
+  "/categories", "/accounts", "/assets", "/debts",
   "/savings-goals", "/subscriptions", "/transactions", "/future-planning",
-  "/dashboard", "/reports", "/scenario-budgeting",
+  "/dashboard", "/notifications",
 ];
 
 function revalidateCategoryPaths() {
@@ -141,7 +141,7 @@ function storedCategoryDefinition(row: { category_type?: string | null; metadata
     ? "Savings Goal"
     : `${normalizedType.slice(0, 1).toUpperCase()}${normalizedType.slice(1)}`;
   const scopes = Array.isArray(metadata.scopes)
-    ? metadata.scopes.map(String).filter((scope) => scope !== "Reports").sort()
+    ? metadata.scopes.map(String).filter((scope) => scope !== "Budgets" && scope !== "Reports").sort()
     : getScopesForCategoryType(type as CategoryFormData["type"]).sort();
   return { scopes, type };
 }

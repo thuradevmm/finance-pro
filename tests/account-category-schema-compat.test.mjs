@@ -17,9 +17,9 @@ test("category reads retry the legacy metadata-backed schema", () => {
   assert.match(categories, /metadata\.merged_into_category_id/);
   assert.match(categories, /metadata\.reporting_role === "salary"/);
 
-  const budgets = source("src/lib/budgets/supabase.ts");
-  assert.match(budgets, /getBudgetCategoryRows/);
-  assert.match(budgets, /select\("id,name,type,metadata"\)/);
+  const planning = source("src/lib/future-planning/supabase.ts");
+  assert.match(planning, /category_id/);
+  assert.match(planning, /categoryMonthlyAverages/);
 });
 
 test("category mutations mirror lifecycle data into metadata and retry legacy writes", () => {
@@ -43,7 +43,6 @@ test("all category-link validators retry without the normalized category column"
   for (const path of [
     "src/app/accounts/actions.ts",
     "src/app/assets/actions.ts",
-    "src/app/budgets/actions.ts",
     "src/app/debts/actions.ts",
     "src/app/savings-goals/actions.ts",
     "src/app/subscriptions/actions.ts",

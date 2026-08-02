@@ -81,9 +81,8 @@ function revalidateDebtViews(debtId?: string) {
     "/debts",
     "/categories",
     "/dashboard",
-    "/reports",
     "/future-planning",
-    "/scenario-budgeting",
+    "/notifications",
     "/transactions",
   ]) revalidatePath(path);
   if (debtId) revalidatePath(`/debts/${debtId}/edit`);

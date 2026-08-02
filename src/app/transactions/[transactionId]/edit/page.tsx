@@ -6,7 +6,6 @@ import { AddTransactionForm } from "@/features/transactions/add-transaction-form
 import { getAccounts } from "@/lib/accounts/supabase";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { getAssets } from "@/lib/assets/supabase";
-import { getBudgets } from "@/lib/budgets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getCurrencySettings } from "@/lib/currency-settings";
 import { getDebts } from "@/lib/debts/supabase";
@@ -19,7 +18,6 @@ import { getTransaction, type TransactionRecord, type TransactionRelatedOption }
 
 function relatedOptions(
   accounts: Awaited<ReturnType<typeof getAccounts>>,
-  budgets: Awaited<ReturnType<typeof getBudgets>>,
   savingsGoals: Awaited<ReturnType<typeof getSavingsGoals>>,
   debts: Awaited<ReturnType<typeof getDebts>>,
   subscriptions: Awaited<ReturnType<typeof getSubscriptions>>,
@@ -29,8 +27,7 @@ function relatedOptions(
   const preserves = (type: TransactionRelatedOption["type"], id: string) => transaction?.relatedEntityType === type && transaction.relatedEntityId === id;
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...budgets.filter((budget) => budget.planStatus === "Active" || preserves("budget", budget.id)).map((budget) => ({ categoryId: budget.categoryId, label: `Budget: ${budget.category} (${budget.period})`, type: "budget" as const, value: budget.id })),
-    ...savingsGoals.filter((goal) => goal.status !== "Completed" || preserves("savings_goal", goal.id)).map((goal) => ({ label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed" || preserves("savings_goal", goal.id)).map((goal) => ({ categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
     ...debts.filter((debt) => debt.status !== "Paid" || preserves("debt", debt.id)).map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
@@ -91,8 +88,7 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
   const categories = await getCategories();
   const transaction = await getTransaction(supabase, user.id, transactionId, allAccounts, categories);
   if (!transaction) notFound();
-  const [budgets, savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = await Promise.all([
-    getBudgets(supabase, user.id),
+  const [savingsGoals, debts, subscriptions, assets, planningOptions, currencySettings] = await Promise.all([
       getSavingsGoals(supabase, user.id, allAccounts, categories),
     getDebts(supabase, user.id, categories),
       getSubscriptions(supabase, user.id, allAccounts, categories),
@@ -118,7 +114,7 @@ export default async function EditTransactionPage({ params }: PageProps<"/transa
       topSearchPlaceholder="Search transactions..."
     >
       <PageHeader description="Update transaction details and linked financial impacts." title="Edit Transaction" />
-      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, budgets, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
+      <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, savingsGoals, debts, subscriptions, assets, transaction)} transaction={transaction} />
     </AppShell>
   );
 }

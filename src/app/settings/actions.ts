@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 type SettingsActionResult = { error?: string };
 
 function revalidateCurrencyPaths() {
-  for (const path of ["/settings", "/accounts", "/dashboard", "/reports", "/transactions"]) revalidatePath(path);
+  for (const path of ["/settings", "/accounts", "/dashboard", "/transactions"]) revalidatePath(path);
 }
 
 export async function setBaseCurrency(currencyCode: string): Promise<SettingsActionResult> {

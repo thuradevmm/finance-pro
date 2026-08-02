@@ -28,8 +28,8 @@ export function AccountRecordActions({
   const description = isArchived
     ? `Restore ${account.name} so it can be selected for new transactions and linked records again. Historical activity is already preserved.`
     : isRetiredMpuCard
-      ? `Retire this MPU credit-card account without deleting its transaction history. Settle any outstanding balance or card credit and resolve active links first; past transactions and reports will remain available.`
-      : `Archive ${account.name} after its balance is settled and active links are resolved. Past transactions and reports will remain available, but the account cannot be used for new activity.`;
+      ? `Retire this MPU credit-card account without deleting its transaction history. Settle any outstanding balance or card credit and resolve active links first; past transactions will remain available.`
+      : `Archive ${account.name} after its balance is settled and active links are resolved. Past transactions will remain available, but the account cannot be used for new activity.`;
 
   return (
     <>
