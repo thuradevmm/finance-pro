@@ -2,9 +2,9 @@
 
 FinancePro is a personal financial management web application built with Next.js, TypeScript, Tailwind CSS, Supabase Auth, Supabase PostgreSQL, and Supabase Row Level Security.
 
-The app replaces spreadsheet-based tracking with structured records for accounts, categories, transactions, budgets, savings goals, debts, subscriptions, and assets. It is designed for one owner/main user and supports a configurable base currency with dated account-currency conversion.
+The app replaces spreadsheet-based tracking with structured records for accounts, categories, transactions, category-backed future plans, savings goals, borrowing and lending, subscriptions, and assets. It is designed for one owner/main user and supports a configurable base currency with dated account-currency conversion.
 
-> MVP status: core financial CRUD flows, dashboard reconciliation, reports, exports, future planning, currency settings, and transaction import/sync are connected to cloud Supabase. Documents, scenario budgeting, people payments, profile, and admin-panel functionality remain future work.
+> Current status: core financial CRUD flows, dashboard reconciliation, transaction exports, future planning, reminders, and transaction import/sync are connected to cloud Supabase. The old standalone budgets, reports, documents, scenario budgeting, and people-payment features have been removed. Settings are temporarily closed while preferences are reorganized; profile and admin-panel functionality remain future work.
 
 ## Database Environments
 
@@ -53,17 +53,17 @@ Prisma is not used.
 - Categories with page-specific category types
 - Income, expense, and transfer transactions
 - Transaction-driven account balances
-- Budgets with actual spending calculation
+- Future plans that use category history as budget guidance
 - Savings goals with linked savings activity
-- Debts with repayment planning and credit card debt tracking
+- Borrowing and lending with repayment/return planning and credit card liability tracking
 - Subscriptions with recurring billing and reminders
-- Assets with purchase and usage tracking
-- Transaction links to budgets, savings goals, debts, subscriptions, and assets
+- A simplified asset register with value, condition, status, and usage tracking
+- Transaction links to future plans, savings goals, borrowing/lending, subscriptions, and assets
 - Idempotent CSV import and JSON synchronization using permanent external IDs
 - Native account currencies with historical rates and base-currency aggregation
 - Cash-advance classification for credit-card-funded transfers
-- Reports grouped by month, category, or account
-- Transaction and report exports in CSV, Excel, and PDF
+- Transaction exports in CSV, Excel, and PDF
+- In-app notifications assembled from subscription, borrowing/lending, savings-goal, future-plan, and asset reminders
 
 ### Data and Security
 
@@ -94,19 +94,21 @@ New users start without shared default categories. The intended setup order is:
 1. Create categories for each area that will be used.
 2. Create accounts and wallets.
 3. Record transactions against those accounts and categories.
-4. Add budgets, savings goals, debts, subscriptions, and assets as needed.
+4. Add future plans, savings goals, borrowing/lending records, subscriptions, and assets as needed.
 5. Link transactions to those records so progress and summaries are updated from actual financial activity.
 
 ### Category Flow
 
 Category type controls where a category is available:
 
-- `Income` and `Expense` categories are used by transactions and budget actuals.
+- `Income` and `Expense` categories are presented as `Credit` and `Debit` and are used by transactions and future-plan actuals.
 - `Account` categories are used by accounts only.
 - `Savings Goal` categories are used by savings goals only.
-- `Debt` categories are used by debts only.
+- `Debt` storage remains backward-compatible, but the UI labels these categories `Borrowing & Lending`.
 - `Subscription` categories are used by subscriptions only.
 - `Asset` categories are used by assets only.
+
+Future Planning keeps Debit, Credit, and Savings Goal category selectors separate. Planning types come from active system categories; users cannot create free-text planning types. Categories that are already used remain protected from destructive deletion, while unused categories can be deleted and historical categories can be hidden or merged.
 
 ### Account Flow
 
@@ -140,9 +142,9 @@ Transactions support:
 
 Transactions can be linked to:
 
-- Budget
+- Future plan
 - Savings goal
-- Debt
+- Borrowing or lending record
 - Subscription
 - Asset
 
@@ -159,17 +161,18 @@ include `externalReference.source` and `externalReference.externalId`.
 
 Transaction summaries default to all-time activity. Net excludes transfers and credit-card settlements because those move value between an asset and liability without creating new income or expense. With no filters, transaction net matches the account lookup net total.
 
-### Budget Flow
+### Future Planning Flow
 
-Budgets are created against expense categories. Each budget stores:
+Future Planning is the system's budget-control workspace. Plans are created for a year and use active categories as their planning types:
 
-- Monthly or yearly period
-- Budget amount
-- Start and end dates
-- Active or Paused status
-- Optional description
+- Debit categories control planned spending.
+- Credit categories control planned income.
+- Savings Goal categories connect planned contributions to saving targets.
+- A six-month category average is shown as guidance before a planned value is set.
+- Planned values are compared with actual transaction history by month and category.
+- Legacy budget data is aligned to the category-backed planning model by the database migrations.
 
-Actual spending is calculated from non-scheduled expense transactions that use the same category and fall inside the budget period.
+The standalone Budget feature and its routes are no longer part of the application.
 
 ### Savings Goal Flow
 
@@ -184,22 +187,22 @@ Savings goals support:
 
 Saved amount and progress include linked savings-goal transactions, so the goal moves forward when relevant transactions are recorded.
 
-### Debt Flow
+### Borrowing & Lending Flow
 
-Debts support:
+Borrowing and lending records support:
 
-- Debt name and lender
+- Record name, nature, lender, or borrower
 - Total amount
 - Interest rate
 - Start date and duration
 - Status of Active, Overdue, or Paid
-- Debt category
+- Borrowing & Lending category
 - Payment account
 - Notes
-- Repayment schedule preview
-- Debt payment calendar
+- Repayment or return schedule preview
+- Payment and return calendar
 
-Debt summaries include remaining balance, repayment progress, and credit card used amount when credit card debt exists. Linked debt transactions update debt activity.
+Summaries separate borrowing from outstanding lending and include credit card used amount when credit card liabilities exist. Linked transactions update repayment or return activity.
 
 ### Subscription Flow
 
@@ -232,7 +235,7 @@ Assets support:
 - Active, Sold, or Archived status
 - Notes
 
-Linked asset transactions can contribute to purchase amount tracking.
+The page intentionally uses one asset register instead of multiple competing sections. Its three full-width summary cards show current value, active assets, and records needing attention. Linked asset transactions can contribute to purchase amount tracking.
 
 ## Screens and Status
 
@@ -249,26 +252,22 @@ Implemented MVP pages:
 - Transactions
 - Add/Edit Transaction
 - Import/Sync Transactions
-- Budgets
-- Add/Edit Budget
 - Savings goals
 - Add/Edit Savings Goal
-- Debts
-- Add/Edit Debt
+- Borrowing & Lending
+- Add/Edit Borrowing or Lending
 - Subscriptions
 - Add/Edit Subscription
 - Assets
 - Add/Edit Asset
 - Dashboard
-- Reports and CSV/Excel/PDF exports
-- Future planning
-- Settings (base currency and dated exchange rates)
+- Notifications
+- Transaction CSV/Excel/PDF exports
+- Future Planning
 
-Placeholder or future pages:
+Unavailable or future pages:
 
-- Documents
-- Scenario budgeting
-- People payments
+- Settings (temporarily closed)
 - Profile
 - Admin panel
 
@@ -432,5 +431,5 @@ FinancePro is currently focused on finalizing the MVP foundation:
 - Clean personal finance UI
 - Consistent loading, empty, and error states
 
-Future work can expand uploads, scenario modeling, people payments, profile
-settings, and administrative tools.
+Future work can expand profile, preference management, and administrative
+tools without restoring the retired parallel budgeting and reporting flows.

@@ -9,12 +9,16 @@ import { FinancialPageSkeleton, type FinancialSkeletonRouteKind } from "@/compon
 function routeKindFromPath(pathname: string): FinancialSkeletonRouteKind {
   if (pathname === "/dashboard" || pathname === "/") return "dashboard";
   if (pathname === "/accounts") return "accounts";
+  if (pathname === "/assets") return "assets";
+  if (pathname === "/categories") return "categories";
+  if (pathname === "/debts") return "debts";
+  if (pathname === "/savings-goals") return "savings-goals";
   if (pathname === "/transactions") return "transactions";
   if (pathname === "/transactions/import") return "form";
   if (pathname === "/subscriptions") return "subscriptions";
   if (pathname === "/future-planning") return "planning";
-  if (pathname === "/notifications") return "table";
-  if (pathname === "/settings") return "form";
+  if (pathname === "/notifications") return "notifications";
+  if (pathname === "/settings") return "status";
   if (pathname === "/profile") return "coming-soon";
   if (pathname.includes("/add") || pathname.includes("/edit")) return "form";
   if (pathname === "/forgot-password" || pathname === "/login" || pathname === "/register" || pathname === "/update-password") return "auth";

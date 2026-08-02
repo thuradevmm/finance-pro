@@ -260,16 +260,24 @@ test("reconciliation distinguishes a balanced bridge from a real difference", ()
 });
 
 test("loading skeletons cover distinct page structures and the migration guards journals", async () => {
-  const [loadingSource, routeSource, migrationSource] = await Promise.all([
+  const [loadingSource, routeSource, assetsPageSource, migrationSource] = await Promise.all([
     readFile(new URL("../src/components/ui/loading-state.tsx", import.meta.url), "utf8"),
     readFile(new URL("../src/components/app/route-loading-fallback.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../supabase/migrations/202607290004_credit_debit_card_journals.sql", import.meta.url), "utf8"),
   ]);
-  for (const skeleton of ["AccountsSkeleton", "TransactionsSkeleton", "PlanningSkeleton", "AuthSkeleton", "ComingSoonSkeleton", "StatusSkeleton", "DashboardSkeleton"]) {
+  for (const skeleton of ["AccountsSkeleton", "AssetSkeleton", "CategoriesSkeleton", "DebtsSkeleton", "SavingsGoalsSkeleton", "SubscriptionSkeleton", "TransactionsSkeleton", "PlanningSkeleton", "NotificationsSkeleton", "AuthSkeleton", "ComingSoonSkeleton", "StatusSkeleton", "DashboardSkeleton"]) {
     assert.match(loadingSource, new RegExp(`function ${skeleton}`));
   }
   assert.match(routeSource, /pathname === "\/accounts"\) return "accounts"/);
+  assert.match(routeSource, /pathname === "\/assets"\) return "assets"/);
+  assert.match(routeSource, /pathname === "\/categories"\) return "categories"/);
+  assert.match(routeSource, /pathname === "\/debts"\) return "debts"/);
+  assert.match(routeSource, /pathname === "\/savings-goals"\) return "savings-goals"/);
+  assert.match(routeSource, /pathname === "\/notifications"\) return "notifications"/);
+  assert.match(routeSource, /pathname === "\/settings"\) return "status"/);
   assert.match(routeSource, /pathname === "\/transactions"\) return "transactions"/);
+  assert.match(assetsPageSource, /<SummaryCards columns=\{3\} summaries=\{summaries\} \/>/);
   assert.match(migrationSource, /uq_active_credit_card_journal_role/);
   assert.match(migrationSource, /ayavisa/);
   assert.match(migrationSource, /liability_credit/);

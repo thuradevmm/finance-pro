@@ -41,7 +41,7 @@ export default async function AssetsPage() {
         title="Assets"
       />
 
-      <SummaryCards summaries={summaries} />
+      <SummaryCards columns={3} summaries={summaries} />
       <AssetsPageContent assets={assets} />
     </AppShell>
   );
