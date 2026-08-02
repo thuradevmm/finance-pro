@@ -44,7 +44,12 @@ test("future planning types are restricted to linked active categories", async (
     readFile(dataPath, "utf8"),
   ]);
 
-  assert.match(source, /label="Category"/);
+  assert.match(source, /label="Debit"/);
+  assert.match(source, /label="Credit"/);
+  assert.match(source, /label="Savings Goal"/);
+  assert.match(source, /category\.type === "Expense"/);
+  assert.match(source, /category\.type === "Income"/);
+  assert.match(source, /category\.type === "Savings Goal"/);
   assert.match(source, /\["Expense", "Income", "Savings Goal"\]\.includes\(category\.type\)/);
   assert.doesNotMatch(source, /Custom planning type/i);
   assert.match(actions, /createFuturePlanningColumn\(input: \{\s*categoryId: string;?\s*\}\)/);

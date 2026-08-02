@@ -159,7 +159,7 @@ async function categoryIsUsed(
     supabase.from("savings_goals").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
     supabase.from("subscriptions").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
     supabase.from("scenario_items").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
-    supabase.from("future_planning_columns").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
+    supabase.from("future_planning_columns").select("id").eq("user_id", userId).eq("category_id", categoryId).eq("is_active", true).limit(1),
     supabase.from("accounts").select("id").eq("user_id", userId).eq("metadata->>category_id", categoryId).is("deleted_at", null).limit(1),
     supabase.from("categories").select("id").eq("user_id", userId).or(`parent_id.eq.${categoryId},merged_into_category_id.eq.${categoryId}`).limit(1),
     supabase.from("user_settings").select("user_id").eq("user_id", userId).or(`default_income_category_id.eq.${categoryId},default_expense_category_id.eq.${categoryId}`).limit(1),
@@ -171,7 +171,7 @@ async function categoryIsUsed(
   const error = results.find((result, index) => result.error
     && !(index === 7 && optionalFutureColumnsMissing)
     && !(index === 9 && enrichedCategoryLinksMissing))?.error;
-  if (error) return { error: error.message, used: false };
+  if (error) return { error: error.message, reasons: [] as string[], used: false };
 
   let legacyCategoryLinkUsed = false;
   if (enrichedCategoryLinksMissing) {
@@ -181,17 +181,36 @@ async function categoryIsUsed(
       .eq("user_id", userId)
       .eq("parent_id", categoryId)
       .limit(1);
-    if (legacyLinks.error) return { error: legacyLinks.error.message, used: false };
+    if (legacyLinks.error) return { error: legacyLinks.error.message, reasons: [] as string[], used: false };
     legacyCategoryLinkUsed = (legacyLinks.data?.length ?? 0) > 0;
   }
 
-  return {
-    error: "",
-    used: legacyCategoryLinkUsed || results.some((result, index) => (
-      !(index === 7 && optionalFutureColumnsMissing)
+  const usageLabels = [
+    "transactions",
+    "historical budget data",
+    "assets",
+    "borrowing and lending records",
+    "savings goals",
+    "subscriptions",
+    "historical scenario data",
+    "Future Planning",
+    "accounts",
+    "category relationships",
+    "default category settings",
+  ];
+  const reasons = results.flatMap((result, index) => (
+    !(index === 7 && optionalFutureColumnsMissing)
       && !(index === 9 && enrichedCategoryLinksMissing)
       && (result.data?.length ?? 0) > 0
-    )),
+      ? [usageLabels[index]]
+      : []
+  ));
+  if (legacyCategoryLinkUsed && !reasons.includes("category relationships")) reasons.push("category relationships");
+
+  return {
+    error: "",
+    reasons,
+    used: reasons.length > 0,
   };
 }
 
@@ -236,7 +255,7 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
   if (definitionChanged) {
     const usage = await categoryIsUsed(supabase, user.id, categoryId);
     if (usage.error) return { error: usage.error };
-    if (usage.used) return { error: "This category is in use, so its type and scope cannot be changed." };
+    if (usage.used) return { error: `This category's type and scope cannot be changed because it is used by ${usage.reasons.join(", ")}.` };
   }
 
   const payload = categoryPayload(input, metadataRecord(target.metadata));
@@ -344,7 +363,20 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
   if (mergedIntoCategoryId(target)) return { error: "Merged categories are retained as an audit record and cannot be deleted." };
   const usage = await categoryIsUsed(supabase, user.id, categoryId);
   if (usage.error) return { error: usage.error };
-  if (usage.used) return { error: "This category is in use and cannot be deleted." };
+  if (usage.used) return { error: `This category cannot be deleted because it is used by ${usage.reasons.join(", ")}.` };
+
+  // Removing a category from Future Planning archives its column so it can be
+  // restored without losing amounts. Once the category itself is explicitly
+  // deleted, those inactive planning records have no remaining meaning.
+  const { error: archivedPlanningError } = await supabase
+    .from("future_planning_columns")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("category_id", categoryId)
+    .eq("is_active", false);
+  if (archivedPlanningError && !isMissingDatabaseObject(archivedPlanningError, ["future_planning_columns", "category_id"])) {
+    return { error: archivedPlanningError.message };
+  }
 
   const { data, error } = await supabase
     .from("categories")

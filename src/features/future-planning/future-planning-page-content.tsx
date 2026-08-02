@@ -24,7 +24,7 @@ import {
   type FuturePlanningColumnDirection,
   type FuturePlanningColumnMoveDirection,
 } from "@/lib/future-planning/manual-table";
-import { categoryTypeLabel, planningDirectionLabel } from "@/lib/transactions/terminology";
+import { planningDirectionLabel } from "@/lib/transactions/terminology";
 
 type FuturePlanningPageContentProps = {
   amounts: FuturePlanningAmount[];
@@ -68,6 +68,75 @@ function controlComparison(actual: number, planned: number, direction: FuturePla
   );
 }
 
+function PlanningCategoryGroup({
+  accentClassName,
+  categories,
+  columns,
+  description,
+  direction,
+  isAddingCategoryId,
+  label,
+  onAdd,
+  onArchiveColumn,
+}: {
+  accentClassName: string;
+  categories: CategoryRecord[];
+  columns: FuturePlanningColumn[];
+  description: string;
+  direction: FuturePlanningColumnDirection;
+  isAddingCategoryId: string;
+  label: "Credit" | "Debit" | "Savings Goal";
+  onAdd: (category: CategoryRecord) => Promise<void>;
+  onArchiveColumn: (columnId: string) => Promise<void>;
+}) {
+  const options = categories.map((category) => category.name);
+  const [selectedOption, setSelectedOption] = useState(options[0] ?? `No ${label.toLowerCase()} categories available`);
+  const effectiveOption = options.includes(selectedOption) ? selectedOption : options[0];
+  const selectedCategory = categories.find((category) => category.name === effectiveOption);
+  const linkedColumns = columns.filter((column) => column.direction === direction);
+  const isAdding = selectedCategory?.id === isAddingCategoryId;
+
+  return (
+    <section className={`rounded-lg border bg-white p-4 ${accentClassName}`} aria-labelledby={`planning-${direction}-categories`}>
+      <div className="mb-3">
+        <h3 className="font-semibold text-[#0b1c30]" id={`planning-${direction}-categories`}>{label} categories</h3>
+        <p className="mt-1 text-xs leading-5 text-[#45464d]">{description}</p>
+      </div>
+      <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={(event) => {
+        event.preventDefault();
+        if (selectedCategory) void onAdd(selectedCategory);
+      }}>
+        <div className="min-w-0 flex-1">
+          <SelectInput
+            disabled={categories.length === 0}
+            label={`${label} category`}
+            onChange={setSelectedOption}
+            options={options.length > 0 ? options : [`No ${label.toLowerCase()} categories available`]}
+            value={effectiveOption ?? `No ${label.toLowerCase()} categories available`}
+          />
+        </div>
+        <button
+          className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!selectedCategory || Boolean(isAddingCategoryId)}
+          type="submit"
+        >
+          {isAdding ? "Adding…" : `Add ${label}`}
+        </button>
+      </form>
+      {linkedColumns.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-[#c6c6cd]/40 pt-3">
+          {linkedColumns.map((column) => (
+            <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] pl-3 text-xs font-semibold text-[#0b1c30]" key={column.id}>
+              {column.name}
+              <button className="min-h-9 rounded-r-md px-3 text-[#b42318] hover:bg-[#fff1f0]" onClick={() => onArchiveColumn(column.id)} type="button">Remove</button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ManualPlanningSettings({
   categories,
   columns,
@@ -85,10 +154,8 @@ function ManualPlanningSettings({
   const eligibleCategories = categories.filter((category) => category.status === "Active"
     && ["Expense", "Income", "Savings Goal"].includes(category.type)
     && !columns.some((column) => column.categoryId === category.id));
-  const categoryOptions = eligibleCategories.map((category) => `${categoryTypeLabel(category.type)} · ${category.name}`);
-  const [categoryOption, setCategoryOption] = useState(categoryOptions[0] ?? "No available categories");
   const [isSavingYears, setIsSavingYears] = useState(false);
-  const [isAddingColumn, setIsAddingColumn] = useState(false);
+  const [isAddingCategoryId, setIsAddingCategoryId] = useState("");
 
   async function handleSaveYears(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -102,14 +169,10 @@ function ManualPlanningSettings({
     router.refresh();
   }
 
-  async function handleAddColumn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const effectiveCategoryOption = categoryOptions.includes(categoryOption) ? categoryOption : categoryOptions[0];
-    const category = eligibleCategories.find((item) => `${categoryTypeLabel(item.type)} · ${item.name}` === effectiveCategoryOption);
-    if (!category) return showError("Create or restore a Credit, Debit, or Savings Goal category first.");
-    setIsAddingColumn(true);
+  async function handleAddColumn(category: CategoryRecord) {
+    setIsAddingCategoryId(category.id);
     const result = await createFuturePlanningColumn({ categoryId: category.id });
-    setIsAddingColumn(false);
+    setIsAddingCategoryId("");
     if (result.error) return showError(result.error);
     showSuccess("Category added to Future Planning.");
     router.refresh();
@@ -126,30 +189,45 @@ function ManualPlanningSettings({
         </button>
       </form>
 
-      <form className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm sm:p-5" onSubmit={handleAddColumn}>
+      <div className="rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-sm sm:p-5">
         <h2 className="text-lg font-semibold text-[#0b1c30]">Planning categories</h2>
-        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Choose an existing category. Names and Credit, Debit, or Saving behavior stay synchronized with Categories.</p>
-        <SelectInput
-          disabled={eligibleCategories.length === 0}
-          label="Category"
-          onChange={setCategoryOption}
-          options={categoryOptions.length > 0 ? categoryOptions : ["No available categories"]}
-          value={categoryOptions.includes(categoryOption) ? categoryOption : categoryOptions[0] ?? "No available categories"}
-        />
-        <button className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={isAddingColumn} type="submit">
-          {isAddingColumn ? "Adding…" : "Add category"}
-        </button>
-        {columns.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-[#c6c6cd]/50 pt-4">
-            {columns.map((column) => (
-              <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] pl-3 text-xs font-semibold text-[#0b1c30]" key={column.id}>
-                {column.name} · {directionLabel(column.direction)}
-                <button className="min-h-9 rounded-r-md px-3 text-[#b42318] hover:bg-[#fff1f0]" onClick={() => onArchiveColumn(column.id)} type="button">Remove from plan</button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </form>
+        <p className="mb-4 mt-1 text-sm leading-6 text-[#45464d]">Add each financial direction separately. Names and behavior stay synchronized with Categories.</p>
+        <div className="space-y-3">
+          <PlanningCategoryGroup
+            accentClassName="border-[#fecaca] bg-[#fffafa]"
+            categories={eligibleCategories.filter((category) => category.type === "Expense")}
+            columns={columns}
+            description="Spending limits and outgoing amounts."
+            direction="expense"
+            isAddingCategoryId={isAddingCategoryId}
+            label="Debit"
+            onAdd={handleAddColumn}
+            onArchiveColumn={onArchiveColumn}
+          />
+          <PlanningCategoryGroup
+            accentClassName="border-[#bbf7d0] bg-[#fbfffc]"
+            categories={eligibleCategories.filter((category) => category.type === "Income")}
+            columns={columns}
+            description="Income targets and incoming amounts."
+            direction="income"
+            isAddingCategoryId={isAddingCategoryId}
+            label="Credit"
+            onAdd={handleAddColumn}
+            onArchiveColumn={onArchiveColumn}
+          />
+          <PlanningCategoryGroup
+            accentClassName="border-[#bfdbfe] bg-[#fbfdff]"
+            categories={eligibleCategories.filter((category) => category.type === "Savings Goal")}
+            columns={columns}
+            description="Monthly contributions linked to Savings Goals."
+            direction="saving"
+            isAddingCategoryId={isAddingCategoryId}
+            label="Savings Goal"
+            onAdd={handleAddColumn}
+            onArchiveColumn={onArchiveColumn}
+          />
+        </div>
+      </div>
     </section>
   );
 }

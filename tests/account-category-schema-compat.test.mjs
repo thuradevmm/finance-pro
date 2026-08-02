@@ -29,6 +29,9 @@ test("category mutations mirror lifecycle data into metadata and retry legacy wr
   assert.match(actions, /isMissingDatabaseObject\(error, \["category_type", "reporting_role", "archived_at"\]\)/);
   assert.match(actions, /schemaUpgradeRequiredMessage\("Category merge"\)/);
   assert.match(actions, /optionalFutureColumnsMissing/);
+  assert.match(actions, /eq\("category_id", categoryId\)\.eq\("is_active", true\)/);
+  assert.match(actions, /\.delete\(\)[\s\S]*\.eq\("category_id", categoryId\)[\s\S]*\.eq\("is_active", false\)/);
+  assert.match(actions, /usage\.reasons\.join/);
 });
 
 test("account amount types remain metadata-backed until the reusable catalog exists", () => {
