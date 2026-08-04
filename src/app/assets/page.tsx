@@ -37,7 +37,7 @@ export default async function AssetsPage() {
             Add Asset
           </Link>
         }
-        description="Track personal purchases, asset value, condition, and usage duration."
+        description="Track personal assets while linked purchase transactions calculate their financial value automatically."
         title="Assets"
       />
 

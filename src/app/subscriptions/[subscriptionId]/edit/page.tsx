@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { AddSubscriptionForm } from "@/features/subscriptions/add-subscription-form";
 import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { getSubscription } from "@/lib/subscriptions/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +17,10 @@ export default async function EditSubscriptionPage({ params }: { params: Promise
   if (!user) notFound();
   const accounts = await getAccounts(supabase, user.id);
   const categories = await getCategories();
-  const subscription = await getSubscription(supabase, user.id, subscriptionId, accounts, categories);
+  const [subscription, currencySettings] = await Promise.all([
+    getSubscription(supabase, user.id, subscriptionId, accounts, categories),
+    getCurrencySettings(supabase, user.id),
+  ]);
 
   if (!subscription) {
     notFound();
@@ -31,7 +35,7 @@ export default async function EditSubscriptionPage({ params }: { params: Promise
       topSearchPlaceholder="Search subscriptions..."
     >
       <PageHeader description={`Update recurring payment for ${subscription.name}.`} title="Edit Subscription" />
-      <AddSubscriptionForm accounts={accounts} categories={categories} subscription={subscription} />
+      <AddSubscriptionForm accounts={accounts} categories={categories} currencySettings={currencySettings} subscription={subscription} />
     </AppShell>
   );
 }

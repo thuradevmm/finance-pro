@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { resolveAssetCurrentValue, resolveAssetPurchaseValue } from "@/lib/assets/calculations";
 import { formatMmk } from "@/lib/currency";
+import { exchangeRateFor } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { linkedExpenseContributionDelta, roundCurrencyValue } from "@/lib/ledger";
@@ -10,10 +12,8 @@ import type { AssetRecord, AssetStatus, SummaryMetric } from "@/types/finance";
 export type AssetFormData = {
   categoryId: string;
   condition: AssetRecord["condition"];
-  currentValue: number;
   name: string;
   note: string;
-  purchaseAmount: number;
   purchaseDate: string;
   serialReference: string;
   startUsingDate: string;
@@ -48,12 +48,19 @@ type AssetRow = {
 };
 
 type LinkedTransactionRow = {
+  account_id: string | null;
   amount: number | string | null;
   id: string;
   metadata: unknown;
   related_entity_id: string | null;
   status: string | null;
+  transaction_date: string | null;
   type: string | null;
+};
+
+type AssetAccountCurrencyRow = {
+  currency_code: string | null;
+  id: string;
 };
 
 function metadataRecord(metadata: unknown) {
@@ -79,9 +86,8 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
-  // The asset record is authoritative for purchase price; a linked payment is
-  // evidence of that purchase and is only a fallback for legacy rows where no
-  // price was stored. It must never be added to the stored price.
+  // Posted linked transactions are the source of truth. Stored amounts remain
+  // only as a compatibility fallback for assets that have no linked purchase.
   const purchaseAmountValue = resolveAssetPurchaseValue(
     row.purchase_amount,
     metadata.purchase_amount,
@@ -122,21 +128,27 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
   let assetsQuery = supabase.from("assets").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
   if (options.limit) assetsQuery = assetsQuery.limit(options.limit);
 
-  const [assetsResult, transactionsResult] = await Promise.all([
+  const [assetsResult, transactionsResult, accountsResult, currencySettings] = await Promise.all([
     assetsQuery,
-    supabase.from("transactions").select("id,related_entity_id,type,amount,status,metadata").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
+    supabase.from("transactions").select("id,account_id,related_entity_id,type,amount,status,transaction_date,metadata").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
+    supabase.from("accounts").select("id,currency_code").eq("user_id", userId).is("deleted_at", null),
+    getCurrencySettings(supabase, userId),
   ]);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+  if (accountsResult.error) throw new Error(accountsResult.error.message);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const accountCurrencies = new Map((accountsResult.data as AssetAccountCurrencyRow[]).map((account) => [account.id, account.currency_code]));
   const linkedPurchasesByAssetId = new Map<string, number>();
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
+    const contribution = linkedExpenseContributionDelta(transaction);
+    const rate = exchangeRateFor(currencySettings, accountCurrencies.get(transaction.account_id ?? ""), transaction.transaction_date ?? undefined);
     linkedPurchasesByAssetId.set(
       transaction.related_entity_id,
       roundCurrencyValue(
         (linkedPurchasesByAssetId.get(transaction.related_entity_id) ?? 0)
-        + linkedExpenseContributionDelta(transaction),
+        + (contribution * (rate ?? 1)),
       ),
     );
   }
@@ -155,7 +167,7 @@ export function getAssetSummaries(assets: AssetRecordWithValues[]): SummaryMetri
     .filter((asset) => asset.status === "Active")
     .reduce((sum, asset) => sum + asset.currentValueValue, 0);
   return [
-    { label: "Current Asset Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Transaction-Backed Asset Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Active Assets", value: String(assets.filter((asset) => asset.status === "Active").length), icon: "dashboard", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Needs Attention", value: String(assets.filter((asset) => asset.status === "Active" && asset.condition === "Needs Repair").length), icon: "bell", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
   ];

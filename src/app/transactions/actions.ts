@@ -8,6 +8,8 @@ import { accountAvailableAmountForType } from "@/lib/accounts/amount-types";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { SYSTEM_CURRENCY, formatMmk } from "@/lib/currency";
+import { convertToBaseCurrency } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { calculateDebtPayoffSummary, type DebtDatedRepayment, type DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { creditCardDebtName } from "@/lib/debts/naming";
 import { normalizeDebtNature, normalizeDebtRepaymentFrequency } from "@/lib/debts/nature";
@@ -1944,24 +1946,28 @@ async function subscriptionPaymentMetadataForInput(
   const configuredExchangeRate = billingCurrency === SYSTEM_CURRENCY
     ? 1
     : positiveNumber(metadata.exchange_rate) || (configuredBilledAmount > 0 ? roundCurrencyValue(positiveNumber(subscription.amount) / configuredBilledAmount) : 0);
-  const billedAmount = positiveNumber(input.subscriptionPayment?.billedAmount) || configuredBilledAmount;
+  const billedAmount = configuredBilledAmount || positiveNumber(input.subscriptionPayment?.billedAmount);
+  const [paymentAccountResult, currencySettings] = await Promise.all([
+    supabase.from("accounts").select("id,currency_code").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
+    getCurrencySettings(supabase, userId, input.date),
+  ]);
+  if (paymentAccountResult.error) return { error: paymentAccountResult.error.message, metadata: {} };
+  const paymentAmount = convertToBaseCurrency(
+    input.amount,
+    paymentAccountResult.data?.currency_code ?? currencySettings.baseCurrency,
+    currencySettings,
+    input.date,
+  );
+  if (paymentAmount == null) return { error: "Add an exchange rate for the payment account currency before saving this subscription payment.", metadata: {} };
   const exchangeRate = billingCurrency === SYSTEM_CURRENCY
     ? 1
-    : positiveNumber(input.subscriptionPayment?.exchangeRate) || configuredExchangeRate;
-  const expectedPaymentAmount = roundCurrencyValue(billedAmount * exchangeRate);
+    : billedAmount > 0 ? roundCurrencyValue(paymentAmount / billedAmount) : 0;
   const configuredPaymentAmount = roundCurrencyValue(billedAmount * configuredExchangeRate);
   const billingDueDate = input.subscriptionPayment?.billingDueDate
     || subscription.next_billing_date
     || metadataString(metadata, "next_billing_date")
     || metadataString(metadata, "billing_anchor_date")
     || input.date;
-
-  if (!subscriptionPaymentCoversCycle(input.amount, expectedPaymentAmount)) {
-    return {
-      error: `Subscription payment must be at least ${formatMmk(expectedPaymentAmount)} for this billing cycle.`,
-      metadata: {},
-    };
-  }
 
   return {
     metadata: {
@@ -1970,9 +1976,10 @@ async function subscriptionPaymentMetadataForInput(
       subscription_billing_cycle: normalizeBillingCycle(subscription.billing_cycle ?? metadata.billing_cycle),
       subscription_billing_due_date: billingDueDate,
       subscription_configured_exchange_rate: configuredExchangeRate,
-      subscription_exchange_difference_amount: roundCurrencyValue(input.amount - configuredPaymentAmount),
-      subscription_expected_payment_amount: expectedPaymentAmount,
-      subscription_payment_amount: input.amount,
+      subscription_exchange_difference_amount: roundCurrencyValue(paymentAmount - configuredPaymentAmount),
+      subscription_expected_payment_amount: configuredPaymentAmount,
+      subscription_payment_account_amount: input.amount,
+      subscription_payment_amount: paymentAmount,
       subscription_payment_exchange_rate: exchangeRate,
     },
   };
@@ -2012,7 +2019,7 @@ function previousBillingCycleDate(date: Date, cycle: string) {
 
 function paymentEvidenceFromTransaction(transaction: TransactionRow): SubscriptionPaymentEvidence {
   const metadata = metadataRecord(transaction.metadata);
-  const amount = Math.abs(numericValue(transaction.amount));
+  const amount = positiveNumber(metadata.subscription_payment_amount) || Math.abs(numericValue(transaction.amount));
   const billedAmount = positiveNumber(metadata.subscription_billed_amount);
   const exchangeRate = positiveNumber(metadata.subscription_payment_exchange_rate);
   return {

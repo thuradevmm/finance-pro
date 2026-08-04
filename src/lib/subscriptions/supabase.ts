@@ -252,7 +252,8 @@ function paymentFallbackFromPaymentRow(payment: SubscriptionPaymentRow): Subscri
 function paymentFallbackFromTransaction(transaction: SubscriptionTransactionPaymentRow): SubscriptionPaymentFallback {
   const paymentDate = transaction.transaction_date ?? transaction.created_at?.slice(0, 10) ?? "";
   const metadata = metadataRecord(transaction.metadata);
-  const amount = Math.abs(numericValue(transaction.amount));
+  const storedPaymentAmount = numericValue(metadata.subscription_payment_amount);
+  const amount = storedPaymentAmount > 0 ? storedPaymentAmount : Math.abs(numericValue(transaction.amount));
   const billedAmount = numericValue(metadata.subscription_billed_amount);
   const exchangeRate = numericValue(metadata.subscription_payment_exchange_rate);
   return {

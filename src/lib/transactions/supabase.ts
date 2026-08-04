@@ -68,6 +68,7 @@ export type TransactionRecord = Transaction & {
 export type TransactionRelatedEntityType = "asset" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type TransactionRelatedOption = {
+  accountId?: string;
   categoryId?: string;
   creditCardDebt?: {
     accountId: string;

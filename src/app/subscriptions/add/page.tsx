@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { AddSubscriptionForm } from "@/features/subscriptions/add-subscription-form";
 import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,6 +12,7 @@ export default async function AddSubscriptionPage() {
   const { user } = await getUserSafely(supabase);
   const accounts = user ? await getAccounts(supabase, user.id) : [];
   const categories = user ? await getCategories() : [];
+  const currencySettings = user ? await getCurrencySettings(supabase, user.id) : { baseCurrency: "MMK", rates: [] };
 
   return (
     <AppShell
@@ -22,7 +24,7 @@ export default async function AddSubscriptionPage() {
       topSearchPlaceholder="Search subscriptions..."
     >
       <PageHeader description="Record a recurring payment, billing cycle, category, and reminder preference." title="Add Subscription" />
-      <AddSubscriptionForm accounts={accounts} categories={categories} />
+      <AddSubscriptionForm accounts={accounts} categories={categories} currencySettings={currencySettings} />
     </AppShell>
   );
 }

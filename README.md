@@ -220,6 +220,8 @@ Subscriptions support:
 - Billing reminders
 - Notes
 
+Subscription planning uses dated currency settings for its estimated conversion. When a foreign-currency bill is paid, the user enters only the actual transaction amount; the realized exchange rate and payment snapshot are calculated and saved automatically.
+
 Subscription summaries show recurring cost and upcoming billing commitments.
 
 ### Asset Flow
@@ -228,14 +230,14 @@ Assets support:
 
 - Asset name
 - Asset category
-- Purchase date and amount
-- Current value
+- Purchase date
+- Transaction-backed purchase and recorded value
 - Start-using date
 - Condition
 - Active, Sold, or Archived status
 - Notes
 
-The page intentionally uses one asset register instead of multiple competing sections. Its three full-width summary cards show current value, active assets, and records needing attention. Linked asset transactions can contribute to purchase amount tracking.
+The page intentionally uses one asset register instead of multiple competing sections. Its three full-width summary cards show transaction-backed value, active assets, and records needing attention. Posted purchase transactions linked to an asset are the source of truth for its recorded purchase and current value.
 
 ## Screens and Status
 

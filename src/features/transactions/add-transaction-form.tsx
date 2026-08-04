@@ -12,16 +12,17 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
-import { SYSTEM_CURRENCY, cleanAmountInputValue, formatAmountInputValue, formatCurrencyAmount, formatMmkPreview, parseAmountInputValue } from "@/lib/currency";
+import { SYSTEM_CURRENCY, cleanAmountInputValue, formatAmountInputValue, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
 import { exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { calculateDebtPayoffSummary } from "@/lib/debts/emi";
 import type { FuturePlanningTransactionOption } from "@/lib/future-planning/supabase";
 import { futurePlanningDirectionSupportsTransactionType } from "@/lib/future-planning/transaction-link";
+import { findContextualPlanningOption, planningOptionMatchesTransaction } from "@/lib/future-planning/transaction-option";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { hasAdditionalAutomaticCreditCardDebtImpact } from "@/lib/transactions/impact";
+import { hasAdditionalAutomaticCreditCardDebtImpact, relatedImpactRecordName, relatedImpactSupportsTransactionType } from "@/lib/transactions/impact";
 import type { TransactionFormData, TransactionRecord, TransactionRelatedEntityType, TransactionRelatedOption } from "@/lib/transactions/supabase";
 import { calculateTransactionRemainingAmount } from "@/lib/transactions/remaining-amount";
 import { normalizeTransactionStatus, transactionStatusLabel, transactionStatusReservesWorkingBalance } from "@/lib/transactions/status";
@@ -49,6 +50,20 @@ const automaticCreditCardDebtOption: TransactionRelatedOption = {
   type: "debt",
   value: "",
 };
+
+type ManualImpactType = Exclude<TransactionRelatedEntityType, "none">;
+
+const manualImpactTypes: Array<{
+  description: string;
+  icon: IconName;
+  label: string;
+  type: ManualImpactType;
+}> = [
+  { description: "Count money toward a goal", icon: "target", label: "Savings Goal", type: "savings_goal" },
+  { description: "Record a payment or return", icon: "credit", label: "Debt / Lending", type: "debt" },
+  { description: "Record a recurring payment", icon: "subscriptions", label: "Subscription", type: "subscription" },
+  { description: "Record an asset purchase", icon: "box", label: "Asset", type: "asset" },
+];
 
 export type TransactionFormInitialValues = {
   accountId?: string;
@@ -101,10 +116,6 @@ function formatPreviewAmount(amount: string, type: TransactionType) {
   if (type === "Income") return formatMmkPreview(value, "positive");
   if (type === "Expense") return formatMmkPreview(value, "negative");
   return formatMmkPreview(value);
-}
-
-function parseAmountInput(value: string) {
-  return parseAmountInputValue(value);
 }
 
 function roundMoney(value: number) {
@@ -192,9 +203,7 @@ export function AddTransactionForm({
   const amountInputId = useId();
   const dateInputId = useId();
   const noteInputId = useId();
-  const planningAmountInputId = useId();
-  const subscriptionBilledAmountInputId = useId();
-  const subscriptionExchangeRateInputId = useId();
+  const impactRecordInputId = useId();
   const [selectedType, setSelectedType] = useState<TransactionType>(transaction?.type ?? initialValues?.type ?? "Expense");
   const [amount, setAmount] = useState(transaction
     ? String(transaction.type === "Transfer" && transaction.transferDirection === "Credit"
@@ -221,7 +230,6 @@ export function AddTransactionForm({
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
   const [note, setNote] = useState(transaction?.note ?? initialValues?.note ?? "");
-  const [subscriptionPaymentDraft, setSubscriptionPaymentDraft] = useState({ billedAmount: "", exchangeRate: "", key: "" });
   const [relatedOptionValue, setRelatedOptionValue] = useState(
     transaction?.relatedEntityType && transaction.relatedEntityType !== "none"
       ? `${transaction.relatedEntityType}:${transaction.relatedEntityId}`
@@ -229,17 +237,16 @@ export function AddTransactionForm({
         ? `${initialValues.relatedEntityType}:${initialValues.relatedEntityId ?? ""}`
       : "none:",
   );
+  const initialRelatedEntityType = transaction?.relatedEntityType ?? initialValues?.relatedEntityType ?? "none";
+  const initialRelatedEntityId = transaction?.relatedEntityId ?? initialValues?.relatedEntityId ?? "";
+  const [isLinkingRecord, setIsLinkingRecord] = useState(initialRelatedEntityType !== "none" && Boolean(initialRelatedEntityId));
+  const [selectedImpactType, setSelectedImpactType] = useState<ManualImpactType | "">(
+    initialRelatedEntityType === "none" ? "" : initialRelatedEntityType,
+  );
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const selectedOption = transactionTypes.find((option) => option.type === selectedType) ?? transactionTypes[0];
-  const availablePlanningOptions = useMemo(
-    () => planningOptions.filter((option) => (
-      option.id === futurePlanningAmountId
-      || futurePlanningDirectionSupportsTransactionType(option.direction, selectedType)
-    )),
-    [futurePlanningAmountId, planningOptions, selectedType],
-  );
   const selectedPlanningOption = planningOptions.find((option) => option.id === futurePlanningAmountId);
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const accountAmountTypeOptions = useMemo(() => {
@@ -267,16 +274,53 @@ export function AddTransactionForm({
   const isCreditCardPayment = isTransfer && isCreditCardAccount(selectedTransferAccount);
   const autoLinksCreditCardDebt = isCreditCardCharge || isCreditCardPayment;
   const usesExplicitPageLink = Boolean(selectedRelatedOption && selectedRelatedOption.type !== "none" && selectedRelatedOption.type !== "debt");
-  const impactOptions = useMemo(() => {
-    if (!autoLinksCreditCardDebt || usesExplicitPageLink) return relatedOptions;
-    return [automaticCreditCardDebtOption, ...relatedOptions];
-  }, [autoLinksCreditCardDebt, relatedOptions, usesExplicitPageLink]);
   const effectiveRelatedOption = autoLinksCreditCardDebt && !usesExplicitPageLink && (!selectedRelatedOption || selectedRelatedOption.type !== "debt" || !selectedRelatedOption.value)
-    ? impactOptions[0] ?? selectedRelatedOption
+    ? automaticCreditCardDebtOption
     : selectedRelatedOption;
+  const compatibleRelatedOptions = useMemo(() => relatedOptions.filter((option) => (
+    relatedImpactSupportsTransactionType(option, selectedType)
+    || (option.value === selectedRelatedOption?.value && option.type === selectedRelatedOption?.type)
+  )), [relatedOptions, selectedRelatedOption, selectedType]);
+  const availableImpactTypes = manualImpactTypes.filter((impactType) => (
+    compatibleRelatedOptions.some((option) => option.type === impactType.type)
+  ));
+  const selectedImpactOptions = selectedImpactType
+    ? compatibleRelatedOptions.filter((option) => option.type === selectedImpactType)
+    : [];
+  const selectedImpactOptionValue = selectedRelatedOption?.value && selectedRelatedOption.type === selectedImpactType
+    ? `${selectedRelatedOption.type}:${selectedRelatedOption.value}`
+    : "";
+  const hasManualRelatedLink = Boolean(selectedRelatedOption?.value && selectedRelatedOption.type !== "none");
+  const selectedImpactTypeDetails = manualImpactTypes.find((impactType) => impactType.type === selectedRelatedOption?.type);
   const effectiveCategoryId = categoryId;
   const selectedCategory = transactionCategories.find((category) => category.id === effectiveCategoryId)
     ?? categories.find((category) => category.id === effectiveCategoryId);
+  const relatedSavingsGoalCategoryId = effectiveRelatedOption?.type === "savings_goal"
+    ? effectiveRelatedOption.categoryId
+    : undefined;
+  const planningMatchInput = {
+    categoryId: effectiveCategoryId,
+    date: transactionDate,
+    relatedSavingsGoalCategoryId,
+    transactionType: selectedType,
+  };
+  const contextualPlanningOption = findContextualPlanningOption(
+    planningOptions,
+    planningMatchInput,
+    futurePlanningAmountId,
+  );
+  const contextualPlanningCategory = contextualPlanningOption
+    ? categories.find((category) => category.id === contextualPlanningOption.categoryId)
+    : undefined;
+  const appliedPlanningOption = selectedPlanningOption
+    && planningOptionMatchesTransaction(selectedPlanningOption, planningMatchInput)
+    ? selectedPlanningOption
+    : undefined;
+  const effectiveFuturePlanningAmountId = appliedPlanningOption?.id ?? "";
+  const planningMonthLabel = transactionDate
+    ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" })
+      .format(new Date(`${transactionDate.slice(0, 7)}-01T00:00:00Z`))
+    : "the selected month";
   const debtPayoffSummary = useMemo(() => {
     const payoff = effectiveRelatedOption?.debtPayoff;
     if (!payoff) return null;
@@ -301,31 +345,33 @@ export function AddTransactionForm({
       principalOutstandingAmount: effectiveRelatedOption.oneTimeDebtPayoff.amount,
     }
     : debtPayoffSummary?.currentQuote;
+  const amountNumber = Number(amount);
   const subscriptionPayment = effectiveRelatedOption?.subscriptionPayment;
-  const subscriptionPaymentKey = subscriptionPayment ? `${effectiveRelatedOption?.type}:${effectiveRelatedOption?.value}` : "";
-  const subscriptionBilledAmount = subscriptionPayment && subscriptionPaymentDraft.key === subscriptionPaymentKey
-    ? subscriptionPaymentDraft.billedAmount
-    : subscriptionPayment ? String(subscriptionPayment.billedAmount || "") : "";
-  const subscriptionExchangeRate = subscriptionPayment && subscriptionPaymentDraft.key === subscriptionPaymentKey
-    ? subscriptionPaymentDraft.exchangeRate
-    : subscriptionPayment && subscriptionPayment.billingCurrency !== SYSTEM_CURRENCY ? String(subscriptionPayment.exchangeRate || "") : "";
-  const subscriptionPaymentBilledAmountValue = subscriptionPayment
-    ? parseAmountInput(subscriptionBilledAmount) || subscriptionPayment.billedAmount
+  const subscriptionPaymentBilledAmountValue = subscriptionPayment?.billedAmount ?? 0;
+  const subscriptionPaymentAccountRate = subscriptionPayment
+    ? exchangeRateFor(currencySettings, selectedAccount?.currency, transactionDate)
+    : null;
+  const subscriptionPaymentBaseAmountValue = subscriptionPayment && amountNumber > 0 && subscriptionPaymentAccountRate != null
+    ? roundMoney(amountNumber * subscriptionPaymentAccountRate)
     : 0;
   const subscriptionPaymentExchangeRateValue = subscriptionPayment
     ? subscriptionPayment.billingCurrency === SYSTEM_CURRENCY
       ? 1
-      : parseAmountInput(subscriptionExchangeRate) || subscriptionPayment.exchangeRate
+      : subscriptionPaymentBaseAmountValue > 0 && subscriptionPaymentBilledAmountValue > 0
+        ? roundMoney(subscriptionPaymentBaseAmountValue / subscriptionPaymentBilledAmountValue)
+        : 0
     : 0;
-  const subscriptionPaymentAmountValue = subscriptionPayment
-    ? roundMoney(subscriptionPaymentBilledAmountValue * subscriptionPaymentExchangeRateValue)
-    : 0;
+  const subscriptionPaymentAmountValue = subscriptionPayment && amountNumber > 0 ? amountNumber : 0;
   const isForeignSubscriptionPayment = Boolean(subscriptionPayment && subscriptionPayment.billingCurrency !== SYSTEM_CURRENCY);
   const isCreditCardDebtPayment = selectedType === "Expense"
     && Boolean(effectiveRelatedOption?.creditCardDebt)
     && selectedAccount?.id !== effectiveRelatedOption?.creditCardDebt?.accountId;
   const hasSecondaryCreditCardDebtImpact = hasAdditionalAutomaticCreditCardDebtImpact(isCreditCardCharge, effectiveRelatedOption);
-  const amountNumber = Number(amount);
+  const impactPreviewLabel = hasManualRelatedLink
+    ? `${relatedImpactRecordName(selectedRelatedOption!)}${autoLinksCreditCardDebt ? " + card" : ""}`
+    : autoLinksCreditCardDebt || isCreditCardDebtPayment
+      ? "Automatic credit-card update"
+      : "None";
   const hasDifferentTransferCurrency = isTransfer
     && Boolean(selectedAccount && selectedTransferAccount)
     && selectedAccount?.currency !== selectedTransferAccount?.currency;
@@ -348,6 +394,8 @@ export function AddTransactionForm({
   const amountHasError = showErrors && (!Number.isFinite(amountNumber) || amountNumber <= 0);
   const dateHasError = showErrors && !transactionDate;
   const accountHasError = showErrors && !accountId;
+  const impactSelectionMissing = isLinkingRecord && !hasManualRelatedLink;
+  const impactHasError = showErrors && impactSelectionMissing;
   const transferAmountTypeHasError = showErrors && isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
   const categoryHasError = showErrors && !isTransfer && !effectiveCategoryId;
   const reservesWorkingBalance = transactionStatusReservesWorkingBalance(status);
@@ -379,23 +427,63 @@ export function AddTransactionForm({
     if (selectedPlanningOption && !futurePlanningDirectionSupportsTransactionType(selectedPlanningOption.direction, type)) {
       setFuturePlanningAmountId("");
     }
+    if (selectedRelatedOption?.value && !relatedImpactSupportsTransactionType(selectedRelatedOption, type)) {
+      setRelatedOptionValue("none:");
+      setIsLinkingRecord(false);
+      setSelectedImpactType("");
+    }
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
   }
 
-  function handleRelatedOptionChange(label: string) {
-    const nextOption = impactOptions.find((option) => option.label === label) ?? impactOptions[0] ?? relatedOptions[0];
+  function handleRelatedOptionChange(optionValue: string) {
+    const nextOption = relatedOptions.find((option) => `${option.type}:${option.value}` === optionValue) ?? relatedOptions[0];
+    if (!nextOption || nextOption.type === "none" || !nextOption.value) {
+      setRelatedOptionValue("none:");
+      return;
+    }
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
+    setSelectedImpactType(nextOption.type);
+    if (nextOption.accountId && nextOption.type !== "savings_goal" && !nextOption.creditCardDebt) {
+      const linkedAccount = accounts.find((account) => account.id === nextOption.accountId);
+      if (linkedAccount) {
+        setAccountId(linkedAccount.id);
+        setAccountAmountType(accountAmountTypeOptionsFor(linkedAccount)[0] ?? "General");
+      }
+    }
     if (nextOption.type === "savings_goal" && nextOption.categoryId) {
+      if (selectedType === "Transfer" && nextOption.accountId) {
+        const goalAccount = accounts.find((account) => account.id === nextOption.accountId);
+        if (goalAccount) {
+          setTransferToAccountId(goalAccount.id);
+          setTransferAccountAmountType(accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
+        }
+      }
       const matchingPlan = planningOptions.find((option) => option.direction === "saving"
         && option.categoryId === nextOption.categoryId
         && option.periodMonth.slice(0, 7) === transactionDate.slice(0, 7));
       if (matchingPlan) setFuturePlanningAmountId(matchingPlan.id);
-    } else if (nextOption.type === "debt" && nextOption.debtRepaymentType) {
+    } else if (nextOption.type === "debt" && nextOption.debtRepaymentType && selectedType !== "Transfer") {
       setSelectedType(nextOption.debtRepaymentType);
       const nextCategories = getCategoriesForScope(categories, "Transactions", nextOption.debtRepaymentType);
       setCategoryId(nextCategories[0]?.id ?? "");
     }
+  }
+
+  function startLinkingRecord() {
+    setIsLinkingRecord(true);
+    if (!selectedImpactType) setSelectedImpactType(availableImpactTypes[0]?.type ?? "");
+  }
+
+  function clearRelatedImpact() {
+    setRelatedOptionValue("none:");
+    setIsLinkingRecord(false);
+    setSelectedImpactType("");
+  }
+
+  function handleImpactTypeChange(type: ManualImpactType) {
+    setSelectedImpactType(type);
+    if (selectedRelatedOption?.type !== type) setRelatedOptionValue("none:");
   }
 
   function handleAccountChange(name: string) {
@@ -410,18 +498,6 @@ export function AddTransactionForm({
     setTransferAccountAmountType(accountAmountTypeOptionsFor(nextAccount)[0] ?? "General");
   }
 
-  function updateSubscriptionPaymentDraft(field: "billedAmount" | "exchangeRate", value: string) {
-    setSubscriptionPaymentDraft((currentDraft) => ({
-      billedAmount: field === "billedAmount"
-        ? value
-        : currentDraft.key === subscriptionPaymentKey ? currentDraft.billedAmount : subscriptionBilledAmount,
-      exchangeRate: field === "exchangeRate"
-        ? value
-        : currentDraft.key === subscriptionPaymentKey ? currentDraft.exchangeRate : subscriptionExchangeRate,
-      key: subscriptionPaymentKey,
-    }));
-  }
-
   function handleUseDebtPayoffAmount() {
     if (!debtPayoffQuote || debtPayoffQuote.payoffAmount <= 0) return;
     if (selectedType !== "Expense") handleTypeChange("Expense");
@@ -432,38 +508,24 @@ export function AddTransactionForm({
   }
 
   function handleUseSubscriptionPaymentAmount() {
-    if (!subscriptionPayment || subscriptionPaymentAmountValue <= 0) return;
+    if (!subscriptionPayment || subscriptionPayment.amount <= 0) return;
     if (selectedType !== "Expense") handleTypeChange("Expense");
-    setAmount(String(subscriptionPaymentAmountValue));
+    setAmount(String(subscriptionPayment.amount));
     if (!note.trim() && effectiveRelatedOption?.label) {
       setNote(`${effectiveRelatedOption.label.replace(/^Subscription:\s*/, "")} payment`);
     }
   }
 
-  function handlePlanningAmountChange(optionId: string) {
-    const option = availablePlanningOptions.find((item) => item.id === optionId);
-    setFuturePlanningAmountId(option?.id ?? "");
-    if (!option) return;
-    if (transactionDate.slice(0, 7) !== option.periodMonth.slice(0, 7)) setTransactionDate(option.periodMonth);
-    if (option.direction === "saving") {
-      const matchingGoal = relatedOptions.find((item) => item.type === "savings_goal" && item.categoryId === option.categoryId);
-      if (matchingGoal) setRelatedOptionValue(`${matchingGoal.type}:${matchingGoal.value}`);
-      return;
-    }
-    const nextType = option.direction === "income" ? "Income" : "Expense";
-    setSelectedType(nextType);
-    const category = getCategoriesForScope(categories, "Transactions", nextType).find((item) => item.id === option.categoryId);
-    if (category) setCategoryId(category.id);
-  }
-
-  function usePredefinedAmount() {
-    if (selectedPlanningOption) setAmount(String(selectedPlanningOption.amount));
+  function applyContextualPlanningAmount() {
+    if (!contextualPlanningOption) return;
+    setFuturePlanningAmountId(contextualPlanningOption.id);
+    setAmount(String(contextualPlanningOption.amount));
   }
 
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || hasInsufficientAvailableAmount || hasSameTransferEndpoint || transferExchangeRateMissing || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || impactSelectionMissing || hasInsufficientAvailableAmount || hasSameTransferEndpoint || transferExchangeRateMissing || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -474,7 +536,7 @@ export function AddTransactionForm({
       amount: amountNumber,
       categoryId: effectiveCategoryId,
       date: transactionDate,
-      futurePlanningAmountId: isTransfer ? "" : futurePlanningAmountId,
+      futurePlanningAmountId: isTransfer ? "" : effectiveFuturePlanningAmountId,
       note,
       relatedEntityId: effectiveRelatedOption?.value ?? "",
       relatedEntityType: effectiveRelatedOption?.type ?? "none",
@@ -548,7 +610,7 @@ export function AddTransactionForm({
               <div>
                 <FieldLabel htmlFor={amountInputId}>Amount</FieldLabel>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">MMK</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#45464d]">{selectedAccount?.currency ?? SYSTEM_CURRENCY}</span>
                   <input
                     aria-invalid={amountHasError}
                     className={`h-12 w-full rounded-lg border bg-white pl-16 pr-4 text-xl font-semibold text-[#0b1c30] outline-none transition placeholder:text-[#a1a1aa] focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${amountHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
@@ -585,37 +647,69 @@ export function AddTransactionForm({
               )}
             </div>
             {!isTransfer ? (
-              <div className="mt-5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
-                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-                  <div className="min-w-0">
-                    <FieldLabel htmlFor={planningAmountInputId}>Future planning predefined amount</FieldLabel>
-                    <div className="relative">
-                      <select
-                        className="h-12 w-full appearance-none rounded-lg border border-[#c6c6cd] bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
-                        id={planningAmountInputId}
-                        onChange={(event) => handlePlanningAmountChange(event.target.value)}
-                        value={futurePlanningAmountId}
-                      >
-                        <option value="">No predefined amount</option>
-                        {availablePlanningOptions.map((option) => (
-                          <option key={option.id} value={option.id}>{option.label}</option>
-                        ))}
-                      </select>
-                      <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+              <div className="mt-5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4" aria-live="polite">
+                <div className="flex items-start gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-md bg-white text-[#0058be]">
+                    <Icon className="size-5" name="timeline" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold uppercase text-[#0058be]">Future Planning</p>
+                      {appliedPlanningOption ? (
+                        <span className="rounded-full bg-[#dcfce7] px-2 py-0.5 text-[11px] font-bold text-[#166534]">Applied</span>
+                      ) : null}
                     </div>
+                    {contextualPlanningOption ? (
+                      <>
+                        <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                          {contextualPlanningCategory?.name ?? selectedCategory?.name ?? "Selected category"} · {planningMonthLabel}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-[#45464d]">
+                          Planned amount: {formatCurrencyAmount(contextualPlanningOption.amount, SYSTEM_CURRENCY)}. You can still edit the transaction amount after applying it.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                          No matching planned amount for {planningMonthLabel}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-[#45464d]">
+                          {effectiveRelatedOption?.type === "savings_goal"
+                            ? "This Savings Goal has no planned amount for the selected month."
+                            : selectedCategory && transactionDate
+                              ? `No plan has been set for ${selectedCategory.name} in this month. You can save the transaction without one.`
+                              : "Choose a date and category to see the relevant plan. Savings plans appear after you link a Savings Goal below."}
+                        </p>
+                      </>
+                    )}
                   </div>
-                  <button
-                    className="inline-flex min-h-12 items-center justify-center rounded-md border border-[#2170e4] bg-white px-4 text-sm font-semibold text-[#0058be] disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!selectedPlanningOption}
-                    onClick={usePredefinedAmount}
-                    type="button"
-                  >
-                    Use planned amount
-                  </button>
                 </div>
-                <p className="mt-2 text-xs font-semibold leading-5 text-[#45464d]">
-                  The transaction month and category must match this control. Saving controls also require a linked Savings Goal that uses the same category.
-                </p>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  {contextualPlanningOption ? (
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#0058be] px-4 text-sm font-semibold text-white transition hover:bg-[#004da8]"
+                      onClick={applyContextualPlanningAmount}
+                      type="button"
+                    >
+                      <Icon className="size-4" name="check" />
+                      {appliedPlanningOption ? "Reapply planned amount" : "Apply planned amount"}
+                    </button>
+                  ) : null}
+                  {appliedPlanningOption ? (
+                    <button
+                      className="inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#45464d] transition hover:bg-white"
+                      onClick={() => setFuturePlanningAmountId("")}
+                      type="button"
+                    >
+                      Remove plan link
+                    </button>
+                  ) : null}
+                  {!contextualPlanningOption ? (
+                    <Link className="inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-semibold text-[#0058be] transition hover:bg-white" href="/future-planning">
+                      Open Future Planning
+                    </Link>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -671,82 +765,158 @@ export function AddTransactionForm({
           </FormCard>
 
           <FormCard title="Transaction Impact">
-            <SelectInput
-              label={hasSecondaryCreditCardDebtImpact ? "Primary Impact" : autoLinksCreditCardDebt || isCreditCardDebtPayment ? "Credit Card Borrowing" : "Reflect To Page"}
-              onChange={handleRelatedOptionChange}
-              options={impactOptions.map((option) => option.label)}
-              value={effectiveRelatedOption?.label ?? "No linked record"}
-            />
-            {isCreditCardDebtPayment ? (
+            <p className="text-sm font-medium leading-6 text-[#45464d]">
+              Optionally link this transaction to one other record so its progress or payment history updates automatically.
+            </p>
+
+            {autoLinksCreditCardDebt || isCreditCardDebtPayment ? (
               <div className="mt-4 grid gap-3 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
                 <span className="grid size-10 place-items-center rounded-md bg-white text-[#0058be]">
                   <Icon className="size-5" name="credit" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase text-[#0058be]">Credit Card Payment</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Restores available credit on {effectiveRelatedOption?.creditCardDebt?.accountName || "the linked card"}</p>
-                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This reduces the payment account and outstanding card borrowing. It does not change the configured credit limit or count as new spending.</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold uppercase text-[#0058be]">Automatic credit-card impact</p>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[#166534]">No action needed</span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                    {isCreditCardPayment
+                      ? `Pays down ${selectedTransferAccount?.name || "the destination card"} and restores available credit`
+                      : isCreditCardDebtPayment
+                        ? `Pays down ${effectiveRelatedOption?.creditCardDebt?.accountName || "the linked card"} and restores available credit`
+                        : isCashAdvance
+                          ? "Increases card borrowing and credits the destination account"
+                          : "Increases the selected card's outstanding borrowing"}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-[#45464d]">
+                    {hasSecondaryCreditCardDebtImpact
+                      ? "The linked record selected below will also be updated."
+                      : "Finance Pro applies this automatically when the transaction is saved."}
+                  </p>
                 </div>
               </div>
             ) : null}
-            {hasSecondaryCreditCardDebtImpact ? (
-              <div className="mt-4 grid gap-3 rounded-lg border border-[#fecaca] bg-[#fffafa] p-4 sm:grid-cols-[auto_minmax(0,1fr)]">
-                <span className="grid size-10 place-items-center rounded-md bg-[#fff1f0] text-[#b42318]">
-                  <Icon className="size-5" name="credit" />
+
+            <div className="mt-5 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4">
+              <p className="text-sm font-semibold text-[#0b1c30]">Update another record?</p>
+              <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">Most transactions do not need a link. Choose one only for a payment, contribution, or purchase tracked elsewhere.</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="Link transaction to another record">
+                <button
+                  aria-pressed={!isLinkingRecord}
+                  className={!isLinkingRecord
+                    ? "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#2170e4] bg-white px-4 text-sm font-semibold text-[#0058be] shadow-sm"
+                    : "inline-flex min-h-11 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:border-[#2170e4]/50"}
+                  onClick={clearRelatedImpact}
+                  type="button"
+                >
+                  {!isLinkingRecord ? <Icon className="size-4" name="check" /> : null}
+                  No additional link
+                </button>
+                <button
+                  aria-pressed={isLinkingRecord}
+                  className={isLinkingRecord
+                    ? "inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#2170e4] bg-white px-4 text-sm font-semibold text-[#0058be] shadow-sm"
+                    : "inline-flex min-h-11 items-center justify-center rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#45464d] transition hover:border-[#2170e4]/50 disabled:cursor-not-allowed disabled:opacity-50"}
+                  disabled={availableImpactTypes.length === 0}
+                  onClick={startLinkingRecord}
+                  type="button"
+                >
+                  {isLinkingRecord ? <Icon className="size-4" name="check" /> : null}
+                  Link a record
+                </button>
+              </div>
+            </div>
+
+            {isLinkingRecord ? (
+              availableImpactTypes.length > 0 ? (
+                <div className="mt-4 rounded-lg border border-[#c6c6cd]/70 bg-white p-4">
+                  <p className="text-xs font-bold uppercase text-[#45464d]">1. Choose what to update</p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {availableImpactTypes.map((impactType) => {
+                      const isActive = selectedImpactType === impactType.type;
+                      return (
+                        <button
+                          aria-pressed={isActive}
+                          className={isActive
+                            ? "flex min-h-16 items-center gap-3 rounded-md border border-[#2170e4] bg-[#eff6ff] px-3 py-2 text-left text-[#0058be] shadow-sm"
+                            : "flex min-h-16 items-center gap-3 rounded-md border border-[#c6c6cd] bg-white px-3 py-2 text-left text-[#45464d] transition hover:border-[#2170e4]/50 hover:bg-[#f8f9ff]"}
+                          key={impactType.type}
+                          onClick={() => handleImpactTypeChange(impactType.type)}
+                          type="button"
+                        >
+                          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-white">
+                            <Icon className="size-4" name={impactType.icon} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-bold">{impactType.label}</span>
+                            <span className="mt-0.5 block text-xs font-medium">{impactType.description}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedImpactType ? (
+                    <div className="mt-4">
+                      <FieldLabel htmlFor={impactRecordInputId}>{`2. Choose ${manualImpactTypes.find((impactType) => impactType.type === selectedImpactType)?.label ?? "record"}`}</FieldLabel>
+                      <div className="relative">
+                        <select
+                          aria-invalid={impactHasError}
+                          className={`h-12 w-full appearance-none rounded-lg border bg-white px-4 pr-12 text-sm font-medium text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20 ${impactHasError ? "border-[#ba1a1a]" : "border-[#c6c6cd]"}`}
+                          id={impactRecordInputId}
+                          onChange={(event) => handleRelatedOptionChange(event.target.value)}
+                          value={selectedImpactOptionValue}
+                        >
+                          <option value="">Select a record</option>
+                          {selectedImpactOptions.map((option) => (
+                            <option key={`${option.type}:${option.value}`} value={`${option.type}:${option.value}`}>{relatedImpactRecordName(option)}</option>
+                          ))}
+                        </select>
+                        <Icon className="pointer-events-none absolute right-4 top-1/2 size-4 -translate-y-1/2 text-[#76777d]" name="chevronDown" />
+                      </div>
+                      {impactHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Choose a record or select No additional link.</p> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
+                  No compatible records are available for this transaction type.
+                </div>
+              )
+            ) : null}
+
+            {hasManualRelatedLink ? (
+              <div className="mt-4 flex items-start gap-3 rounded-lg border border-[#bbf7d0] bg-[#f0fdf4] p-4" aria-live="polite">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white text-[#166534]">
+                  <Icon className="size-4" name="check" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase text-[#b42318]">Additional Impact</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">Automatic Credit Card Borrowing</p>
-                  <p className="mt-1 text-xs font-semibold text-[#45464d]">This credit card charge will keep the selected primary impact and increase the outstanding card borrowing.</p>
+                  <p className="text-xs font-bold uppercase text-[#166534]">Linked record</p>
+                  <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{relatedImpactRecordName(selectedRelatedOption!)}</p>
+                  <p className="mt-1 text-xs font-medium text-[#45464d]">This transaction will update {selectedImpactTypeDetails?.label ?? "the selected record"} when saved.</p>
                 </div>
               </div>
             ) : null}
+
             {subscriptionPayment ? (
               <div className="mt-4 rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase text-[#45464d]">Subscription Payment</p>
                     <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{subscriptionPayment.billingCycle} billing · {subscriptionPayment.nextBillingDate ? formatDisplayDate(subscriptionPayment.nextBillingDate) : "No due date"}</p>
+                    <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">
+                      Enter the amount actually paid under Transaction Details. Finance Pro calculates the realized exchange rate automatically.
+                    </p>
                   </div>
                   <button
                     className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md bg-[#0b1c30] px-3 text-xs font-semibold text-white transition hover:bg-[#1f2937] sm:min-h-10 sm:w-auto"
+                    disabled={subscriptionPayment.amount <= 0}
                     onClick={handleUseSubscriptionPaymentAmount}
                     type="button"
                   >
                     <Icon className="size-4" name="check" />
-                    Use Amount
+                    Use Estimate
                   </button>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <FieldLabel htmlFor={subscriptionBilledAmountInputId}>Billed Amount</FieldLabel>
-                    <input
-                      className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
-                      id={subscriptionBilledAmountInputId}
-                      inputMode="decimal"
-                      onChange={(event) => updateSubscriptionPaymentDraft("billedAmount", cleanAmountInputValue(event.target.value))}
-                      type="text"
-                      value={formatAmountInputValue(subscriptionBilledAmount)}
-                    />
-                  </div>
-                  {isForeignSubscriptionPayment ? (
-                    <div>
-                      <FieldLabel htmlFor={subscriptionExchangeRateInputId}>Payment Exchange Rate</FieldLabel>
-                      <input
-                        className="h-11 w-full rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#0b1c30] outline-none transition focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
-                        id={subscriptionExchangeRateInputId}
-                        inputMode="decimal"
-                        onChange={(event) => updateSubscriptionPaymentDraft("exchangeRate", cleanAmountInputValue(event.target.value))}
-                        type="text"
-                        value={formatAmountInputValue(subscriptionExchangeRate)}
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Payment Exchange Rate</span>
-                      <div className="flex h-11 items-center rounded-md border border-[#c6c6cd] bg-white px-3 text-sm font-semibold text-[#45464d]">No conversion</div>
-                    </div>
-                  )}
                 </div>
                 <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
                   <div className="min-w-0 rounded-md bg-white px-3 py-2">
@@ -754,12 +924,12 @@ export function AddTransactionForm({
                     <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatCurrencyAmount(subscriptionPaymentBilledAmountValue, subscriptionPayment.billingCurrency)}</ResponsiveAmount></dd>
                   </div>
                   <div className="min-w-0 rounded-md bg-white px-3 py-2">
-                    <dt className="text-xs font-bold uppercase text-[#45464d]">Rate</dt>
-                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{isForeignSubscriptionPayment ? `1 ${subscriptionPayment.billingCurrency} = ${formatMmkPreview(subscriptionPaymentExchangeRateValue)}` : "No conversion"}</ResponsiveAmount></dd>
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Paid</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{subscriptionPaymentAmountValue > 0 ? formatCurrencyAmount(subscriptionPaymentAmountValue, selectedAccount?.currency ?? SYSTEM_CURRENCY) : "Enter amount above"}</ResponsiveAmount></dd>
                   </div>
                   <div className="min-w-0 rounded-md bg-white px-3 py-2">
-                    <dt className="text-xs font-bold uppercase text-[#45464d]">Payment</dt>
-                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{formatMmkPreview(subscriptionPaymentAmountValue)}</ResponsiveAmount></dd>
+                    <dt className="text-xs font-bold uppercase text-[#45464d]">Calculated Rate</dt>
+                    <dd className="mt-1 font-semibold text-[#0b1c30]"><ResponsiveAmount maxSizeRem={0.875}>{isForeignSubscriptionPayment && subscriptionPaymentExchangeRateValue > 0 ? `1 ${subscriptionPayment.billingCurrency} = ${formatMmkPreview(subscriptionPaymentExchangeRateValue)}` : "No conversion"}</ResponsiveAmount></dd>
                   </div>
                 </dl>
               </div>
@@ -825,7 +995,7 @@ export function AddTransactionForm({
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveAccountAmountType}</span></div>
             <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Category</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{isTransfer ? selectedTransferAccount ? getAccountOptionLabel(selectedTransferAccount, transferAccountOptions) : "No account" : selectedCategory?.name ?? "No category"}</span></div>
             {isTransfer ? <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">To Amount Type</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveTransferAccountAmountType}</span></div> : null}
-            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Reflects</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{effectiveRelatedOption?.label ?? "No linked record"}</span></div>
+            <div className="flex items-center justify-between gap-4"><span className="text-xs font-bold uppercase text-[#45464d]">Impact</span><span className="max-w-36 truncate text-sm font-semibold text-[#0b1c30]">{impactPreviewLabel}</span></div>
             <div className="border-t border-[#c6c6cd]/40 pt-4"><span className="text-xs font-bold uppercase text-[#45464d]">Note</span><p className="mt-1 line-clamp-3 text-sm font-semibold text-[#0b1c30]">{note.trim() || "Add transaction note"}</p></div>
           </div>
         </div>

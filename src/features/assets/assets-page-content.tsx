@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
@@ -31,7 +32,7 @@ type AssetSortKey = "condition" | "currentValue" | "name" | "purchaseDate" | "us
 const sortOptions: Array<{ label: string; value: AssetSortKey }> = [
   { label: "Purchase Date", value: "purchaseDate" },
   { label: "Asset Name", value: "name" },
-  { label: "Current Value", value: "currentValue" },
+  { label: "Linked Value", value: "currentValue" },
   { label: "Usage Duration", value: "usage" },
   { label: "Condition", value: "condition" },
 ];
@@ -61,13 +62,15 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
         <span className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span>
       </div>
       <dl className="mt-4 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-        <div className="rounded-md bg-[#f8f9ff] p-3"><dt className="text-xs font-bold uppercase text-[#45464d]">Current value</dt><dd className="amount-value mt-1 font-semibold text-[#0058be]">{asset.currentValue}</dd></div>
-        <div className="rounded-md bg-[#f8f9ff] p-3"><dt className="text-xs font-bold uppercase text-[#45464d]">Purchase cost</dt><dd className="amount-value mt-1 font-semibold text-[#0b1c30]">{asset.purchaseAmount}</dd></div>
+        <div className="rounded-md bg-[#f8f9ff] p-3"><dt className="text-xs font-bold uppercase text-[#45464d]">Linked purchase value</dt><dd className="amount-value mt-1 font-semibold text-[#0058be]">{asset.purchaseAmount}</dd></div>
         <div className="rounded-md bg-[#f8f9ff] p-3"><dt className="text-xs font-bold uppercase text-[#45464d]">Usage</dt><dd className="mt-1 text-sm font-semibold text-[#0b1c30]">{calculateUsageDuration(asset.startUsingDateValue)}</dd></div>
         <div className="rounded-md bg-[#f8f9ff] p-3"><dt className="text-xs font-bold uppercase text-[#45464d]">Condition</dt><dd className={`mt-1 text-sm font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</dd></div>
       </dl>
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#c6c6cd]/40 pt-3">
-        <p className="text-xs font-medium text-[#45464d]">Purchased {asset.purchaseDate}</p>
+        <div>
+          <p className="text-xs font-medium text-[#45464d]">Purchased {asset.purchaseDate}</p>
+          <Link className="mt-1 inline-flex text-xs font-bold text-[#0058be] hover:underline" href={`/transactions/add?asset=${asset.id}`}>{asset.purchaseAmountValue > 0 ? "Add purchase" : "Record purchase"}</Link>
+        </div>
         <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
       </div>
     </article>
@@ -152,14 +155,14 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
             <thead className="border-b border-[#c6c6cd]/50 text-xs uppercase text-[#45464d]"><tr>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("name")} sortDirection={sortKey === "name" ? sortDirection : undefined}>Asset</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("purchaseDate")} sortDirection={sortKey === "purchaseDate" ? sortDirection : undefined}>Purchased</SortHeader></th>
-              <th className="px-4 py-3 text-right">Purchase cost</th><th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("currentValue")} sortDirection={sortKey === "currentValue" ? sortDirection : undefined}>Current value</SortHeader></th>
+              <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("currentValue")} sortDirection={sortKey === "currentValue" ? sortDirection : undefined}>Linked purchase value</SortHeader></th>
               <th className="px-4 py-3">Usage</th><th className="px-4 py-3">Condition</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th>
             </tr></thead>
             <tbody className="divide-y divide-[#c6c6cd]/40">{filteredAssets.map((asset) => <tr className="hover:bg-[#f8f9ff]" key={asset.id}>
               <td className="px-4 py-4"><div className="flex items-center gap-3"><span className={`grid size-9 place-items-center rounded-md ${asset.bg} ${asset.tone}`}><Icon className="size-4" name={asset.icon} /></span><div><p className="font-semibold text-[#0b1c30]">{asset.name}</p><p className="mt-1 text-xs text-[#45464d]">{asset.category}</p></div></div></td>
-              <td className="whitespace-nowrap px-4 py-4">{asset.purchaseDate}</td><td className="px-4 py-4 text-right font-semibold">{asset.purchaseAmount}</td><td className="px-4 py-4 text-right font-semibold text-[#0058be]">{asset.currentValue}</td>
+              <td className="whitespace-nowrap px-4 py-4">{asset.purchaseDate}</td><td className="px-4 py-4 text-right font-semibold text-[#0058be]">{asset.purchaseAmount}</td>
               <td className="whitespace-nowrap px-4 py-4">{calculateUsageDuration(asset.startUsingDateValue)}</td><td className={`px-4 py-4 font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</td><td className="px-4 py-4"><span className={`rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span></td>
-              <td className="px-4 py-4"><div className="flex justify-end"><RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={deleteAsset} /></div></td>
+              <td className="px-4 py-4"><div className="flex items-center justify-end gap-2"><Link className="inline-flex min-h-9 items-center rounded-md px-3 text-xs font-bold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions/add?asset=${asset.id}`}>{asset.purchaseAmountValue > 0 ? "Add purchase" : "Record purchase"}</Link><RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={deleteAsset} /></div></td>
             </tr>)}</tbody>
           </table>
         </div>

@@ -1,4 +1,5 @@
 import type { TransactionRelatedOption } from "@/lib/transactions/supabase";
+import type { TransactionType } from "@/types/finance";
 
 type RelatedImpactOption = Pick<TransactionRelatedOption, "creditCardDebt" | "type" | "value">;
 
@@ -16,4 +17,20 @@ export function hasAdditionalAutomaticCreditCardDebtImpact(
     && Boolean(primaryImpact?.value)
     && primaryImpact?.type !== "none"
     && !primaryImpact?.creditCardDebt;
+}
+
+export function relatedImpactSupportsTransactionType(
+  option: TransactionRelatedOption,
+  transactionType: TransactionType,
+) {
+  if (option.type === "none" || !option.value) return false;
+  if (option.type === "asset" || option.type === "subscription") return transactionType === "Expense";
+  if (option.type === "savings_goal") return transactionType === "Expense" || transactionType === "Transfer";
+  if (transactionType === "Transfer") return option.debtRepaymentType !== "Income";
+  return !option.debtRepaymentType || option.debtRepaymentType === transactionType;
+}
+
+export function relatedImpactRecordName(option: TransactionRelatedOption) {
+  const separatorIndex = option.label.indexOf(":");
+  return separatorIndex >= 0 ? option.label.slice(separatorIndex + 1).trim() : option.label;
 }

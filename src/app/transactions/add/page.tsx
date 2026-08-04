@@ -23,7 +23,7 @@ function relatedOptions(
 ): TransactionRelatedOption[] {
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ accountId: goal.accountId, categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
     ...debts.filter((debt) => debt.status !== "Paid").map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
@@ -40,6 +40,7 @@ function relatedOptions(
         startDate: debt.startDate,
         totalAmount: debt.totalAmountValue,
       },
+      accountId: debt.paymentAccountId,
       debtRepaymentType: debt.nature === "Lending" ? "Income" as const : "Expense" as const,
       label: `${debt.isCreditCardDebt ? "Credit Card Borrowing" : debt.nature}: ${debt.name}`,
       oneTimeDebtPayoff: !debt.isCreditCardDebt && debt.repaymentFrequency === "One-time"
@@ -49,6 +50,7 @@ function relatedOptions(
       value: debt.id,
     })),
     ...subscriptions.filter((subscription) => subscription.status !== "Paused").map((subscription) => ({
+      accountId: subscription.accountId,
       label: `Subscription: ${subscription.name}`,
       subscriptionPayment: {
         amount: subscription.amountValue,
@@ -72,10 +74,11 @@ function searchParamValue(value: string | string[] | undefined) {
 export default async function AddTransactionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ subscription?: string | string[] }>;
+  searchParams: Promise<{ asset?: string | string[]; subscription?: string | string[] }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const requestedSubscriptionId = searchParamValue(resolvedSearchParams.subscription);
+  const requestedAssetId = searchParamValue(resolvedSearchParams.asset);
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   const allAccounts = user ? await getAccounts(supabase, user.id) : [];
@@ -92,6 +95,7 @@ export default async function AddTransactionPage({
     ])
     : [[], [], [], [], [], { baseCurrency: "MMK", rates: [] }];
   const requestedSubscription = requestedSubscriptionId ? subscriptions.find((subscription) => subscription.id === requestedSubscriptionId) : undefined;
+  const requestedAsset = !requestedSubscription && requestedAssetId ? assets.find((asset) => asset.id === requestedAssetId) : undefined;
   const initialValues: TransactionFormInitialValues | undefined = requestedSubscription
     ? {
       accountId: requestedSubscription.accountId,
@@ -102,7 +106,20 @@ export default async function AddTransactionPage({
       relatedEntityType: "subscription",
       type: "Expense",
     }
-    : undefined;
+    : requestedAsset
+      ? {
+        date: requestedAsset.purchaseDateValue || new Date().toISOString().slice(0, 10),
+        note: `Asset purchase: ${requestedAsset.name}`,
+        relatedEntityId: requestedAsset.id,
+        relatedEntityType: "asset",
+        type: "Expense",
+      }
+      : undefined;
+  const pageDescription = requestedSubscription
+    ? `Record the actual amount paid for ${requestedSubscription.name}; the exchange rate will be calculated automatically.`
+    : requestedAsset
+      ? `Record the amount paid for ${requestedAsset.name}; the asset value will update automatically.`
+      : "Record a new financial activity.";
 
   return (
     <AppShell
@@ -113,7 +130,7 @@ export default async function AddTransactionPage({
       topSearchLabel="Search transactions"
       topSearchPlaceholder="Search transactions..."
     >
-      <PageHeader description={requestedSubscription ? `Record payment for ${requestedSubscription.name}.` : "Record a new financial activity."} title="Add Transaction" />
+      <PageHeader description={pageDescription} title="Add Transaction" />
       <AddTransactionForm accounts={accounts} categories={categories} currencySettings={currencySettings} initialValues={initialValues} planningOptions={planningOptions} relatedOptions={relatedOptions(accounts, savingsGoals, debts, subscriptions, assets)} />
     </AppShell>
   );

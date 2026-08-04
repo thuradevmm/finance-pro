@@ -16,20 +16,18 @@ export function resolveAssetPurchaseValue(
   metadataValue: unknown,
   linkedValue: unknown,
 ) {
+  const linked = presentNumber(linkedValue);
+  if (linked !== null) return Math.max(linked, 0);
   const metadata = presentNumber(metadataValue);
   const stored = presentNumber(storedValue);
-  // Current writes mirror the explicit form value into metadata. Legacy rows
-  // have no metadata amount and often carry the schema's default zero, so only
-  // those rows may fall back to linked purchase evidence.
-  const value = metadata ?? (stored !== null && stored !== 0 ? stored : presentNumber(linkedValue) ?? stored ?? 0);
+  const value = metadata ?? stored ?? 0;
   return Math.max(value, 0);
 }
 
 export function resolveAssetCurrentValue(
-  storedValue: unknown,
-  metadataValue: unknown,
+  _storedValue: unknown,
+  _metadataValue: unknown,
   purchaseValue: number,
 ) {
-  const value = presentNumber(storedValue) ?? presentNumber(metadataValue) ?? purchaseValue;
-  return Math.max(value, 0);
+  return Math.max(purchaseValue, 0);
 }

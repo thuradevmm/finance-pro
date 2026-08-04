@@ -27,7 +27,7 @@ function relatedOptions(
   const preserves = (type: TransactionRelatedOption["type"], id: string) => transaction?.relatedEntityType === type && transaction.relatedEntityId === id;
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...savingsGoals.filter((goal) => goal.status !== "Completed" || preserves("savings_goal", goal.id)).map((goal) => ({ categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...savingsGoals.filter((goal) => goal.status !== "Completed" || preserves("savings_goal", goal.id)).map((goal) => ({ accountId: goal.accountId, categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
     ...debts.filter((debt) => debt.status !== "Paid" || preserves("debt", debt.id)).map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
@@ -44,6 +44,7 @@ function relatedOptions(
         startDate: debt.startDate,
         totalAmount: debt.totalAmountValue,
       },
+      accountId: debt.paymentAccountId,
       debtRepaymentType: debt.nature === "Lending" ? "Income" as const : "Expense" as const,
       label: `${debt.isCreditCardDebt ? "Credit Card Borrowing" : debt.nature}: ${debt.name}`,
       oneTimeDebtPayoff: !debt.isCreditCardDebt && debt.repaymentFrequency === "One-time"
@@ -53,6 +54,7 @@ function relatedOptions(
       value: debt.id,
     })),
     ...subscriptions.filter((subscription) => subscription.status !== "Paused" || preserves("subscription", subscription.id)).map((subscription) => ({
+      accountId: subscription.accountId,
       label: `Subscription: ${subscription.name}`,
       subscriptionPayment: {
         amount: transaction?.relatedEntityType === "subscription" && transaction.relatedEntityId === subscription.id

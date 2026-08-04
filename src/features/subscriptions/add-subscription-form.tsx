@@ -12,6 +12,7 @@ import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
+import { exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
 import { isValidCalendarDate } from "@/lib/date-validation";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
@@ -39,7 +40,7 @@ function defaultNextBillingDate() {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 }
 
-export function AddSubscriptionForm({ accounts, categories, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; subscription?: SubscriptionRecordWithValues }) {
+export function AddSubscriptionForm({ accounts, categories, currencySettings, subscription }: { accounts: AccountRecord[]; categories: CategoryRecord[]; currencySettings: CurrencySettings; subscription?: SubscriptionRecordWithValues }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
@@ -48,7 +49,6 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
   const [serviceName, setServiceName] = useState(subscription?.name ?? "");
   const [billingCurrency, setBillingCurrency] = useState(subscription?.billingCurrency ?? SYSTEM_CURRENCY);
   const [billedAmount, setBilledAmount] = useState(subscription ? String(subscription.billedAmountValue) : "");
-  const [exchangeRate, setExchangeRate] = useState(subscription && subscription.billingCurrency !== SYSTEM_CURRENCY ? String(subscription.exchangeRate) : "");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(subscription?.billingCycle ?? "Monthly");
   const [nextBillingDate, setNextBillingDate] = useState(subscription?.nextBillingDateValue ?? defaultNextBillingDate());
   const [categoryId, setCategoryId] = useState(subscription?.categoryId ?? subscriptionCategories[0]?.id ?? "");
@@ -62,17 +62,22 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
   const selectedCategory = subscriptionCategories.find((item) => item.id === categoryId) ?? subscriptionCategories[0];
   const selectedAccount = paymentAccounts.find((item) => item.id === paymentAccountId);
   const isForeignCurrency = billingCurrency !== SYSTEM_CURRENCY;
+  const automaticExchangeRate = isForeignCurrency
+    ? exchangeRateFor(currencySettings, billingCurrency, nextBillingDate)
+      ?? (subscription?.billingCurrency === billingCurrency ? subscription.exchangeRate : 0)
+    : 1;
   const nameHasError = showErrors && serviceName.trim() === "";
   const amountHasError = showErrors && (billedAmount.trim() === "" || parseAmount(billedAmount) <= 0);
-  const exchangeRateHasError = showErrors && isForeignCurrency && (exchangeRate.trim() === "" || parseAmount(exchangeRate) <= 0);
+  const exchangeRateIsInvalid = isForeignCurrency && automaticExchangeRate <= 0;
+  const exchangeRateHasError = showErrors && exchangeRateIsInvalid;
   const billingDateHasError = showErrors && !isValidCalendarDate(nextBillingDate);
   const parsedBilledAmount = parseAmount(billedAmount);
-  const parsedExchangeRate = isForeignCurrency ? parseAmount(exchangeRate) : 1;
+  const parsedExchangeRate = automaticExchangeRate;
   const convertedAmount = parsedBilledAmount > 0 && parsedExchangeRate > 0 ? parsedBilledAmount * parsedExchangeRate : 0;
   const yearlyAmount = billingCycle === "Yearly" ? convertedAmount : billingCycle === "Weekly" ? convertedAmount * 52 : convertedAmount * 12;
 
   async function handleSaveSubscription(addAnother = false) {
-    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateHasError || !isValidCalendarDate(nextBillingDate);
+    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateIsInvalid || !isValidCalendarDate(nextBillingDate);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -130,19 +135,15 @@ export function AddSubscriptionForm({ accounts, categories, subscription }: { ac
             <SelectInput label="Billing Currency" onChange={(value) => setBillingCurrency(value)} options={billingCurrencies} value={billingCurrency} />
             {isForeignCurrency ? (
               <div>
-                <TextInput
-                  error={exchangeRateHasError}
-                  label={`Exchange Rate to ${SYSTEM_CURRENCY}`}
-                  onChange={setExchangeRate}
-                  placeholder={`1 ${billingCurrency} = ${SYSTEM_CURRENCY}`}
-                  type="number"
-                  value={exchangeRate}
-                />
-                {exchangeRateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Exchange rate is required for foreign-currency subscriptions.</p> : null}
+                <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Automatic Planning Rate</span>
+                <div className={`flex h-12 items-center rounded-lg border bg-[#f8f9ff] px-4 text-sm font-semibold ${exchangeRateHasError ? "border-[#ba1a1a] text-[#ba1a1a]" : "border-[#c6c6cd] text-[#45464d]"}`}>
+                  {parsedExchangeRate > 0 ? `1 ${billingCurrency} = ${formatMmkPreview(parsedExchangeRate)}` : "Rate unavailable"}
+                </div>
+                {exchangeRateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Add a dated {billingCurrency} rate in Settings. Actual payment rates are calculated automatically from transactions.</p> : null}
               </div>
             ) : (
               <div>
-                <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Exchange Rate to {SYSTEM_CURRENCY}</span>
+                <span className="mb-2 block text-xs font-bold uppercase text-[#45464d]">Estimated Exchange Rate to {SYSTEM_CURRENCY}</span>
                 <div className="flex h-12 items-center rounded-lg border border-[#c6c6cd] bg-[#f8f9ff] px-4 text-sm font-semibold text-[#45464d]">No conversion needed</div>
               </div>
             )}

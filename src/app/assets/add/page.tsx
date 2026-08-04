@@ -19,7 +19,7 @@ export default async function AddAssetPage() {
       topSearchLabel="Search assets"
       topSearchPlaceholder="Search assets..."
     >
-      <PageHeader description="Record a personal asset, purchase details, current value, and usage notes." title="Add Asset" />
+      <PageHeader description="Record the asset details now; its financial value will come from linked purchase transactions." title="Add Asset" />
       <AddAssetForm categories={categories} />
     </AppShell>
   );

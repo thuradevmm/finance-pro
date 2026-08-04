@@ -37,8 +37,6 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
   const [categoryId, setCategoryId] = useState(asset?.categoryId ?? assetCategories[0]?.id ?? "");
   const [purchaseDate, setPurchaseDate] = useState(asset?.purchaseDateValue ?? defaultDate);
   const [startUsingDate, setStartUsingDate] = useState(asset?.startUsingDateValue ?? defaultDate);
-  const [purchaseAmount, setPurchaseAmount] = useState(asset ? String(asset.purchaseAmountValue) : "");
-  const [currentValue, setCurrentValue] = useState(asset ? String(asset.currentValueValue) : "");
   const [serialReference, setSerialReference] = useState(asset?.serialReference ?? "");
   const [condition, setCondition] = useState<AssetRecord["condition"]>(asset?.condition ?? "Good");
   const [status, setStatus] = useState<AssetStatus>(asset?.status ?? "Active");
@@ -48,19 +46,13 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
   const [isSaving, setIsSaving] = useState(false);
   const selectedCategory = assetCategories.find((item) => item.id === categoryId) ?? assetCategories[0];
   const nameHasError = showErrors && name.trim() === "";
-  const purchaseAmountIsInvalid = purchaseAmount.trim() === "" || !Number.isFinite(Number(purchaseAmount)) || Number(purchaseAmount) < 0;
-  const currentValueIsInvalid = currentValue.trim() !== "" && (!Number.isFinite(Number(currentValue)) || Number(currentValue) < 0);
   const usageDateIsInvalid = Boolean(purchaseDate && startUsingDate && startUsingDate < purchaseDate);
-  const amountHasError = showErrors && purchaseAmountIsInvalid;
-  const currentValueHasError = showErrors && currentValueIsInvalid;
   const dateHasError = showErrors && !isValidCalendarDate(purchaseDate);
   const startUsingDateHasError = showErrors && (!isValidCalendarDate(startUsingDate) || usageDateIsInvalid);
   const usageDuration = calculateUsageDuration(startUsingDate);
 
   async function handleSaveAsset(addAnother = false) {
     const hasErrors = name.trim() === ""
-      || purchaseAmountIsInvalid
-      || currentValueIsInvalid
       || !isValidCalendarDate(purchaseDate)
       || !isValidCalendarDate(startUsingDate)
       || usageDateIsInvalid;
@@ -70,10 +62,8 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
     const input: AssetFormData = {
       categoryId,
       condition,
-      currentValue: currentValue.trim() ? Number(currentValue) : Number(purchaseAmount),
       name,
       note,
-      purchaseAmount: Number(purchaseAmount),
       purchaseDate,
       serialReference,
       startUsingDate,
@@ -90,8 +80,6 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
     if (addAnother && !asset) {
       setIsSaving(false);
       setName("");
-      setPurchaseAmount("");
-      setCurrentValue("");
       setSerialReference("");
       setNote("");
       showSuccess("Asset saved successfully.");
@@ -120,25 +108,24 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
               <TextInput error={dateHasError} label="Purchase Date" onChange={setPurchaseDate} placeholder="YYYY-MM-DD" type="date" value={purchaseDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Purchase date is required.</p> : null}
             </div>
-            <div>
-              <TextInput
-                error={amountHasError}
-                label="Purchase Amount"
-                onChange={setPurchaseAmount}
-                placeholder="2499"
-                type="amount"
-                value={purchaseAmount}
-              />
-              {amountHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Purchase amount is required.</p> : null}
-            </div>
+            <TextInput label="Serial / Reference" onChange={setSerialReference} placeholder="Optional" value={serialReference} />
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <TextInput error={currentValueHasError} label="Current Value" onChange={setCurrentValue} placeholder="1850" type="amount" value={currentValue} />
-              {currentValueHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Current value cannot be negative.</p> : null}
+          <div className="mt-5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-md bg-white text-[#0058be]"><Icon className="size-5" name="sync" /></span>
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase text-[#0058be]">Automatic financial values</p>
+                <p className="mt-1 text-sm font-semibold text-[#0b1c30]">
+                  {asset ? `Transaction-backed value: ${asset.purchaseAmount}` : "Purchase value will start at zero"}
+                </p>
+                <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">
+                  {asset
+                    ? "Posted purchase transactions linked to this asset define its recorded purchase and current value."
+                    : "After saving the asset, record its purchase from the Assets page. Enter the paid amount once in the transaction; Finance Pro calculates the asset value automatically."}
+                </p>
+              </div>
             </div>
-            <TextInput label="Serial / Reference" onChange={setSerialReference} placeholder="Optional" value={serialReference} />
           </div>
         </FormCard>
 
@@ -215,12 +202,8 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
                 <dd className="text-sm font-semibold text-[#0b1c30]">{selectedCategory?.name ?? "No category"}</dd>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <dt className="text-xs font-bold uppercase text-[#45464d]">Purchase</dt>
-                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{purchaseAmount ? formatMmkPreview(purchaseAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-xs font-bold uppercase text-[#45464d]">Current</dt>
-                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0058be]" maxSizeRem={0.875}>{currentValue ? formatMmkPreview(currentValue) : formatMmkPreview(0)}</ResponsiveAmount></dd>
+                <dt className="text-xs font-bold uppercase text-[#45464d]">Linked value</dt>
+                <dd className="min-w-0 text-right"><ResponsiveAmount className="font-semibold text-[#0058be]" maxSizeRem={0.875}>{asset ? asset.purchaseAmount : formatMmkPreview(0)}</ResponsiveAmount></dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-xs font-bold uppercase text-[#45464d]">Started</dt>

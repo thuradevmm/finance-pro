@@ -6,10 +6,11 @@ import { calculateUsageDuration } from "../src/lib/date-duration.ts";
 import { calculateLinkedSavingsAmounts, calculateSavingsContributionCapacity, resolveStoredSavingsAmount } from "../src/lib/savings-goals/calculations.ts";
 import { annualizedSubscriptionCost, monthlySubscriptionCost, nextSubscriptionBillingDate, subscriptionBillingOccurrence, subscriptionPaymentCoversCycle, subscriptionPaymentIsAfterCutoff } from "../src/lib/subscriptions/calculations.ts";
 
-test("asset zero values remain authoritative while legacy rows can use linked evidence", () => {
-  assert.equal(resolveAssetPurchaseValue(0, 0, 500), 0);
+test("linked asset transactions are authoritative for purchase and recorded value", () => {
+  assert.equal(resolveAssetPurchaseValue(0, 0, 500), 500);
   assert.equal(resolveAssetPurchaseValue(0, undefined, 500), 500);
-  assert.equal(resolveAssetCurrentValue(0, 700, 1_000), 0);
+  assert.equal(resolveAssetPurchaseValue(250, 250, undefined), 250);
+  assert.equal(resolveAssetCurrentValue(0, 700, 1_000), 1_000);
 });
 
 test("asset history amount ranges are non-overlapping and include the 1,500+ boundary", () => {
