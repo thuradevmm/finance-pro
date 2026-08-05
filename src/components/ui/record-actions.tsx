@@ -13,6 +13,7 @@ type RecordActionsProps = {
   itemId: string;
   itemLabel: string;
   onDelete?: (itemId: string) => void | Promise<void>;
+  onView?: () => void;
   showDelete?: boolean;
   showEdit?: boolean;
   viewHref?: string;
@@ -26,6 +27,7 @@ export function RecordActions({
   itemId,
   itemLabel,
   onDelete,
+  onView,
   showDelete = true,
   showEdit = true,
   viewHref,
@@ -36,6 +38,17 @@ export function RecordActions({
 
   return (
     <>
+      {onView ? (
+        <button
+          aria-label={`View details for ${itemLabel}`}
+          className="grid size-11 place-items-center rounded-full text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#2170e4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+          onClick={onView}
+          title={`View details for ${itemLabel}`}
+          type="button"
+        >
+          <Icon className="size-4" name="eye" />
+        </button>
+      ) : null}
       {viewHref ? (
         <Link
           aria-label={`${viewLabel} for ${itemLabel}`}

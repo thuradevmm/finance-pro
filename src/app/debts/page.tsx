@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { SummaryCards } from "@/components/app/summary-cards";
 import { Icon } from "@/components/ui/icon";
 import { DebtsPageContent } from "@/features/debts/debts-page-content";
+import { getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getDebts, getDebtSummaries, getUpcomingDebtPayments } from "@/lib/debts/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
@@ -13,7 +14,10 @@ import { createClient } from "@/lib/supabase/server";
 export default async function DebtsPage() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
-  const categories = user ? await getCategories({ limit: 200 }) : [];
+  const [categories, accounts] = user ? await Promise.all([
+    getCategories({ limit: 200 }),
+    getAccounts(supabase, user.id, { limit: 200 }),
+  ]) : [[], []];
   const debts = user ? await getDebts(supabase, user.id, categories, { limit: 200 }) : [];
   const summaries = getDebtSummaries(debts);
   const payments = getUpcomingDebtPayments(debts);
@@ -43,7 +47,7 @@ export default async function DebtsPage() {
       />
 
       <SummaryCards summaries={summaries} />
-      <DebtsPageContent debts={debts} payments={payments} />
+      <DebtsPageContent accounts={accounts} debts={debts} payments={payments} />
     </AppShell>
   );
 }

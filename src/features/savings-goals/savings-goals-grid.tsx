@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteSavingsGoal } from "@/app/savings-goals/actions";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
@@ -12,6 +13,8 @@ import { SearchField } from "@/components/ui/search-field";
 import { useToast } from "@/components/ui/toast-provider";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 import { readSubmittedQuery } from "@/lib/filters/submitted-query";
+import { formatMmk } from "@/lib/currency";
+import { formatDisplayDate } from "@/lib/date-format";
 import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
@@ -21,7 +24,7 @@ const statusStyles: Record<SavingsGoalStatus, string> = {
   Completed: "bg-[#eff6ff] text-[#0058be]",
 };
 
-function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void> }) {
+function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void>; onView: () => void }) {
   return (
     <article className="flex min-w-0 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-5 flex min-w-0 flex-col gap-3 border-b border-[#c6c6cd]/40 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -69,6 +72,7 @@ function SavingsGoalCard({ goal, onDelete }: { goal: SavingsGoalRecord; onDelete
             itemId={goal.id}
             itemLabel={goal.name}
             onDelete={onDelete}
+            onView={onView}
           />
         </div>
       </div>
@@ -81,6 +85,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
   const queryFilter = useSubmittedQueryFilter();
   const [visibleGoals, setVisibleGoals] = useState(goals);
   const [isPending, setIsPending] = useState(false);
+  const [viewedGoal, setViewedGoal] = useState<SavingsGoalRecord | null>(null);
   const search = queryFilter.appliedValue;
   const filteredGoals = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -130,10 +135,42 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       ) : (
         <section className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-3">
           {filteredGoals.map((goal) => (
-            <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} />
+            <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} onView={() => setViewedGoal(goal)} />
           ))}
         </section>
       )}
+      <DetailModal
+        actions={viewedGoal ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/savings-goals/${viewedGoal.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning"><Icon className="size-4" name="timeline" />Future plan</Link></> : null}
+        icon={viewedGoal?.icon}
+        iconClassName={viewedGoal ? `${viewedGoal.bg} ${viewedGoal.tone}` : undefined}
+        isOpen={viewedGoal !== null}
+        onClose={() => setViewedGoal(null)}
+        subtitle={viewedGoal?.account}
+        title={viewedGoal?.name ?? "Savings goal details"}
+      >
+        {viewedGoal ? <div className="space-y-5">
+          <DetailModalSection title="Goal information">
+            <DetailModalField label="Status" value={viewedGoal.status} />
+            <DetailModalField label="Progress" value={`${viewedGoal.progressPercent}%`} />
+            <DetailModalField label="Category" value={viewedGoal.categoryName} />
+            <DetailModalField label="Savings account" value={viewedGoal.account} />
+            <DetailModalField label="Target date" value={viewedGoal.targetDate} />
+            <DetailModalField label="Created" value={formatDisplayDate(viewedGoal.createdAtValue, "Not set")} />
+          </DetailModalSection>
+          <DetailModalSection title="Amounts">
+            <DetailModalField label="Target amount" value={viewedGoal.targetAmount} />
+            <DetailModalField label="Saved amount" value={viewedGoal.savedAmount} />
+            <DetailModalField label="Remaining" value={viewedGoal.remainingAmount} />
+            <DetailModalField label="Monthly contribution" value={viewedGoal.monthlyContribution} />
+            <DetailModalField label="Opening saved amount" value={formatMmk(viewedGoal.storedSavedAmountValue)} />
+            <DetailModalField label="Linked transaction contributions" value={formatMmk(viewedGoal.linkedSavedAmountValue)} />
+            <DetailModalField label="Available cash reserve" value={formatMmk(viewedGoal.cashReserveAmountValue)} />
+          </DetailModalSection>
+          <DetailModalSection title="Notes">
+            <DetailModalField label="Description" value={viewedGoal.description || "No description"} />
+          </DetailModalSection>
+        </div> : null}
+      </DetailModal>
     </>
   );
 }

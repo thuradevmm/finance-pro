@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { deleteCategory, mergeCategory, setCategoryStatus } from "@/app/categories/actions";
 import { SegmentedTabs } from "@/components/app/segmented-tabs";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
@@ -44,12 +45,14 @@ function CategoryLifecycleActions({
   onDelete,
   onMerge,
   onStatusChange,
+  onView,
 }: {
   categories: CategoryRecord[];
   category: CategoryRecord;
   onDelete: (id: string) => void;
   onMerge: (source: CategoryRecord, targetCategoryId: string) => Promise<boolean>;
   onStatusChange: (category: CategoryRecord, isActive: boolean) => Promise<boolean>;
+  onView: () => void;
 }) {
   const [isLifecycleOpen, setIsLifecycleOpen] = useState(false);
   const [isMergeOpen, setIsMergeOpen] = useState(false);
@@ -94,10 +97,9 @@ function CategoryLifecycleActions({
         itemId={category.id}
         itemLabel={category.name}
         onDelete={onDelete}
+        onView={onView}
         showDelete={!isMerged}
         showEdit={!isMerged}
-        viewHref={isTransactionCategoryType(category.type) ? `/transactions?category=${encodeURIComponent(category.name)}` : undefined}
-        viewLabel="View transactions"
       />
       <DeleteConfirmationDialog
         confirmIcon={isHidden ? "eye" : "eyeOff"}
@@ -146,12 +148,14 @@ function CategoryListItem({
   onDelete,
   onMerge,
   onStatusChange,
+  onView,
 }: {
   categories: CategoryRecord[];
   category: CategoryRecord;
   onDelete: (id: string) => void;
   onMerge: (source: CategoryRecord, targetCategoryId: string) => Promise<boolean>;
   onStatusChange: (category: CategoryRecord, isActive: boolean) => Promise<boolean>;
+  onView: () => void;
 }) {
   return (
     <article className="grid min-w-0 gap-4 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] xl:grid-cols-[minmax(16rem,1.5fr)_minmax(11rem,1fr)_minmax(11rem,0.7fr)_auto] xl:items-center sm:p-5">
@@ -189,7 +193,7 @@ function CategoryListItem({
       </div>
 
       <div className="flex min-h-11 items-center justify-end border-t border-[#c6c6cd]/40 pt-3 xl:border-0 xl:pt-0">
-        <CategoryLifecycleActions categories={categories} category={category} onDelete={onDelete} onMerge={onMerge} onStatusChange={onStatusChange} />
+        <CategoryLifecycleActions categories={categories} category={category} onDelete={onDelete} onMerge={onMerge} onStatusChange={onStatusChange} onView={onView} />
       </div>
     </article>
   );
@@ -300,6 +304,7 @@ export function CategoriesPageContent({
   const [activeTab, setActiveTab] = useState("Debit Categories");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [isPending, setIsPending] = useState(false);
+  const [viewedCategory, setViewedCategory] = useState<CategoryRecord | null>(null);
   const filtersRestored = useRef(false);
   const activeType = categoryTypeFromTab(activeTab);
   const search = searchParams.get("q") ?? "";
@@ -460,9 +465,37 @@ export function CategoriesPageContent({
 
       {filteredCategories.length > 0 ? <section className="space-y-3">
         {filteredCategories.map((category) => (
-          <CategoryListItem categories={visibleCategories} category={category} key={category.id} onDelete={handleDelete} onMerge={handleMerge} onStatusChange={handleStatusChange} />
+          <CategoryListItem categories={visibleCategories} category={category} key={category.id} onDelete={handleDelete} onMerge={handleMerge} onStatusChange={handleStatusChange} onView={() => setViewedCategory(category)} />
         ))}
       </section> : null}
+      <DetailModal
+        actions={viewedCategory ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/categories/${viewedCategory.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link>{isTransactionCategoryType(viewedCategory.type) ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions?category=${encodeURIComponent(viewedCategory.name)}`}><Icon className="size-4" name="receipt" />Transactions</Link> : null}</> : null}
+        icon={viewedCategory?.icon}
+        iconClassName={viewedCategory ? `${viewedCategory.bg} ${viewedCategory.tone}` : undefined}
+        isOpen={viewedCategory !== null}
+        onClose={() => setViewedCategory(null)}
+        subtitle={viewedCategory ? categoryTypeLabel(viewedCategory.type) : undefined}
+        title={viewedCategory?.name ?? "Category details"}
+      >
+        {viewedCategory ? <div className="space-y-5">
+          <DetailModalSection title="Category information">
+            <DetailModalField label="Type" value={categoryTypeLabel(viewedCategory.type)} />
+            <DetailModalField label="Status" value={viewedCategory.status} />
+            <DetailModalField label="Scopes" value={viewedCategory.scopes.join(", ") || "Not assigned"} />
+            <DetailModalField label="Default category" value={viewedCategory.isDefault ? viewedCategory.isSharedDefault ? "Shared system default" : "Default" : "No"} />
+            <DetailModalField label="Reporting role" value={viewedCategory.reportingRole || "Standard"} />
+            <DetailModalField label="Color" value={viewedCategory.color || "Default"} />
+            <DetailModalField label="Merged into" value={viewedCategory.mergedIntoCategoryName || "Not merged"} />
+          </DetailModalSection>
+          <DetailModalSection title="Activity">
+            <DetailModalField label={viewedCategory.activityLabel} value={viewedCategory.monthlyAverage} />
+            <DetailModalField label={viewedCategory.countLabel} value={viewedCategory.transactionCount} />
+          </DetailModalSection>
+          <DetailModalSection title="Description">
+            <DetailModalField label="Notes" value={viewedCategory.description || "No description"} />
+          </DetailModalSection>
+        </div> : null}
+      </DetailModal>
     </>
   );
 }

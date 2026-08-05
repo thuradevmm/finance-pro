@@ -1380,10 +1380,12 @@ export default function AccountsPage() {
             {isCreditCardAccount(viewedAccount) ? (
               <>
                 <DetailModalSection title="Card identification">
+                  <DetailModalField label="Account type" value={viewedAccount.type} />
+                  <DetailModalField label="Card type" value={viewedAccount.cardType || "Not set"} />
                   <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
                   <DetailModalField label="Card number" value={<span className="font-mono">{maskCardNumber(viewedAccount.cardNumber)}</span>} />
                   <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
-                  <DetailModalField label="Security code" value="Hidden for security" />
+                  <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
                 </DetailModalSection>
                 <DetailModalSection title="Credit position">
                   <DetailModalField label="Credit limit" value={viewedAccount.creditLimit} />
@@ -1400,7 +1402,10 @@ export default function AccountsPage() {
                 <DetailModalSection title="Account information">
                   <DetailModalField label="Institution" value={viewedAccount.institution || "Not set"} />
                   <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
+                  <DetailModalField label="Bank book / account number" value={viewedAccount.bankBookAccountNumber || "Not set"} />
+                  <DetailModalField label="Mobile banking number" value={viewedAccount.mobileBankingAccountNumber || "Not set"} />
                   <DetailModalField label="Currency" value={viewedAccount.currency} />
+                  <DetailModalField label={`Rate to ${viewedAccount.baseCurrency}`} value={viewedAccount.currency === viewedAccount.baseCurrency ? "Base currency" : viewedAccount.exchangeRateToBase == null ? "Rate not configured" : `1 ${viewedAccount.currency} = ${formatCurrencyAmount(viewedAccount.exchangeRateToBase, viewedAccount.baseCurrency)}`} />
                   <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "Not set"} />
                   <DetailModalField label="Status" value={viewedAccount.status} />
                   <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
@@ -1409,6 +1414,7 @@ export default function AccountsPage() {
                 <DetailModalSection title="Transaction activity (all time)">
                   <DetailModalField label="Total credited" value={<span className="text-[#047857]">{formatMmk(viewedAccount.cardCreditedValue)}</span>} />
                   <DetailModalField label="Total debited / spent" value={<span className="text-[#b42318]">{formatMmk(viewedAccount.cardDebitedValue)}</span>} />
+                  <DetailModalField label="Refunds" value={<span className="text-[#047857]">{formatMmk(viewedAccount.cardRefundValue)}</span>} />
                   <DetailModalField label="Repayments" value={<span className="text-[#047857]">{formatMmk(viewedAccount.repaymentValue)}</span>} />
                   <DetailModalField label="Cash advances" value={formatMmk(viewedAccount.cardCashAdvanceValue)} />
                   <DetailModalField label="Pending debits" value={formatMmk(viewedAccount.pendingDebitValue)} />
@@ -1424,13 +1430,27 @@ export default function AccountsPage() {
                   <DetailModalField label="Type" value={viewedAccount.type} />
                   <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
                   <DetailModalField label="Institution" value={viewedAccount.institution || "Not set"} />
-                  <DetailModalField label="Bank book / mobile number" value={viewedAccount.bankBookAccountNumber || viewedAccount.mobileBankingAccountNumber || "Not set"} />
+                  <DetailModalField label="Bank book / account number" value={viewedAccount.bankBookAccountNumber || "Not set"} />
+                  <DetailModalField label="Mobile banking number" value={viewedAccount.mobileBankingAccountNumber || "Not set"} />
                   <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "Not set"} />
                   <DetailModalField label="Currency" value={viewedAccount.currency} />
+                  <DetailModalField label={`Rate to ${viewedAccount.baseCurrency}`} value={viewedAccount.currency === viewedAccount.baseCurrency ? "Base currency" : viewedAccount.exchangeRateToBase == null ? "Rate not configured" : `1 ${viewedAccount.currency} = ${formatCurrencyAmount(viewedAccount.exchangeRateToBase, viewedAccount.baseCurrency)}`} />
+                  <DetailModalField label="Opening balance" value={formatCurrencyAmount(viewedAccount.initialBalanceValue, viewedAccount.currency)} />
                   <DetailModalField label="Net amount" value={viewedAccount.availableBalance} />
+                  <DetailModalField label="Monthly budget limit" value={viewedAccount.monthlyBudgetLimit == null ? "Not set" : formatCurrencyAmount(viewedAccount.monthlyBudgetLimit, viewedAccount.currency)} />
+                  <DetailModalField label="Status" value={viewedAccount.status} />
                   <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
                   <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
                 </DetailModalSection>
+                {viewedAccount.cardType || viewedAccount.cardNumber || viewedAccount.cardExpiryCode ? (
+                  <DetailModalSection title="Linked card information">
+                    <DetailModalField label="Card type" value={viewedAccount.cardType || "Not set"} />
+                    <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
+                    <DetailModalField label="Card number" value={<span className="font-mono">{maskCardNumber(viewedAccount.cardNumber)}</span>} />
+                    <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
+                    <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
+                  </DetailModalSection>
+                ) : null}
                 <DetailModalSection title="Amount type totals">
                   {viewedAccount.balanceBreakdowns.map((breakdown) => (
                     <DetailModalField key={breakdown.type} label={breakdown.type} value={breakdown.amount} />

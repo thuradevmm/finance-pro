@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteSubscription } from "@/app/subscriptions/actions";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { RecordActions } from "@/components/ui/record-actions";
@@ -220,6 +221,7 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
 function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void | Promise<void>; subscriptions: SubscriptionRecord[] }) {
   const [sortKey, setSortKey] = useState<SubscriptionSortKey>("nextBillingDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [viewedSubscription, setViewedSubscription] = useState<SubscriptionRecord | null>(null);
   const sortedSubscriptions = useMemo(() => {
     function value(subscription: SubscriptionRecord) {
       if (sortKey === "amount") return parseCurrency(subscription.amount);
@@ -313,6 +315,7 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                         itemId={subscription.id}
                         itemLabel={subscription.name}
                         onDelete={onDelete}
+                        onView={() => setViewedSubscription(subscription)}
                         deleteDescription={`Deleting ${subscription.name} will remove this subscription from your list.`}
                       />
                     </div>
@@ -418,12 +421,53 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                   itemId={subscription.id}
                   itemLabel={subscription.name}
                   onDelete={onDelete}
+                  onView={() => setViewedSubscription(subscription)}
                 />
               </div>
             </article>
           ))}
         </div>
       </div>
+      <DetailModal
+        actions={viewedSubscription ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/subscriptions/${viewedSubscription.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><RecordPaymentLink className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" subscription={viewedSubscription} /></> : null}
+        icon={viewedSubscription?.icon}
+        iconClassName={viewedSubscription ? `${viewedSubscription.bg} ${viewedSubscription.tone}` : undefined}
+        isOpen={viewedSubscription !== null}
+        onClose={() => setViewedSubscription(null)}
+        subtitle={viewedSubscription?.category}
+        title={viewedSubscription?.name ?? "Subscription details"}
+      >
+        {viewedSubscription ? <div className="space-y-5">
+          <DetailModalSection title="Subscription information">
+            <DetailModalField label="Status" value={viewedSubscription.status} />
+            <DetailModalField label="Category" value={viewedSubscription.category} />
+            <DetailModalField label="Billing cycle" value={viewedSubscription.billingCycle} />
+            <DetailModalField label="Payment account" value={viewedSubscription.paymentAccount} />
+            <DetailModalField label="Next billing date" value={viewedSubscription.nextBillingDate} />
+            <DetailModalField label="Billing currency" value={viewedSubscription.billingCurrency} />
+          </DetailModalSection>
+          <DetailModalSection title="Configured billing">
+            <DetailModalField label="Billed amount" value={viewedSubscription.billedAmount} />
+            <DetailModalField label="Estimated MMK amount" value={viewedSubscription.amount} />
+            <DetailModalField label="Planning exchange rate" value={viewedSubscription.exchangeRateLabel} />
+          </DetailModalSection>
+          <DetailModalSection title="Payment activity">
+            <DetailModalField label="Payment status" value={viewedSubscription.paymentStatus === "Paid" ? viewedSubscription.paidCycleLabel : viewedSubscription.paymentStatus} />
+            <DetailModalField label="Status detail" value={viewedSubscription.paymentStatusDetail} />
+            <DetailModalField label="Last payment date" value={viewedSubscription.lastPaidDate} />
+            <DetailModalField label="Billing period paid" value={viewedSubscription.lastPaidBillingDate} />
+            <DetailModalField label="Actual paid amount" value={viewedSubscription.lastPaidAmount} />
+            <DetailModalField label="Foreign billed amount" value={viewedSubscription.lastPaidBilledAmount} />
+            <DetailModalField label="Realized exchange rate" value={viewedSubscription.lastPaymentExchangeRateLabel} />
+            <DetailModalField label="Linked transaction" value={viewedSubscription.lastPaymentTransactionId || "No payment transaction"} />
+          </DetailModalSection>
+          <DetailModalSection title="Reminder">
+            <DetailModalField label="Reminder" value={viewedSubscription.reminderEnabled ? "Enabled" : "Off"} />
+            <DetailModalField label="Days before billing" value={viewedSubscription.reminderEnabled ? viewedSubscription.reminderDaysBefore : "Not applicable"} />
+            <DetailModalField label="Current reminder status" value={viewedSubscription.reminderStatus} />
+          </DetailModalSection>
+        </div> : null}
+      </DetailModal>
     </section>
   );
 }

@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteDebt } from "@/app/debts/actions";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
@@ -13,6 +15,8 @@ import { SelectFilter } from "@/components/ui/select-filter";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { formatDisplayDate } from "@/lib/date-format";
+import { formatMmk } from "@/lib/currency";
+import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { DebtRecordWithValues } from "@/lib/debts/supabase";
 import { getDebtListEmptyState, type DebtListEmptyState } from "@/lib/debts/visibility";
 import type { DebtStatus, UpcomingDebtPayment } from "@/types/finance";
@@ -111,11 +115,13 @@ function DebtsTable({
   debts,
   emptyState,
   onDelete,
+  onView,
   showActiveOnly,
 }: {
   debts: DebtRecordWithValues[];
   emptyState: DebtListEmptyState;
   onDelete: (id: string) => void | Promise<void>;
+  onView: (debt: DebtRecordWithValues) => void;
   showActiveOnly: boolean;
 }) {
   const [sortKey, setSortKey] = useState<DebtSortKey>("name");
@@ -190,9 +196,9 @@ function DebtsTable({
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
-                      <span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span>
+                      <><span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span><RecordActions editHref="#" itemId={debt.id} itemLabel={debt.name} onView={() => onView(debt)} showDelete={false} showEdit={false} /></>
                     ) : (
-                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} onView={() => onView(debt)} />
                     )}
                   </div>
                 </td>
@@ -265,9 +271,9 @@ function DebtsTable({
 
               <div className="mt-4 flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-[#c6c6cd]/40 pt-3">
                 {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
-                  <span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span>
+                  <><span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span><RecordActions editHref="#" itemId={debt.id} itemLabel={debt.name} onView={() => onView(debt)} showDelete={false} showEdit={false} /></>
                 ) : (
-                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} />
+                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} onView={() => onView(debt)} />
                 )}
               </div>
             </article>
@@ -376,12 +382,13 @@ function DebtPaymentCalendarModal({ entries, isOpen, onClose }: { entries: Calen
   );
 }
 
-export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithValues[]; payments: UpcomingDebtPayment[] }) {
+export function DebtsPageContent({ accounts, debts, payments }: { accounts: AccountRecord[]; debts: DebtRecordWithValues[]; payments: UpcomingDebtPayment[] }) {
   const { showError, showSuccess } = useToast();
   const queryFilter = useSubmittedQueryFilter();
   const [visibleDebts, setVisibleDebts] = useState(debts);
   const [isPending, setIsPending] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [viewedDebt, setViewedDebt] = useState<DebtRecordWithValues | null>(null);
   const {
     appliedFilters: debtStatusFilters,
     applyFilters: applyDebtStatusFilters,
@@ -454,6 +461,7 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
           debts={filteredDebts}
           emptyState={emptyState}
           onDelete={handleDelete}
+          onView={setViewedDebt}
           showActiveOnly={showActiveOnly}
         />
         </div>
@@ -462,6 +470,55 @@ export function DebtsPageContent({ debts, payments }: { debts: DebtRecordWithVal
         </div>
         <DebtPaymentCalendarModal entries={calendarEntries} isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
       </div>
+      <DetailModal
+        actions={viewedDebt ? viewedDebt.isCreditCardDebt && !viewedDebt.usesManualCreditCardTerms ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/accounts"><Icon className="size-4" name="account" />Open account</Link> : <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/debts/${viewedDebt.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link> : null}
+        icon={viewedDebt?.icon}
+        iconClassName={viewedDebt ? `${viewedDebt.bg} ${viewedDebt.tone}` : undefined}
+        isOpen={viewedDebt !== null}
+        onClose={() => setViewedDebt(null)}
+        subtitle={viewedDebt ? `${viewedDebt.nature} · ${viewedDebt.type}` : undefined}
+        title={viewedDebt?.name ?? "Borrowing or lending details"}
+      >
+        {viewedDebt ? <div className="space-y-5">
+          <DetailModalSection title="Record information">
+            <DetailModalField label="Nature" value={viewedDebt.nature} />
+            <DetailModalField label="Category / type" value={viewedDebt.type} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Borrower" : "Lender"} value={viewedDebt.lender || "Not set"} />
+            <DetailModalField label="Status" value={viewedDebt.status} />
+            <DetailModalField label="Start date" value={formatDisplayDate(viewedDebt.startDate, "Not set")} />
+            <DetailModalField label="Expected payoff" value={formatDisplayDate(viewedDebt.payoffDate, "Not set")} />
+            <DetailModalField label="Settled date" value={formatDisplayDate(viewedDebt.settledAtValue, "Not settled")} />
+            <DetailModalField label="Created" value={formatDisplayDate(viewedDebt.createdAtValue, "Not set")} />
+          </DetailModalSection>
+          <DetailModalSection title="Financial position">
+            <DetailModalField label="Total principal / charges" value={viewedDebt.totalAmount} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Money returned" : "Principal repaid"} value={viewedDebt.repaidAmount} />
+            <DetailModalField label="Remaining balance" value={viewedDebt.remainingBalance} />
+            <DetailModalField label="Progress" value={`${viewedDebt.progressPercent}%`} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Return due" : "Payment due"} value={viewedDebt.monthlyPayment} />
+            <DetailModalField label="Next due date" value={viewedDebt.nextPaymentDate || "Not scheduled"} />
+          </DetailModalSection>
+          <DetailModalSection title="Repayment terms">
+            <DetailModalField label="Frequency" value={viewedDebt.repaymentFrequency} />
+            <DetailModalField label="Duration" value={`${viewedDebt.durationMonths} month${viewedDebt.durationMonths === 1 ? "" : "s"}`} />
+            <DetailModalField label="Interest rate" value={viewedDebt.interestRate} />
+            <DetailModalField label="Payment account" value={accounts.find((account) => account.id === viewedDebt.paymentAccountId)?.name || "Not set"} />
+            <DetailModalField label="Account amount type" value={viewedDebt.accountAmountType || "Not set"} />
+            <DetailModalField label="Linked payment records" value={viewedDebt.repaymentActivity.length} />
+            {viewedDebt.isCreditCardDebt ? <DetailModalField label="Linked card account" value={accounts.find((account) => account.id === viewedDebt.creditCardAccountId)?.name || "Not set"} /> : null}
+            {viewedDebt.isCreditCardDebt ? <DetailModalField label="Card management" value={viewedDebt.usesManualCreditCardTerms ? "Manual terms" : "Automatic from account activity"} /> : null}
+          </DetailModalSection>
+          {!viewedDebt.isCreditCardDebt && viewedDebt.payoffQuoteDateValue ? <DetailModalSection title="Current payoff quote">
+            <DetailModalField label="As of" value={formatDisplayDate(viewedDebt.payoffQuoteDateValue)} />
+            <DetailModalField label="Principal outstanding" value={formatMmk(viewedDebt.payoffQuotePrincipalAmountValue)} />
+            <DetailModalField label="Accrued interest" value={formatMmk(viewedDebt.payoffQuoteInterestAmountValue)} />
+            <DetailModalField label="Estimated payoff amount" value={formatMmk(viewedDebt.payoffQuoteAmountValue)} />
+          </DetailModalSection> : null}
+          <DetailModalSection title="Notes">
+            <DetailModalField label="Description" value={viewedDebt.notes || "No notes"} />
+          </DetailModalSection>
+        </div> : null}
+      </DetailModal>
     </>
   );
 }

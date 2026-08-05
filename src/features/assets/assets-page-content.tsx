@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { deleteAsset as deleteAssetAction } from "@/app/assets/actions";
+import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { Icon } from "@/components/ui/icon";
@@ -11,7 +12,7 @@ import { RecordActions } from "@/components/ui/record-actions";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { calculateUsageDuration } from "@/lib/date-duration";
-import { dateTimeSortValue } from "@/lib/date-format";
+import { dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { AssetRecordWithValues } from "@/lib/assets/supabase";
 import type { AssetRecord, AssetStatus } from "@/types/finance";
 
@@ -48,7 +49,7 @@ function sortedAssets(assets: AssetRecordWithValues[], sortKey: AssetSortKey, di
   return [...assets].sort((first, second) => compareSortValues(value(first), value(second), direction));
 }
 
-function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete: (id: string) => Promise<void> }) {
+function AssetCard({ asset, onDelete, onView }: { asset: AssetRecordWithValues; onDelete: (id: string) => Promise<void>; onView: () => void }) {
   return (
     <article className="min-w-0 rounded-lg border border-[#c6c6cd]/60 bg-white p-4">
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -71,7 +72,7 @@ function AssetCard({ asset, onDelete }: { asset: AssetRecordWithValues; onDelete
           <p className="text-xs font-medium text-[#45464d]">Purchased {asset.purchaseDate}</p>
           <Link className="mt-1 inline-flex text-xs font-bold text-[#0058be] hover:underline" href={`/transactions/add?asset=${asset.id}`}>{asset.purchaseAmountValue > 0 ? "Add purchase" : "Record purchase"}</Link>
         </div>
-        <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} />
+        <RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={onDelete} onView={onView} />
       </div>
     </article>
   );
@@ -87,6 +88,7 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
   const [sortKey, setSortKey] = useState<AssetSortKey>("purchaseDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [isPending, setIsPending] = useState(false);
+  const [viewedAsset, setViewedAsset] = useState<AssetRecordWithValues | null>(null);
   const filteredAssets = useMemo(() => {
     const query = search.trim().toLowerCase();
     return sortedAssets(visibleAssets.filter((asset) => {
@@ -162,13 +164,42 @@ export function AssetsPageContent({ assets }: { assets: AssetRecordWithValues[] 
               <td className="px-4 py-4"><div className="flex items-center gap-3"><span className={`grid size-9 place-items-center rounded-md ${asset.bg} ${asset.tone}`}><Icon className="size-4" name={asset.icon} /></span><div><p className="font-semibold text-[#0b1c30]">{asset.name}</p><p className="mt-1 text-xs text-[#45464d]">{asset.category}</p></div></div></td>
               <td className="whitespace-nowrap px-4 py-4">{asset.purchaseDate}</td><td className="px-4 py-4 text-right font-semibold text-[#0058be]">{asset.purchaseAmount}</td>
               <td className="whitespace-nowrap px-4 py-4">{calculateUsageDuration(asset.startUsingDateValue)}</td><td className={`px-4 py-4 font-semibold ${conditionStyles[asset.condition]}`}>{asset.condition}</td><td className="px-4 py-4"><span className={`rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[asset.status]}`}>{asset.status}</span></td>
-              <td className="px-4 py-4"><div className="flex items-center justify-end gap-2"><Link className="inline-flex min-h-9 items-center rounded-md px-3 text-xs font-bold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions/add?asset=${asset.id}`}>{asset.purchaseAmountValue > 0 ? "Add purchase" : "Record purchase"}</Link><RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={deleteAsset} /></div></td>
+              <td className="px-4 py-4"><div className="flex items-center justify-end gap-2"><Link className="inline-flex min-h-9 items-center rounded-md px-3 text-xs font-bold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions/add?asset=${asset.id}`}>{asset.purchaseAmountValue > 0 ? "Add purchase" : "Record purchase"}</Link><RecordActions deleteDescription={`Deleting ${asset.name} will remove this asset from your register.`} editHref={`/assets/${asset.id}/edit`} itemId={asset.id} itemLabel={asset.name} onDelete={deleteAsset} onView={() => setViewedAsset(asset)} /></div></td>
             </tr>)}</tbody>
           </table>
         </div>
-        <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">{filteredAssets.map((asset) => <AssetCard asset={asset} key={`mobile-${asset.id}`} onDelete={deleteAsset} />)}</div>
+        <div className="grid min-w-0 gap-3 p-3 sm:grid-cols-2 sm:p-4 xl:hidden">{filteredAssets.map((asset) => <AssetCard asset={asset} key={`mobile-${asset.id}`} onDelete={deleteAsset} onView={() => setViewedAsset(asset)} />)}</div>
         {filteredAssets.length === 0 ? <div className="px-4 py-12 text-center"><Icon className="mx-auto size-8 text-[#76777d]" name="box" /><h3 className="mt-3 font-semibold text-[#0b1c30]">No matching assets</h3><p className="mt-1 text-sm text-[#45464d]">Adjust or reset the search and status filters.</p></div> : null}
       </section>
+      <DetailModal
+        actions={viewedAsset ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/assets/${viewedAsset.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions/add?asset=${viewedAsset.id}`}><Icon className="size-4" name="receipt" />Record purchase</Link></> : null}
+        icon={viewedAsset?.icon}
+        iconClassName={viewedAsset ? `${viewedAsset.bg} ${viewedAsset.tone}` : undefined}
+        isOpen={viewedAsset !== null}
+        onClose={() => setViewedAsset(null)}
+        subtitle={viewedAsset?.category}
+        title={viewedAsset?.name ?? "Asset details"}
+      >
+        {viewedAsset ? <div className="space-y-5">
+          <DetailModalSection title="Asset information">
+            <DetailModalField label="Category" value={viewedAsset.category} />
+            <DetailModalField label="Status" value={viewedAsset.status} />
+            <DetailModalField label="Condition" value={viewedAsset.condition} />
+            <DetailModalField label="Serial / reference" value={viewedAsset.serialReference || "Not set"} />
+            <DetailModalField label="Purchase date" value={viewedAsset.purchaseDate || "Not set"} />
+            <DetailModalField label="Started using" value={viewedAsset.startUsingDate || "Not set"} />
+            <DetailModalField label="Usage duration" value={calculateUsageDuration(viewedAsset.startUsingDateValue)} />
+            <DetailModalField label="Created" value={formatDisplayDate(viewedAsset.createdAtValue, "Not set")} />
+          </DetailModalSection>
+          <DetailModalSection title="Transaction-backed value">
+            <DetailModalField label="Linked purchase value" value={viewedAsset.purchaseAmount} />
+            <DetailModalField label="Recorded current value" value={viewedAsset.currentValue} />
+          </DetailModalSection>
+          <DetailModalSection title="Notes">
+            <DetailModalField label="Description" value={viewedAsset.note || "No notes"} />
+          </DetailModalSection>
+        </div> : null}
+      </DetailModal>
     </>
   );
 }
