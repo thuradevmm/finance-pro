@@ -40,12 +40,17 @@ test("category UI supports bulk child linking and separate hierarchy views", () 
   const page = source("src/features/categories/categories-page-content.tsx");
   assert.match(form, /childCategoryIds: level === "Super" \? selectedChildCategoryIds : \[\]/);
   assert.match(form, /Link subcategories/);
+  assert.match(form, /!item\.parentId \|\| item\.parentId === category\?\.id/);
+  assert.match(form, /Only ungrouped/);
+  assert.doesNotMatch(form, /will move to this super category/);
   assert.match(form, /no more than one super-category parent/);
-  assert.match(form, /Each subcategory has one parent/);
   assert.match(form, /type="checkbox"/);
   assert.match(page, /const hierarchyViews = \["Hierarchy", "Super categories", "Subcategories"\]/);
   assert.match(page, /Rolled-up/);
   assert.match(page, /Linked subcategories/);
+  const actions = source("src/app/categories/actions.ts");
+  assert.match(actions, /!child\.parent_id \|\| child\.parent_id === categoryId/);
+  assert.match(actions, /available, owned subcategory/);
 });
 
 test("account amount types remain metadata-backed until the reusable catalog exists", () => {

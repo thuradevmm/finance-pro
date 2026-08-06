@@ -174,11 +174,12 @@ async function validateSuperCategoryChildren(
   const expectedType = categoryTypeKeys[input.type];
   const validIds = new Set((data ?? []).filter((child) => child.category_level === "subcategory"
     && child.category_type === expectedType
+    && (!child.parent_id || child.parent_id === categoryId)
     && (child.is_active || child.parent_id === categoryId)
     && !child.merged_into_category_id).map((child) => child.id));
   return input.childCategoryIds.every((id) => validIds.has(id))
     ? ""
-    : "Every linked child must be an owned subcategory with the same category type.";
+    : "Every linked child must be an available, owned subcategory with the same category type.";
 }
 
 async function assignSuperCategoryChildren(

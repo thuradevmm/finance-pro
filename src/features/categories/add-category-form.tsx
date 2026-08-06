@@ -61,6 +61,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
     && item.level === "Subcategory"
     && item.type === selectedType
     && !item.mergedIntoCategoryId
+    && (!item.parentId || item.parentId === category?.id)
     && (item.status === "Active" || item.parentId === category?.id));
   const selectedChildCategories = childCategoryOptions.filter((item) => selectedChildCategoryIds.includes(item.id));
   const selectedRoleLabel = financialRoleOptions.find((option) => option.value === financialRole)?.label ?? "Other";
@@ -211,7 +212,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-[#0b1c30]">Link subcategories</h3>
-                  <p className="mt-1 text-xs leading-5 text-[#45464d]">Select several existing {categoryTypeLabel(selectedType).toLowerCase()} subcategories. Each subcategory has one parent, so a category linked elsewhere will move to this super category.</p>
+                  <p className="mt-1 text-xs leading-5 text-[#45464d]">Only ungrouped {categoryTypeLabel(selectedType).toLowerCase()} subcategories are available to link. Subcategories already linked here remain visible so you can manage them.</p>
                 </div>
                 <span className="w-fit rounded-full bg-[#e0f2fe] px-3 py-1 text-xs font-bold text-[#075985]">{selectedChildCategoryIds.length} selected</span>
               </div>
@@ -219,7 +220,6 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                 <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
                   {childCategoryOptions.map((item) => {
                     const isChecked = selectedChildCategoryIds.includes(item.id);
-                    const willMove = Boolean(item.parentId && item.parentId !== category?.id);
                     return (
                       <label
                         className={isChecked
@@ -238,7 +238,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                         <span className="min-w-0 flex-1">
                           <span className="block break-words text-sm font-semibold text-[#0b1c30]">{item.name}</span>
                           <span className="mt-0.5 block text-xs font-medium text-[#45464d]">
-                            {willMove ? `Currently under ${item.parentName}; it will move here.` : item.status === "Hidden" ? "Hidden subcategory currently linked here." : item.parentName ? `Currently under ${item.parentName}.` : "Currently ungrouped."}
+                            {item.status === "Hidden" ? "Hidden subcategory currently linked here." : item.parentId === category?.id ? "Currently linked here." : "Available to link."}
                           </span>
                         </span>
                       </label>
@@ -247,7 +247,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                 </div>
               ) : (
                 <div className="mt-4 rounded-md border border-dashed border-[#c6c6cd] bg-white px-4 py-5 text-center text-sm font-medium text-[#45464d]">
-                  No matching subcategories exist yet. Save this super category, then create subcategories under it.
+                  No available subcategories match this category type. Create an ungrouped subcategory first or manage an existing child from its current super category.
                 </div>
               )}
               {childCategoryOptions.length > 0 ? (
