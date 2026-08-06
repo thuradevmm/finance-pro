@@ -11,7 +11,7 @@ function normalizedCategoryType(value: unknown) {
 }
 
 export function categoryRowSupports(
-  row: { category_type?: unknown; metadata?: unknown; type?: unknown },
+  row: { category_level?: unknown; category_type?: unknown; metadata?: unknown; type?: unknown },
   scope: CategoryScope,
   type: CategoryType,
 ) {
@@ -22,11 +22,12 @@ export function categoryRowSupports(
   const expectedScope = scope.toLowerCase();
   const expectedType = type.toLowerCase();
   const rowType = normalizedCategoryType(row.category_type ?? metadata.category_type ?? row.type);
-  return scopes.includes(expectedScope) && rowType === expectedType;
+  const level = normalizedCategoryType(row.category_level ?? metadata.category_level ?? "subcategory");
+  return level !== "super" && scopes.includes(expectedScope) && rowType === expectedType;
 }
 
 export function getCategoriesForScope(categories: FinancialCategory[], scope: CategoryScope, type?: CategoryType) {
-  return categories.filter((category) => category.status === "Active" && category.scopes.includes(scope) && (!type || category.type === type));
+  return categories.filter((category) => category.level !== "Super" && category.status === "Active" && category.scopes.includes(scope) && (!type || category.type === type));
 }
 
 export function getScopesForCategoryType(type: CategoryType): CategoryScope[] {

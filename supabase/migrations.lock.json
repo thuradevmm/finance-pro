@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202608020001",
+  "sealedThrough": "202608060001",
   "migrations": [
     {
       "version": "202606180001",
@@ -196,6 +196,11 @@
       "version": "202608020001",
       "file": "202608020001_category_planning_budget_retirement.sql",
       "sha256": "9d1d225a5cdd368c7b4c9f0f0f3cf167c6067a9fde47371964f0ba043cf8c727"
+    },
+    {
+      "version": "202608060001",
+      "file": "202608060001_financial_funds_category_hierarchy_and_percentage_plans.sql",
+      "sha256": "d8b6ee337e8d246d6318bae5f129363cc6d2d25b8cf5a50c36ef8afe5c20c012"
     }
   ],
   "historyRepairs": [

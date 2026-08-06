@@ -10,6 +10,8 @@ export type FuturePlanningColumn = {
   direction: FuturePlanningColumnDirection;
   id: string;
   linkedSavingsGoals: Array<{
+    contributionPercentage: number;
+    contributionType: "Fixed" | "Percentage";
     id: string;
     monthlyContribution: number;
     name: string;
@@ -23,10 +25,30 @@ export type FuturePlanningColumn = {
 export type FuturePlanningAmount = {
   actualAmount: number;
   amount: number;
+  amountType: "Fixed" | "Percentage";
   columnId: string;
   id: string;
+  percentage: number;
   periodMonth: string;
 };
+
+export function resolvePercentagePlanningAmounts(
+  amounts: FuturePlanningAmount[],
+  columns: Array<Pick<FuturePlanningColumn, "direction" | "id">>,
+) {
+  const directionByColumnId = new Map(columns.map((column) => [column.id, column.direction]));
+  const incomeByMonth = new Map<string, number>();
+  for (const amount of amounts) {
+    if (directionByColumnId.get(amount.columnId) !== "income" || amount.amountType === "Percentage") continue;
+    const monthKey = amount.periodMonth.slice(0, 7);
+    incomeByMonth.set(monthKey, roundMoney((incomeByMonth.get(monthKey) ?? 0) + amount.amount));
+  }
+  return amounts.map((amount) => {
+    if (amount.amountType !== "Percentage" || directionByColumnId.get(amount.columnId) === "income") return amount;
+    const income = incomeByMonth.get(amount.periodMonth.slice(0, 7)) ?? 0;
+    return { ...amount, amount: roundMoney(income * amount.percentage / 100) };
+  });
+}
 
 export type FuturePlanningMonthlyRow = {
   actualColumnAmounts: Record<string, number>;
@@ -89,8 +111,9 @@ export function buildManualFuturePlanningTable(
 ): FuturePlanningMonthlyRow[] {
   const years = normalizePlanningYears(selectedYears);
   const activePlans = plans.filter((plan) => plan.status === "Active");
+  const resolvedAmounts = resolvePercentagePlanningAmounts(amounts, columns);
   const amountsByMonth = new Map<string, FuturePlanningAmount[]>();
-  for (const amount of amounts) {
+  for (const amount of resolvedAmounts) {
     const monthKey = amount.periodMonth.slice(0, 7);
     amountsByMonth.set(monthKey, [...(amountsByMonth.get(monthKey) ?? []), amount]);
   }

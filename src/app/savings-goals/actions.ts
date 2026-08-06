@@ -33,10 +33,15 @@ async function authenticatedClient() {
 
 function validateGoalInput(input: SavingsGoalFormData) {
   if (!input.name.trim()) return "Savings goal name is required.";
-  if (!Number.isFinite(input.targetAmount) || input.targetAmount <= 0) return "Target amount must be greater than zero.";
+  if (input.goalType !== "Target" && input.goalType !== "Fund") return "Choose a valid savings type.";
+  if (input.goalType === "Target" && (!Number.isFinite(input.targetAmount) || input.targetAmount <= 0)) return "Target amount must be greater than zero.";
+  if (input.goalType === "Fund" && (!Number.isFinite(input.targetAmount) || input.targetAmount < 0)) return "Fund target amount cannot be negative.";
   if (!Number.isFinite(input.savedAmount) || input.savedAmount < 0) return "Already saved amount cannot be negative.";
-  if (!Number.isFinite(input.monthlyContribution) || input.monthlyContribution < 0) return "Monthly contribution cannot be negative.";
-  if (!isValidCalendarDate(input.targetDate)) return "Enter a valid target date.";
+  if (input.contributionType === "Fixed" && (!Number.isFinite(input.monthlyContribution) || input.monthlyContribution < 0)) return "Monthly contribution cannot be negative.";
+  if (input.contributionType === "Percentage" && (!Number.isFinite(input.contributionPercentage) || input.contributionPercentage <= 0 || input.contributionPercentage > 100)) return "Contribution percentage must be greater than zero and no more than 100%.";
+  if (input.goalType === "Target" && !isValidCalendarDate(input.targetDate)) return "Enter a valid target date.";
+  if (input.goalType === "Fund" && input.targetDate) return "Open-ended funds do not use a target date.";
+  if (!input.accountAmountType.trim() || input.accountAmountType.trim().length > 80) return "Choose a valid account amount type.";
   return "";
 }
 
@@ -49,9 +54,9 @@ async function validateGoalLinks(
   if (!input.accountId) return "Select a savings account.";
   if (!input.categoryId) return "Select a savings goal category.";
   const accountPromise = supabase.from("accounts").select("id,type,is_active,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
-  let categoryResult = await supabase.from("categories").select("id,is_active,metadata,type,category_type").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+  let categoryResult = await supabase.from("categories").select("id,is_active,metadata,type,category_type,category_level").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
   if (categoryResult.error && isMissingDatabaseObject(categoryResult.error, ["category_type"])) {
-    categoryResult = await supabase.from("categories").select("id,is_active,metadata,type").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    categoryResult = await supabase.from("categories").select("id,is_active,metadata,type,category_level").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
   }
   const accountResult = await accountPromise;
   const error = accountResult.error ?? categoryResult.error;
@@ -61,6 +66,15 @@ async function validateGoalLinks(
     || isCreditCardType(accountResult.data.type)) {
     return "Select an available non-credit-card savings account.";
   }
+  const accountMetadata = accountResult.data.metadata && typeof accountResult.data.metadata === "object" && !Array.isArray(accountResult.data.metadata)
+    ? accountResult.data.metadata as Record<string, unknown>
+    : {};
+  const amountTypes = Array.isArray(accountMetadata.amount_types)
+    ? accountMetadata.amount_types.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).type === "string" ? [String((item as Record<string, unknown>).type)] : [])
+    : [accountMetadata.operation_amount == null ? "" : "Operation", accountMetadata.saving_amount == null ? "" : "Saving"].filter(Boolean);
+  if (amountTypes.length > 0 && !amountTypes.some((type) => type.trim().toLowerCase() === input.accountAmountType.trim().toLowerCase())) {
+    return "Choose an amount type that belongs to the selected savings account.";
+  }
   if (!categoryResult.data
     || (categoryResult.data.is_active === false && categoryResult.data.id !== allowedExistingCategoryId)
     || !categoryRowSupports(categoryResult.data, "Savings Goals", "Savings Goal")) return "Select an active savings goal category.";
@@ -69,30 +83,38 @@ async function validateGoalLinks(
 
 function goalPayload(input: SavingsGoalFormData, linkedSavedAmount = 0) {
   const totalSavedAmount = roundCurrencyValue(input.savedAmount + linkedSavedAmount);
-  const status = totalSavedAmount >= input.targetAmount ? "completed" : "active";
+  const status = input.goalType === "Target" && totalSavedAmount >= input.targetAmount ? "completed" : "active";
   return {
     account_id: input.accountId || null,
+    account_amount_type: input.accountAmountType.trim(),
     category_id: input.categoryId || null,
+    contribution_percentage: input.contributionType === "Percentage" ? input.contributionPercentage : null,
+    contribution_type: input.contributionType.toLowerCase(),
     current_amount: input.savedAmount,
     description: input.description.trim() || null,
     metadata: {
       account_id: input.accountId || null,
+      account_amount_type: input.accountAmountType.trim(),
       category_id: input.categoryId || null,
+      contribution_percentage: input.contributionType === "Percentage" ? input.contributionPercentage : null,
+      contribution_type: input.contributionType.toLowerCase(),
       current_amount: input.savedAmount,
       description: input.description.trim(),
+      goal_type: input.goalType.toLowerCase(),
       monthly_contribution: input.monthlyContribution,
       saved_amount: input.savedAmount,
       status,
       target_amount: input.targetAmount,
-      target_date: input.targetDate,
+      target_date: input.goalType === "Target" ? input.targetDate : null,
     },
     monthly_contribution: input.monthlyContribution,
     name: input.name.trim(),
+    goal_type: input.goalType.toLowerCase(),
     initial_saved_amount: input.savedAmount,
     saved_amount: input.savedAmount,
     status,
     target_amount: input.targetAmount,
-    target_date: input.targetDate,
+    target_date: input.goalType === "Target" ? input.targetDate : null,
   };
 }
 

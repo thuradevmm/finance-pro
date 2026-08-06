@@ -11,10 +11,12 @@ import { isMissingDatabaseObject, schemaUpgradeRequiredMessage } from "@/lib/sup
 
 type ActionResult = { error?: string };
 type StoredCategoryRow = {
+  category_level?: string | null;
   category_type?: string | null;
   id: string;
   is_active?: boolean | null;
   merged_into_category_id?: string | null;
+  parent_id?: string | null;
   metadata: unknown;
   type: string;
   user_id?: string | null;
@@ -59,8 +61,10 @@ function categoryPayload(input: CategoryFormData, existingMetadata: Record<strin
 
   return {
     archived_at: input.isActive ? null : new Date().toISOString(),
+    category_level: input.level === "Super" ? "super" : "subcategory",
     category_type: categoryTypeKeys[input.type],
     color: style.color,
+    financial_role: input.level === "Super" ? input.financialRole || "other" : null,
     icon: style.icon,
     is_active: input.isActive,
     is_default: false,
@@ -68,10 +72,14 @@ function categoryPayload(input: CategoryFormData, existingMetadata: Record<strin
       ...existingMetadata,
       category_type: input.type,
       description: input.description,
+      category_level: input.level === "Super" ? "super" : "subcategory",
+      financial_role: input.level === "Super" ? input.financialRole || "other" : null,
+      parent_id: input.level === "Subcategory" ? input.parentId || null : null,
       reporting_role: reportingRole,
       scopes: input.scopes,
     },
     name: input.name.trim(),
+    parent_id: input.level === "Subcategory" ? input.parentId || null : null,
     reporting_role: reportingRole,
     type: input.type === "Income" ? "income" : "expense",
   };
@@ -80,7 +88,9 @@ function categoryPayload(input: CategoryFormData, existingMetadata: Record<strin
 function legacyCategoryPayload(payload: ReturnType<typeof categoryPayload>) {
   const legacyPayload: Partial<ReturnType<typeof categoryPayload>> = { ...payload };
   delete legacyPayload.archived_at;
+  delete legacyPayload.category_level;
   delete legacyPayload.category_type;
+  delete legacyPayload.financial_role;
   delete legacyPayload.reporting_role;
   return legacyPayload;
 }
@@ -98,19 +108,19 @@ async function getOwnedCategory(
 ) {
   const enrichedResult = await supabase
     .from("categories")
-    .select("id,user_id,type,is_active,category_type,merged_into_category_id,metadata")
+    .select("id,user_id,type,is_active,category_type,category_level,parent_id,merged_into_category_id,metadata")
     .eq("id", categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
   if (!enrichedResult.error) return { data: enrichedResult.data as StoredCategoryRow | null, error: "" };
-  if (!isMissingDatabaseObject(enrichedResult.error, ["category_type", "merged_into_category_id"])) {
+  if (!isMissingDatabaseObject(enrichedResult.error, ["category_type", "category_level", "merged_into_category_id"])) {
     return { data: null, error: enrichedResult.error.message };
   }
 
   const legacyResult = await supabase
     .from("categories")
-    .select("id,user_id,type,is_active,metadata")
+    .select("id,user_id,type,is_active,parent_id,metadata")
     .eq("id", categoryId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -126,11 +136,41 @@ function validateCategoryInput(input: CategoryFormData) {
   if (!input.name.trim() || input.name.trim().length > 100) return "Enter a category name up to 100 characters.";
   if (input.description.length > 1_000) return "Keep the category description under 1,000 characters.";
   if (!allowedTypes.includes(input.type)) return "Choose a valid category type.";
+  if (input.level !== "Super" && input.level !== "Subcategory") return "Choose a valid category level.";
+  const allowedRoles = ["", "essential", "debt_obligation", "emergency_reserve", "savings", "discretionary", "income", "other"];
+  if (!allowedRoles.includes(input.financialRole)) return "Choose a valid financial purpose.";
+  if (input.level === "Subcategory" && input.financialRole) return "Financial purpose is set on super categories.";
+  if (input.level === "Super" && input.parentId) return "A super category cannot belong to another category.";
   if (input.reportingRole && (input.type !== "Income" || input.reportingRole !== "salary")) return "Choose a valid Credit reporting role.";
   const expectedScopes = getScopesForCategoryType(input.type);
   if (input.scopes.length !== expectedScopes.length || expectedScopes.some((scope) => !input.scopes.includes(scope))) {
     return "Choose the valid scope for this category type.";
   }
+  return "";
+}
+
+async function validateParentCategory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: CategoryFormData,
+  categoryId = "",
+) {
+  if (input.level === "Super" || !input.parentId) return "";
+  if (input.parentId === categoryId) return "A category cannot be its own parent.";
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,category_type,category_level,is_active,metadata")
+    .eq("id", input.parentId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!data || data.is_active === false) return "Choose an active super category.";
+  const metadata = metadataRecord(data.metadata);
+  const level = String(data.category_level ?? metadata.category_level ?? "subcategory").toLowerCase();
+  const type = String(data.category_type ?? metadata.category_type ?? "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (level !== "super") return "Choose a super category as the parent.";
+  if (type !== categoryTypeKeys[input.type]) return "Parent and subcategory must use the same category type.";
   return "";
 }
 
@@ -219,6 +259,8 @@ export async function createCategory(input: CategoryFormData): Promise<ActionRes
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const validationError = validateCategoryInput(input);
   if (validationError) return { error: validationError };
+  const parentError = await validateParentCategory(supabase, user.id, input);
+  if (parentError) return { error: parentError };
 
   const payload = categoryPayload(input);
   let { error } = await supabase.from("categories").insert({
@@ -226,7 +268,7 @@ export async function createCategory(input: CategoryFormData): Promise<ActionRes
     is_default: false,
     user_id: user.id,
   });
-  if (error && isMissingDatabaseObject(error, ["category_type", "reporting_role", "archived_at"])) {
+  if (error && isMissingDatabaseObject(error, ["category_type", "category_level", "financial_role", "reporting_role", "archived_at"])) {
     ({ error } = await supabase.from("categories").insert({
       ...legacyCategoryPayload(payload),
       is_default: false,
@@ -244,6 +286,8 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const validationError = validateCategoryInput(input);
   if (validationError) return { error: validationError };
+  const parentError = await validateParentCategory(supabase, user.id, input, categoryId);
+  if (parentError) return { error: parentError };
 
   const { data: target, error: targetError } = await getOwnedCategory(supabase, user.id, categoryId);
   if (targetError) return { error: targetError };
@@ -252,6 +296,12 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
   const stored = storedCategoryDefinition(target);
   const definitionChanged = stored.type !== input.type
     || stored.scopes.join("\u0000") !== [...input.scopes].sort().join("\u0000");
+  const storedLevel = target.category_level === "super" || metadataRecord(target.metadata).category_level === "super" ? "Super" : "Subcategory";
+  if (storedLevel !== input.level) {
+    const usage = await categoryIsUsed(supabase, user.id, categoryId);
+    if (usage.error) return { error: usage.error };
+    if (usage.used) return { error: `This category's level cannot be changed because it is used by ${usage.reasons.join(", ")}.` };
+  }
   if (definitionChanged) {
     const usage = await categoryIsUsed(supabase, user.id, categoryId);
     if (usage.error) return { error: usage.error };
@@ -266,7 +316,7 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
     .eq("user_id", user.id)
     .select("id")
     .maybeSingle();
-  if (error && isMissingDatabaseObject(error, ["category_type", "reporting_role", "archived_at"])) {
+  if (error && isMissingDatabaseObject(error, ["category_type", "category_level", "financial_role", "reporting_role", "archived_at"])) {
     ({ data, error } = await supabase
       .from("categories")
       .update(legacyCategoryPayload(payload))

@@ -167,7 +167,9 @@ type RelatedReferenceRow = {
 };
 
 type SavingsGoalReferenceRow = RelatedReferenceRow & {
+  account_amount_type: string | null;
   current_amount: number | string | null;
+  goal_type: string | null;
   initial_saved_amount: number | string | null;
   saved_amount: number | string | null;
   target_amount: number | string | null;
@@ -266,6 +268,7 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
       account_amount_type: input.accountAmountType,
       future_planning_amount_id: input.futurePlanningAmountId || null,
       transfer_account_amount_type: null,
+      savings_action: input.savingsAction || null,
       ...extraMetadata,
       ...futurePlanMetadata(input.futurePlan, input.amount),
       ...(input.status.toLowerCase() === "scheduled" ? {
@@ -275,6 +278,7 @@ function singleTransactionPayload(input: TransactionFormData, extraMetadata: Tra
     },
     related_entity_id: input.relatedEntityType === "none" ? null : input.relatedEntityId || null,
     related_entity_type: input.relatedEntityType === "none" ? null : input.relatedEntityType,
+    savings_action: input.savingsAction || null,
     status: input.status.toLowerCase(),
     title: input.title.trim() || `${transactionTypeLabel(input.type)} transaction`,
     transaction_date: input.date,
@@ -513,7 +517,7 @@ async function validateAndResolveTransactionReferences(
   if (input.type !== "Transfer") {
     let { data: category, error: categoryError } = await supabase
       .from("categories")
-      .select("id,is_active,type,category_type,metadata")
+      .select("id,is_active,type,category_type,category_level,metadata")
       .eq("id", input.categoryId)
       .eq("user_id", userId)
       .is("deleted_at", null)
@@ -521,7 +525,7 @@ async function validateAndResolveTransactionReferences(
     if (categoryError && isMissingDatabaseObject(categoryError, ["category_type"])) {
       ({ data: category, error: categoryError } = await supabase
         .from("categories")
-        .select("id,is_active,type,metadata")
+        .select("id,is_active,type,category_level,metadata")
         .eq("id", input.categoryId)
         .eq("user_id", userId)
         .is("deleted_at", null)
@@ -545,7 +549,7 @@ async function validateAndResolveTransactionReferences(
     relatedRecord = result.data as RelatedReferenceRow | null;
     relatedError = result.error;
   } else if (input.relatedEntityType === "savings_goal") {
-    const result = await supabase.from("savings_goals").select("id,status,metadata,account_id,target_amount,current_amount,saved_amount,initial_saved_amount").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await supabase.from("savings_goals").select("id,status,metadata,account_id,account_amount_type,goal_type,target_amount,current_amount,saved_amount,initial_saved_amount").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
     savingsGoalRecord = result.data as SavingsGoalReferenceRow | null;
     relatedRecord = savingsGoalRecord;
     relatedError = result.error;
@@ -564,17 +568,11 @@ async function validateAndResolveTransactionReferences(
   if (!preservesExistingRelated && input.relatedEntityType === "debt" && ["archived", "paid"].includes(status)) {
     return { error: "Completed or archived borrowing / lending records cannot receive new payment or return activity.", input };
   }
-  if (!preservesExistingRelated && input.relatedEntityType === "savings_goal" && status === "completed") {
-    return { error: "Completed savings goals cannot receive new contributions.", input };
-  }
   if (!preservesExistingRelated && input.relatedEntityType === "subscription" && ["cancelled", "canceled", "expired", "paused"].includes(status)) {
     return { error: "Paused or expired subscriptions cannot receive new payments.", input };
   }
   if (!preservesExistingRelated && input.relatedEntityType === "asset" && status && status !== "active") {
     return { error: "Sold or archived assets cannot receive new purchase activity.", input };
-  }
-  if (input.relatedEntityType === "savings_goal" && input.type === "Transfer" && input.transferAccountId !== relatedRecord.account_id) {
-    return { error: "A savings-goal transfer must move money into the account assigned to that goal.", input };
   }
   if (input.relatedEntityType === "debt") {
     const relatedMetadata = metadataRecord(relatedRecord.metadata);
@@ -595,10 +593,31 @@ async function validateAndResolveTransactionReferences(
   if (["asset", "subscription"].includes(input.relatedEntityType) && input.type !== "Expense") {
     return { error: `${input.relatedEntityType === "asset" ? "Asset purchases" : "Subscription payments"} must be recorded as a Debit.`, input };
   }
-  if (input.relatedEntityType === "savings_goal" && input.type === "Income") {
-    return { error: "Savings-goal contributions must be a Debit or a Transfer into the goal account.", input };
-  }
   if (input.relatedEntityType === "savings_goal" && savingsGoalRecord) {
+    const goalMetadata = metadataRecord(savingsGoalRecord.metadata);
+    const goalType = savingsGoalRecord.goal_type === "fund" || goalMetadata.goal_type === "fund" ? "fund" : "target";
+    const goalAmountType = savingsGoalRecord.account_amount_type
+      || (typeof goalMetadata.account_amount_type === "string" ? goalMetadata.account_amount_type : "General");
+    const sameAmountType = (first: string, second: string) => first.trim().toLowerCase() === second.trim().toLowerCase();
+    const isDeposit = input.type === "Income"
+      || (input.type === "Transfer" && input.transferAccountId === savingsGoalRecord.account_id && sameAmountType(input.transferAccountAmountType, goalAmountType));
+    const isWithdrawal = input.type === "Expense"
+      || (input.type === "Transfer" && input.accountId === savingsGoalRecord.account_id && sameAmountType(input.accountAmountType, goalAmountType));
+    if (isDeposit === isWithdrawal) return { error: "Choose the linked fund account and amount type as either the source or destination.", input };
+    const savingsAction = isDeposit ? "deposit" : "withdrawal";
+    if (input.savingsAction && input.savingsAction !== savingsAction) return { error: "The savings action does not match the selected transaction direction.", input };
+    if (input.type === "Income" && (input.accountId !== savingsGoalRecord.account_id || !sameAmountType(input.accountAmountType, goalAmountType))) {
+      return { error: "A savings Credit must be posted to the account amount type assigned to the goal or fund.", input };
+    }
+    if (input.type === "Expense" && (input.accountId !== savingsGoalRecord.account_id || !sameAmountType(input.accountAmountType, goalAmountType))) {
+      return { error: "Using savings requires the account amount type assigned to the fund.", input };
+    }
+    if (savingsAction === "withdrawal" && goalType !== "fund") {
+      return { error: "Only reusable savings funds can be used for spending or outbound transfers.", input };
+    }
+    if (savingsAction === "deposit" && !preservesExistingRelated && goalType === "target" && status === "completed") {
+      return { error: "This target savings goal is already complete.", input };
+    }
     const ignoredIds = new Set(preservesExistingRelated ? allowedExistingRelated?.transactionIds ?? [] : []);
     const [entriesResult, transactionsResult] = await Promise.all([
       supabase
@@ -622,7 +641,7 @@ async function validateAndResolveTransactionReferences(
       (transactionsResult.data ?? []).filter((transaction) => !transaction.id || !ignoredIds.has(transaction.id)),
       new Map([[savingsGoalRecord.id, savingsGoalRecord.account_id ?? ""]]),
     ).progressByGoalId.get(savingsGoalRecord.id) ?? 0;
-    const metadata = metadataRecord(savingsGoalRecord.metadata);
+    const metadata = goalMetadata;
     const storedAmount = resolveStoredSavingsAmount({
       currentAmount: savingsGoalRecord.current_amount,
       initialSavedAmount: savingsGoalRecord.initial_saved_amount,
@@ -637,12 +656,16 @@ async function validateAndResolveTransactionReferences(
       storedSavedAmount: storedAmount,
       targetAmount,
     });
-    if (capacity.isComplete) {
+    if (savingsAction === "deposit" && goalType === "target" && capacity.isComplete) {
       return { error: "This savings goal is already complete based on its linked contributions.", input };
     }
-    if (capacity.exceedsRemaining) {
+    if (savingsAction === "deposit" && goalType === "target" && capacity.exceedsRemaining) {
       return { error: `This contribution exceeds the ${formatMmk(capacity.remainingAmount)} remaining on the savings goal.`, input };
     }
+    if (savingsAction === "withdrawal" && input.amount > capacity.savedAmount + 0.005) {
+      return { error: `This fund only has ${formatMmk(capacity.savedAmount)} available.`, input };
+    }
+    return { input: { ...input, savingsAction } };
   }
   return { input };
 }
@@ -675,6 +698,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
     payment_method: null,
     related_entity_id: relatedEntityId,
     related_entity_type: relatedEntityType,
+    savings_action: input.savingsAction || null,
     status: input.status.toLowerCase(),
     transaction_date: input.date,
     title,
@@ -692,6 +716,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         counter_account_amount_type: input.transferAccountAmountType,
         counter_account_id: input.transferAccountId,
         ...extraMetadata,
+        savings_action: input.savingsAction || null,
         transfer_counter_amount: input.transferAmount ?? input.amount,
         transfer_direction: "debit",
         transfer_group_id: groupId,
@@ -708,6 +733,7 @@ function transferPairPayload(input: TransactionFormData, userId: string, groupId
         counter_account_amount_type: input.accountAmountType,
         counter_account_id: input.accountId,
         ...extraMetadata,
+        savings_action: input.savingsAction || null,
         transfer_counter_amount: input.amount,
         transfer_direction: "credit",
         transfer_group_id: groupId,

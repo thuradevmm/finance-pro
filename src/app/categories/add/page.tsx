@@ -1,8 +1,10 @@
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddCategoryForm } from "@/features/categories/add-category-form";
+import { getCategories } from "@/lib/categories/supabase";
 
-export default function AddCategoryPage() {
+export default async function AddCategoryPage() {
+  const categories = await getCategories();
   return (
     <AppShell
       activeNavLabel="Categories"
@@ -13,7 +15,7 @@ export default function AddCategoryPage() {
       topSearchPlaceholder="Search categories..."
     >
       <PageHeader description="Create a reusable classification for transactions, future planning, and linked financial records." title="Add Category" />
-      <AddCategoryForm />
+      <AddCategoryForm categories={categories} />
     </AppShell>
   );
 }

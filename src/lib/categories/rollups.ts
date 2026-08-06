@@ -66,7 +66,11 @@ export type CategoryRollupDebt = DebtLedgerDebtInput & {
 export type CategoryRollupSavingsGoal = {
   category_id: string | null;
   created_at: string | null;
+  current_amount?: number | string | null;
+  goal_type?: string | null;
+  initial_saved_amount?: number | string | null;
   metadata: unknown;
+  saved_amount?: number | string | null;
   target_amount: number | string | null;
   target_date: string | null;
 };
@@ -93,7 +97,7 @@ export const pageCategoryRollupLabels: Record<PageCategoryType, { activity: stri
   Account: { activity: "Current Balance", count: "Accounts" },
   Asset: { activity: "Purchase Value", count: "Assets" },
   Debt: { activity: "Total Debt", count: "Debts" },
-  "Savings Goal": { activity: "Total Target", count: "Goals" },
+  "Savings Goal": { activity: "Tracked Capital", count: "Goals & Funds" },
   Subscription: { activity: "Monthly Cost", count: "Ongoing Subscriptions" },
 };
 
@@ -248,8 +252,14 @@ export function pageCategoryActivityRows(input: {
       const metadata = metadataRecord(goal.metadata);
       const categoryId = metadataCategoryId(goal.category_id, metadata);
       if (!categoryId) return [];
+      const goalType = String(goal.goal_type ?? metadata.goal_type ?? "target").toLowerCase();
+      const savedAmount = presentNumber(goal.saved_amount)
+        ?? presentNumber(goal.initial_saved_amount)
+        ?? presentNumber(goal.current_amount)
+        ?? presentNumber(metadata.saved_amount)
+        ?? 0;
       return [{
-        amount: numericValue(goal.target_amount) || numericValue(metadata.target_amount),
+        amount: goalType === "fund" ? savedAmount : numericValue(goal.target_amount) || numericValue(metadata.target_amount),
         category_id: categoryId,
         date: goal.target_date ?? goal.created_at,
       }];

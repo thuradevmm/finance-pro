@@ -15,15 +15,28 @@ import { formatMmkPreview } from "@/lib/currency";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { getScopesForCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
-import type { CategoryType } from "@/types/finance";
+import type { CategoryFinancialRole, CategoryLevel, CategoryType } from "@/types/finance";
 import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
-export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
+const financialRoleOptions: Array<{ label: string; value: Exclude<CategoryFinancialRole, ""> }> = [
+  { label: "Essential living", value: "essential" },
+  { label: "Debt obligation", value: "debt_obligation" },
+  { label: "Emergency reserve", value: "emergency_reserve" },
+  { label: "Savings & capital", value: "savings" },
+  { label: "Discretionary", value: "discretionary" },
+  { label: "Income source", value: "income" },
+  { label: "Other", value: "other" },
+];
+
+export function AddCategoryForm({ categories, category }: { categories: CategoryRecord[]; category?: CategoryRecord }) {
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
+  const [level, setLevel] = useState<CategoryLevel>(category?.level ?? "Subcategory");
+  const [parentId, setParentId] = useState(category?.parentId ?? "");
+  const [financialRole, setFinancialRole] = useState<CategoryFinancialRole>(category?.financialRole ?? "other");
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
   const [status, setStatus] = useState(category?.status ?? "Active");
@@ -33,6 +46,12 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
   const nameHasError = showErrors && name.trim() === "";
   const selectedScopes = getScopesForCategoryType(selectedType);
   const selectedStyle = getCategoryTypeStyle(selectedType);
+  const parentOptions = categories.filter((item) => item.id !== category?.id
+    && item.level === "Super"
+    && item.type === selectedType
+    && item.status === "Active");
+  const selectedParent = parentOptions.find((item) => item.id === parentId);
+  const selectedRoleLabel = financialRoleOptions.find((option) => option.value === financialRole)?.label ?? "Other";
   const monthlyAverage = category && category.type === selectedType ? category.monthlyAverage : formatMmkPreview(0);
   const transactionCount = category && category.type === selectedType ? category.transactionCount : 0;
   const activityLabel = category && category.type === selectedType ? category.activityLabel : selectedType === "Expense" || selectedType === "Income" ? "Monthly Avg" : "Tracked Value";
@@ -46,9 +65,12 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
 
     const input: CategoryFormData = {
       description: description.trim(),
+      financialRole: level === "Super" ? financialRole || "other" : "",
       isActive: status === "Active",
       isDefault: false,
+      level,
       name: name.trim(),
+      parentId: level === "Subcategory" ? parentId : "",
       reportingRole: "",
       scopes: selectedScopes,
       type: selectedType,
@@ -70,6 +92,9 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
       setName("");
       setDescription("");
       setSelectedType("Expense");
+      setLevel("Subcategory");
+      setParentId("");
+      setFinancialRole("other");
       setShowErrors(false);
       showSuccess("Category saved successfully.");
       return;
@@ -98,7 +123,10 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
                       : "rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 text-left text-[#45464d] transition hover:border-[#2170e4]/50 hover:bg-[#eff4ff]"
                   }
                   key={type}
-                  onClick={() => setSelectedType(type)}
+                  onClick={() => {
+                    setSelectedType(type);
+                    setParentId("");
+                  }}
                   type="button"
                 >
                   <span className="mb-2 flex items-center gap-2 text-sm font-bold">
@@ -115,6 +143,52 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
                 </button>
               );
             })}
+          </div>
+        </FormCard>
+
+        <FormCard title="Category Hierarchy">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(["Subcategory", "Super"] as CategoryLevel[]).map((option) => {
+              const isActive = level === option;
+              return (
+                <button
+                  aria-pressed={isActive}
+                  className={isActive
+                    ? "rounded-lg border border-[#2170e4] bg-[#eff6ff] p-4 text-left text-[#0058be] shadow-sm"
+                    : "rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 text-left text-[#45464d]"}
+                  key={option}
+                  onClick={() => {
+                    setLevel(option);
+                    if (option === "Super") setParentId("");
+                  }}
+                  type="button"
+                >
+                  <span className="block text-sm font-bold">{option === "Super" ? "Super category" : "Subcategory"}</span>
+                  <span className="mt-1 block text-xs leading-5">{option === "Super" ? "Reporting group used for analysis; it cannot be posted directly." : "Selectable category used by transactions and linked features."}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {level === "Subcategory" ? (
+              <SelectInput
+                label="Super Category (Optional)"
+                onChange={(value) => setParentId(parentOptions.find((item) => item.name === value)?.id ?? "")}
+                options={["Ungrouped", ...parentOptions.map((item) => item.name)]}
+                value={selectedParent?.name ?? "Ungrouped"}
+              />
+            ) : (
+              <SelectInput
+                label="Financial Purpose"
+                onChange={(value) => setFinancialRole(financialRoleOptions.find((option) => option.label === value)?.value ?? "other")}
+                options={financialRoleOptions.map((option) => option.label)}
+                value={selectedRoleLabel}
+              />
+            )}
+            <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
+              <span className="block text-xs font-bold uppercase text-[#45464d]">System behavior</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{level === "Super" ? "Rolls up its subcategories" : selectedParent ? `Grouped under ${selectedParent.name}` : "Selectable and currently ungrouped"}</span>
+            </div>
           </div>
         </FormCard>
 
@@ -146,7 +220,9 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
 
         <FormCard title="Category Usage">
           <p className="text-sm leading-6 text-[#45464d]">
-            Category usage is controlled by category type. Credit and Debit categories are used only by transaction-related pages. Page categories such as Account, Asset, Borrowing &amp; Lending, Savings Goal, and Subscription stay separate.
+            {level === "Super"
+              ? "Super categories organize and roll up subcategories for analysis. They are never offered in transaction or linked-record selectors."
+              : "Subcategory usage is controlled by category type. Credit and Debit categories are used by transaction-related pages; page categories stay scoped to their related feature."}
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
             Credit and Debit monthly averages use the full calendar span between the first and latest posted transaction, including zero-activity months. Page categories show the related module&apos;s tracked value and record count.
@@ -217,10 +293,11 @@ export function AddCategoryForm({ category }: { category?: CategoryRecord }) {
             <div className="mb-1 flex items-center gap-2">
               <h3 className="text-xl font-semibold text-[#0b1c30]">{name || "New Category"}</h3>
               <span className="rounded border border-[#c6c6cd]/40 bg-[#eff4ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">
-                {selectedType}
+                {selectedType} · {level}
               </span>
             </div>
             <p className="mb-4 text-sm text-[#45464d]">{description || "Category description preview"}</p>
+            <p className="mb-4 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">{level === "Super" ? `Purpose: ${selectedRoleLabel}` : selectedParent ? `Super category: ${selectedParent.name}` : "Ungrouped subcategory"}</p>
             <div className="mb-4 flex flex-wrap gap-1.5">
               {selectedScopes.map((scope) => (
                 <span className="rounded bg-[#f8f9ff] px-2 py-1 text-xs font-semibold text-[#45464d]" key={scope}>

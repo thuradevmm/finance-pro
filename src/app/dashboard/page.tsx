@@ -1,14 +1,18 @@
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { FinancialPositionReconciliation } from "@/features/dashboard/financial-position-reconciliation";
+import { FinancialHealthIndicators } from "@/features/dashboard/financial-health-indicators";
 import { getAccounts, summarizeAccountPosition } from "@/lib/accounts/supabase";
 import { getDebts } from "@/lib/debts/supabase";
+import { getCategories } from "@/lib/categories/supabase";
+import { buildFinancialHealthSignals } from "@/lib/dashboard/health-indicators";
 import { normalizeReconciliationDateRange, reconcileFinancialPosition, summarizeNetWorth } from "@/lib/reconciliation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getDefaultTransactionDateRange } from "@/lib/transactions/date-range";
 import { filterTransactionsByDateRange } from "@/lib/transactions/filters";
 import { getTransactions, getTransactionSummaryValues } from "@/lib/transactions/supabase";
+import { getSavingsGoals } from "@/lib/savings-goals/supabase";
 
 export default async function DashboardPage({
   searchParams,
@@ -37,13 +41,15 @@ export default async function DashboardPage({
       getAccounts(supabase, user.id, { asOfDate: openingDateValue }),
     ])
     : [[], []];
-  const [debts, openingDebts, transactions] = user
+  const categories = user ? await getCategories() : [];
+  const [debts, openingDebts, transactions, savingsGoals] = user
     ? await Promise.all([
-      getDebts(supabase, user.id, [], { asOfDate: dateRange.dateTo }),
-      getDebts(supabase, user.id, [], { asOfDate: openingDateValue }),
-      getTransactions(supabase, user.id, accounts, []),
+      getDebts(supabase, user.id, categories, { asOfDate: dateRange.dateTo }),
+      getDebts(supabase, user.id, categories, { asOfDate: openingDateValue }),
+      getTransactions(supabase, user.id, accounts, categories),
+      getSavingsGoals(supabase, user.id, accounts, categories),
     ])
-    : [[], [], []];
+    : [[], [], [], []];
   const periodTransactions = filterTransactionsByDateRange(transactions, dateRange.dateFrom, dateRange.dateTo);
   const reconciliation = reconcileFinancialPosition(
     summarizeAccountPosition(accounts),
@@ -51,6 +57,7 @@ export default async function DashboardPage({
     getTransactionSummaryValues(periodTransactions),
     summarizeNetWorth(summarizeAccountPosition(openingAccounts), openingDebts).netWorth,
   );
+  const healthSignals = buildFinancialHealthSignals({ categories, dateFrom: dateRange.dateFrom, dateTo: dateRange.dateTo, savingsGoals, transactions: periodTransactions });
 
   return (
     <AppShell
@@ -65,6 +72,7 @@ export default async function DashboardPage({
         description="Review your date-scoped financial position, economic performance, and reconciliation in one place."
         title="Dashboard"
       />
+      <FinancialHealthIndicators signals={healthSignals} />
       <FinancialPositionReconciliation
         baseCurrency={accounts[0]?.baseCurrency ?? "MMK"}
         dateFrom={dateRange.dateFrom}

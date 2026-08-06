@@ -9,11 +9,16 @@ export type CategoryType = "Account" | "Asset" | "Debt" | "Expense" | "Income" |
 
 export type CategoryScope = "Transactions" | "Accounts" | "Savings Goals" | "Debts" | "Subscriptions" | "Assets";
 
+export type CategoryLevel = "Super" | "Subcategory";
+export type CategoryFinancialRole = "" | "essential" | "debt_obligation" | "emergency_reserve" | "savings" | "discretionary" | "income" | "other";
+
 export type FinancialCategory = {
   id: string;
   name: string;
   type: CategoryType;
   description: string;
+  financialRole: CategoryFinancialRole;
+  level: CategoryLevel;
   monthlyAverage: string;
   transactionCount: number;
   icon: IconName;
@@ -22,12 +27,16 @@ export type FinancialCategory = {
   marker: string;
   mergedIntoCategoryId: string;
   mergedIntoCategoryName: string;
+  parentId: string;
+  parentName: string;
   reportingRole: "" | "salary";
   scopes: CategoryScope[];
   status: "Active" | "Hidden";
 };
 
-export type SavingsGoalStatus = "In Progress" | "Behind" | "Completed";
+export type SavingsGoalStatus = "Active" | "In Progress" | "Behind" | "Completed";
+export type SavingsGoalType = "Fund" | "Target";
+export type SavingsContributionType = "Fixed" | "Percentage";
 
 export type SavingsGoal = {
   id: string;
@@ -40,6 +49,10 @@ export type SavingsGoal = {
   targetDateTimeValue?: string;
   monthlyContribution: string;
   account: string;
+  accountAmountType: AccountAmountType;
+  contributionPercentage: number;
+  contributionType: SavingsContributionType;
+  goalType: SavingsGoalType;
   status: SavingsGoalStatus;
   icon: IconName;
   tone: string;

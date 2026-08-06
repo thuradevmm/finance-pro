@@ -11,7 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { deriveCreditCardDebtMetadata } from "@/lib/ledger";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
-import type { CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
+import type { CategoryFinancialRole, CategoryLevel, CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
 
 export type CategoryRecord = FinancialCategory & {
   activityLabel: string;
@@ -23,9 +23,12 @@ export type CategoryRecord = FinancialCategory & {
 
 export type CategoryFormData = {
   description: string;
+  financialRole: CategoryFinancialRole;
   isActive: boolean;
   isDefault: boolean;
+  level: CategoryLevel;
   name: string;
+  parentId: string;
   reportingRole: "" | "salary";
   scopes: CategoryScope[];
   type: CategoryType;
@@ -33,16 +36,19 @@ export type CategoryFormData = {
 
 type CategoryRow = {
   archived_at?: string | null;
+  category_level?: string | null;
   category_type?: string | null;
   color: string | null;
   description?: string | null;
   icon: string | null;
   id: string;
+  financial_role?: string | null;
   is_active: boolean;
   is_default: boolean;
   metadata: unknown;
   merged_into_category_id?: string | null;
   name: string;
+  parent_id?: string | null;
   reporting_role?: string | null;
   type: string;
   user_id: string | null;
@@ -128,19 +134,31 @@ function mapCategory(row: CategoryRow, categoryNames: Map<string, string>, activ
   const mergedIntoCategoryId = row.merged_into_category_id
     ?? (typeof metadata.merged_into_category_id === "string" ? metadata.merged_into_category_id : "");
 
+  const level: CategoryLevel = row.category_level === "super" || metadata.category_level === "super" ? "Super" : "Subcategory";
+  const supportedFinancialRoles = new Set<CategoryFinancialRole>(["essential", "debt_obligation", "emergency_reserve", "savings", "discretionary", "income", "other"]);
+  const storedFinancialRole = row.financial_role ?? metadata.financial_role;
+  const financialRole = typeof storedFinancialRole === "string" && supportedFinancialRoles.has(storedFinancialRole as CategoryFinancialRole)
+    ? storedFinancialRole as CategoryFinancialRole
+    : "";
+  const parentId = row.parent_id ?? (typeof metadata.parent_id === "string" ? metadata.parent_id : "");
+
   return {
     ...style,
     activityLabel: labels[type].activity,
     description: typeof metadata.description === "string" ? metadata.description : row.description ?? "",
+    financialRole,
     id: row.id,
     isDefault: row.is_default,
     isSharedDefault: row.is_default && row.user_id === null,
+    level,
     countLabel: labels[type].count,
     monthlyAverage: formatMmk(activityValue),
     mergedIntoCategoryId,
     mergedIntoCategoryName: categoryNames.get(mergedIntoCategoryId)
       ?? (typeof metadata.merged_into_category_name === "string" ? metadata.merged_into_category_name : ""),
     name: row.name,
+    parentId,
+    parentName: categoryNames.get(parentId) ?? "",
     reportingRole: row.reporting_role === "salary" || metadata.reporting_role === "salary" ? "salary" : "",
     scopes,
     status: row.is_active ? "Active" : "Hidden",
@@ -156,7 +174,7 @@ async function getCategoryRows(
 ) {
   let enrichedQuery = supabase
     .from("categories")
-    .select("id,user_id,name,type,category_type,reporting_role,icon,color,is_default,is_active,archived_at,merged_into_category_id,metadata")
+    .select("id,user_id,name,type,category_type,category_level,financial_role,parent_id,reporting_role,icon,color,is_default,is_active,archived_at,merged_into_category_id,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("is_default", { ascending: false })
@@ -168,6 +186,8 @@ async function getCategoryRows(
   if (!enrichedResult.error) return enrichedResult.data as CategoryRow[];
   if (!isMissingDatabaseObject(enrichedResult.error, [
     "category_type",
+    "category_level",
+    "financial_role",
     "reporting_role",
     "archived_at",
     "merged_into_category_id",
@@ -177,7 +197,7 @@ async function getCategoryRows(
 
   let legacyQuery = supabase
     .from("categories")
-    .select("id,user_id,name,type,icon,color,is_default,is_active,metadata")
+    .select("id,user_id,name,type,parent_id,icon,color,is_default,is_active,metadata")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("is_default", { ascending: false })
@@ -213,7 +233,7 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
       .is("deleted_at", null),
     supabase
       .from("savings_goals")
-      .select("category_id,target_amount,target_date,created_at,metadata")
+      .select("category_id,target_amount,target_date,goal_type,current_amount,initial_saved_amount,saved_amount,created_at,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
     supabase
@@ -262,6 +282,19 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
   for (const [categoryId, activity] of transactionActivityByCategory) {
     activityByCategory.set(categoryId, activity);
   }
+  for (const category of categoryRows) {
+    const metadata = metadataRecord(category.metadata);
+    const parentId = category.parent_id ?? (typeof metadata.parent_id === "string" ? metadata.parent_id : "");
+    if (!parentId) continue;
+    const childActivity = activityByCategory.get(category.id);
+    if (!childActivity) continue;
+    const parentActivity = activityByCategory.get(parentId) ?? { monthlyAverage: 0, total: 0, transactionCount: 0 };
+    activityByCategory.set(parentId, {
+      monthlyAverage: parentActivity.monthlyAverage + childActivity.monthlyAverage,
+      total: parentActivity.total + childActivity.total,
+      transactionCount: parentActivity.transactionCount + childActivity.transactionCount,
+    });
+  }
   return categoryRows.map((category) => mapCategory(category, categoryNames, activityByCategory.get(category.id)));
 }
 
@@ -271,7 +304,7 @@ export async function getCategory(categoryId: string) {
 }
 
 export function getCategorySummaries(categories: CategoryRecord[]): SummaryMetric[] {
-  const currentCategories = categories.filter((category) => !category.mergedIntoCategoryId);
+  const currentCategories = categories.filter((category) => !category.mergedIntoCategoryId && category.level === "Subcategory");
   const activeCategories = currentCategories.filter((category) => category.status === "Active");
 
   return [

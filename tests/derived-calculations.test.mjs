@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { assetPurchaseAmountMatchesRange, resolveAssetCurrentValue, resolveAssetPurchaseValue } from "../src/lib/assets/calculations.ts";
 import { calculateUsageDuration } from "../src/lib/date-duration.ts";
-import { calculateLinkedSavingsAmounts, calculateSavingsContributionCapacity, resolveStoredSavingsAmount } from "../src/lib/savings-goals/calculations.ts";
+import { calculateLinkedSavingsAmounts, calculateSavingsContributionCapacity, resolveStoredSavingsAmount, savingsTransactionDelta } from "../src/lib/savings-goals/calculations.ts";
 import { annualizedSubscriptionCost, monthlySubscriptionCost, nextSubscriptionBillingDate, subscriptionBillingOccurrence, subscriptionPaymentCoversCycle, subscriptionPaymentIsAfterCutoff } from "../src/lib/subscriptions/calculations.ts";
 
 test("linked asset transactions are authoritative for purchase and recorded value", () => {
@@ -54,6 +54,13 @@ test("savings contribution capacity follows derived linked progress", () => {
     storedSavedAmount: 200,
     targetAmount: 1_000,
   }).isComplete, true);
+});
+
+test("explicit fund activity accepts Credits and signs withdrawals without changing legacy rows", () => {
+  assert.equal(savingsTransactionDelta({ id: "credit", amount: 100, metadata: { savings_action: "deposit" }, status: "cleared", type: "income" }), 100);
+  assert.equal(savingsTransactionDelta({ id: "spend", amount: 40, metadata: { savings_action: "withdrawal" }, status: "cleared", type: "expense" }), -40);
+  assert.equal(savingsTransactionDelta({ id: "out", account_id: "saving", transfer_account_id: "bank", amount: 25, metadata: { savings_action: "withdrawal", transfer_direction: "debit" }, status: "cleared", type: "transfer" }, "saving"), -25);
+  assert.equal(savingsTransactionDelta({ id: "out-pair", account_id: "bank", transfer_account_id: "saving", amount: 25, metadata: { savings_action: "withdrawal", transfer_direction: "credit" }, status: "cleared", type: "transfer" }, "saving"), 0);
 });
 
 test("subscription periods preserve anchors and weekly annualization uses 52 weeks", () => {

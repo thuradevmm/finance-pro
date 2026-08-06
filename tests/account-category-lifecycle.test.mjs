@@ -13,6 +13,7 @@ const accountActions = readFileSync(join(projectRoot, "src/app/accounts/actions.
 const accountPage = readFileSync(join(projectRoot, "src/app/accounts/page.tsx"), "utf8");
 const accountRecordActions = readFileSync(join(projectRoot, "src/features/accounts/account-record-actions.tsx"), "utf8");
 const categoryActions = readFileSync(join(projectRoot, "src/app/categories/actions.ts"), "utf8");
+const financialFundsMigration = readFileSync(join(projectRoot, "supabase/migrations/202608060001_financial_funds_category_hierarchy_and_percentage_plans.sql"), "utf8");
 
 test("amount-type catalog reuses active names and keeps metadata-only legacy names", () => {
   assert.deepEqual(mergeAmountTypeCatalog(
@@ -30,8 +31,10 @@ test("amount-type catalog reuses active names and keeps metadata-only legacy nam
 
 test("normalized category columns take precedence while Hidden categories remain historical only", () => {
   const activeCategory = {
+    category_level: "subcategory",
     category_type: "savings_goal",
     metadata: { category_type: "Expense", scopes: ["Savings Goals"] },
+    level: "Subcategory",
     scopes: ["Savings Goals"],
     status: "Active",
     type: "Savings Goal",
@@ -105,4 +108,11 @@ test("existing records may retain a Hidden category while changed links require 
     assert.match(source, /allowedExistingCategoryId/);
     assert.match(source, /is_active === false && .*\.id !== allowedExistingCategoryId/);
   }
+});
+
+test("financial funds migration preserves the real bucket used by legacy savings goals", () => {
+  assert.match(financialFundsMigration, /update public\.savings_goals as goal/);
+  assert.match(financialFundsMigration, /lower\(btrim\(amount_type\.item ->> 'type'\)\) = 'saving'/);
+  assert.match(financialFundsMigration, /when coalesce\(account\.metadata, '\{\}'::jsonb\) \? 'saving_amount' then 'Saving'/);
+  assert.match(financialFundsMigration, /goal\.account_id = account\.id/);
 });

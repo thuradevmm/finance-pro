@@ -23,7 +23,16 @@ function relatedOptions(
 ): TransactionRelatedOption[] {
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...savingsGoals.filter((goal) => goal.status !== "Completed").map((goal) => ({ accountId: goal.accountId, categoryId: goal.categoryId, label: `Savings Goal: ${goal.name}`, type: "savings_goal" as const, value: goal.id })),
+    ...savingsGoals.map((goal) => ({
+      accountAmountType: goal.accountAmountType,
+      accountId: goal.accountId,
+      availableAmount: goal.savedAmountValue,
+      categoryId: goal.categoryId,
+      label: `${goal.goalType === "Fund" ? "Savings Fund" : "Savings Goal"}: ${goal.name}`,
+      savingsGoalType: goal.goalType,
+      type: "savings_goal" as const,
+      value: goal.id,
+    })),
     ...debts.filter((debt) => debt.status !== "Paid").map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,

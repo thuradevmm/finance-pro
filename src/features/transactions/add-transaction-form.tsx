@@ -59,7 +59,7 @@ const manualImpactTypes: Array<{
   label: string;
   type: ManualImpactType;
 }> = [
-  { description: "Count money toward a goal", icon: "target", label: "Savings Goal", type: "savings_goal" },
+  { description: "Add to or use a savings fund", icon: "target", label: "Savings Goal / Fund", type: "savings_goal" },
   { description: "Record a payment or return", icon: "credit", label: "Debt / Lending", type: "debt" },
   { description: "Record a recurring payment", icon: "subscriptions", label: "Subscription", type: "subscription" },
   { description: "Record an asset purchase", icon: "box", label: "Asset", type: "asset" },
@@ -291,6 +291,15 @@ export function AddTransactionForm({
     ? `${selectedRelatedOption.type}:${selectedRelatedOption.value}`
     : "";
   const hasManualRelatedLink = Boolean(selectedRelatedOption?.value && selectedRelatedOption.type !== "none");
+  const savingsAction: TransactionFormData["savingsAction"] = effectiveRelatedOption?.type !== "savings_goal"
+    ? ""
+    : selectedType === "Income"
+      ? "deposit"
+      : selectedType === "Expense"
+        ? "withdrawal"
+        : accountId === effectiveRelatedOption.accountId && effectiveAccountAmountType === effectiveRelatedOption.accountAmountType
+          ? "withdrawal"
+          : "deposit";
   const selectedImpactTypeDetails = manualImpactTypes.find((impactType) => impactType.type === selectedRelatedOption?.type);
   const effectiveCategoryId = categoryId;
   const selectedCategory = transactionCategories.find((category) => category.id === effectiveCategoryId)
@@ -346,6 +355,10 @@ export function AddTransactionForm({
     }
     : debtPayoffSummary?.currentQuote;
   const amountNumber = Number(amount);
+  const savingsWithdrawalExceedsFund = showErrors
+    && savingsAction === "withdrawal"
+    && Number.isFinite(amountNumber)
+    && amountNumber > (effectiveRelatedOption?.availableAmount ?? 0);
   const subscriptionPayment = effectiveRelatedOption?.subscriptionPayment;
   const subscriptionPaymentBilledAmountValue = subscriptionPayment?.billedAmount ?? 0;
   const subscriptionPaymentAccountRate = subscriptionPayment
@@ -434,6 +447,16 @@ export function AddTransactionForm({
     }
     const nextCategories = getCategoriesForScope(categories, "Transactions", type === "Income" ? "Income" : "Expense");
     setCategoryId(nextCategories[0]?.id ?? "");
+    if (selectedRelatedOption?.type === "savings_goal" && selectedRelatedOption.accountId) {
+      const goalAccount = accounts.find((account) => account.id === selectedRelatedOption.accountId);
+      if (type === "Transfer") {
+        setTransferToAccountId(selectedRelatedOption.accountId);
+        setTransferAccountAmountType(selectedRelatedOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
+      } else {
+        setAccountId(selectedRelatedOption.accountId);
+        setAccountAmountType(selectedRelatedOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
+      }
+    }
   }
 
   function handleRelatedOptionChange(optionValue: string) {
@@ -456,8 +479,12 @@ export function AddTransactionForm({
         const goalAccount = accounts.find((account) => account.id === nextOption.accountId);
         if (goalAccount) {
           setTransferToAccountId(goalAccount.id);
-          setTransferAccountAmountType(accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
+          setTransferAccountAmountType(nextOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
         }
+      } else if (nextOption.accountId) {
+        const goalAccount = accounts.find((account) => account.id === nextOption.accountId);
+        setAccountId(nextOption.accountId);
+        setAccountAmountType(nextOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
       }
       const matchingPlan = planningOptions.find((option) => option.direction === "saving"
         && option.categoryId === nextOption.categoryId
@@ -525,7 +552,7 @@ export function AddTransactionForm({
   async function handleSaveTransaction(addAnother = false) {
     const hasInsufficientAvailableAmount = shouldValidateAvailableAmount && Number.isFinite(amountNumber) && amountNumber > availableAmountValue;
     const hasSameTransferEndpoint = isTransfer && accountId === effectiveTransferToAccountId && effectiveAccountAmountType === effectiveTransferAccountAmountType;
-    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || impactSelectionMissing || hasInsufficientAvailableAmount || hasSameTransferEndpoint || transferExchangeRateMissing || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
+    const hasErrors = !Number.isFinite(amountNumber) || amountNumber <= 0 || !transactionDate || !accountId || impactSelectionMissing || hasInsufficientAvailableAmount || savingsWithdrawalExceedsFund || hasSameTransferEndpoint || transferExchangeRateMissing || (isTransfer && !effectiveTransferToAccountId) || (!isTransfer && !effectiveCategoryId);
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -540,6 +567,7 @@ export function AddTransactionForm({
       note,
       relatedEntityId: effectiveRelatedOption?.value ?? "",
       relatedEntityType: effectiveRelatedOption?.type ?? "none",
+      savingsAction,
       status,
       subscriptionPayment: subscriptionPayment && subscriptionPaymentBilledAmountValue > 0 && subscriptionPaymentExchangeRateValue > 0
         ? {
@@ -893,7 +921,9 @@ export function AddTransactionForm({
                 <div className="min-w-0">
                   <p className="text-xs font-bold uppercase text-[#166534]">Linked record</p>
                   <p className="mt-1 text-sm font-semibold text-[#0b1c30]">{relatedImpactRecordName(selectedRelatedOption!)}</p>
-                  <p className="mt-1 text-xs font-medium text-[#45464d]">This transaction will update {selectedImpactTypeDetails?.label ?? "the selected record"} when saved.</p>
+                  <p className="mt-1 text-xs font-medium text-[#45464d]">{effectiveRelatedOption?.type === "savings_goal" ? `${savingsAction === "withdrawal" ? "Uses money from" : "Adds money to"} this ${effectiveRelatedOption.savingsGoalType === "Fund" ? "fund" : "goal"}.` : `This transaction will update ${selectedImpactTypeDetails?.label ?? "the selected record"} when saved.`}</p>
+                  {effectiveRelatedOption?.type === "savings_goal" ? <p className="mt-1 text-xs font-semibold text-[#45464d]">Linked bucket: {effectiveRelatedOption.accountAmountType ?? "General"} · Available {formatMmkPreview(effectiveRelatedOption.availableAmount ?? 0)}</p> : null}
+                  {savingsWithdrawalExceedsFund ? <p className="mt-2 text-xs font-bold text-[#ba1a1a]">The transaction exceeds the amount available in this fund.</p> : null}
                 </div>
               </div>
             ) : null}

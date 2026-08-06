@@ -13,7 +13,7 @@ function source(path) {
 test("category reads retry the legacy metadata-backed schema", () => {
   const categories = source("src/lib/categories/supabase.ts");
   assert.match(categories, /isMissingDatabaseObject\(enrichedResult\.error/);
-  assert.match(categories, /select\("id,user_id,name,type,icon,color,is_default,is_active,metadata"\)/);
+  assert.match(categories, /select\("id,user_id,name,type,parent_id,icon,color,is_default,is_active,metadata"\)/);
   assert.match(categories, /metadata\.merged_into_category_id/);
   assert.match(categories, /metadata\.reporting_role === "salary"/);
 
@@ -26,7 +26,7 @@ test("category mutations mirror lifecycle data into metadata and retry legacy wr
   const actions = source("src/app/categories/actions.ts");
   assert.match(actions, /function legacyCategoryPayload/);
   assert.match(actions, /delete legacyPayload\.category_type/);
-  assert.match(actions, /isMissingDatabaseObject\(error, \["category_type", "reporting_role", "archived_at"\]\)/);
+  assert.match(actions, /isMissingDatabaseObject\(error, \["category_type", "category_level", "financial_role", "reporting_role", "archived_at"\]\)/);
   assert.match(actions, /schemaUpgradeRequiredMessage\("Category merge"\)/);
   assert.match(actions, /optionalFutureColumnsMissing/);
   assert.match(actions, /eq\("category_id", categoryId\)\.eq\("is_active", true\)/);

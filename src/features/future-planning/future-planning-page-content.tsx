@@ -152,6 +152,7 @@ function ManualPlanningSettings({
   const { showError, showSuccess } = useToast();
   const [yearInput, setYearInput] = useState(selectedYears.join(", "));
   const eligibleCategories = categories.filter((category) => category.status === "Active"
+    && category.level === "Subcategory"
     && ["Expense", "Income", "Savings Goal"].includes(category.type)
     && !columns.some((column) => column.categoryId === category.id));
   const [isSavingYears, setIsSavingYears] = useState(false);
@@ -250,9 +251,12 @@ function ManualPlanTable({
   );
   const initialDrafts = useMemo(() => Object.fromEntries(amounts.map((amount) => [
     amountKey(amount.columnId, amount.periodMonth.slice(0, 7)),
-    amount.amount === 0 ? "" : String(amount.amount),
+    amount.amountType === "Percentage" ? String(amount.percentage) : amount.amount === 0 ? "" : String(amount.amount),
   ])), [amounts]);
   const [drafts, setDrafts] = useState<Record<string, string>>(initialDrafts);
+  const [amountTypes, setAmountTypes] = useState<Record<string, FuturePlanningAmount["amountType"]>>(Object.fromEntries(amounts.map((amount) => [
+    amountKey(amount.columnId, amount.periodMonth.slice(0, 7)), amount.amountType,
+  ])));
   const [isScrolledHorizontally, setIsScrolledHorizontally] = useState(false);
   const [savingKey, setSavingKey] = useState("");
   const stickyColumnShadowClass = isScrolledHorizontally ? "shadow-[8px_0_12px_-12px_rgba(11,28,48,0.45)]" : "";
@@ -268,12 +272,13 @@ function ManualPlanTable({
   };
   const tableWidth = Math.max(1040, 760 + columns.length * 210);
 
-  async function persistAmount(columnId: string, monthKey: string, overrideValue?: number) {
+  async function persistAmount(columnId: string, monthKey: string, overrideValue?: number, overrideType?: FuturePlanningAmount["amountType"]) {
     const key = amountKey(columnId, monthKey);
     const value = overrideValue ?? (drafts[key]?.trim() ? parseAmountInputValue(drafts[key]) : 0);
-    if (!Number.isFinite(value) || value < 0) return showError("Enter a valid planned amount of zero or more.");
+    const amountType = overrideType ?? amountTypes[key] ?? "Fixed";
+    if (!Number.isFinite(value) || value < 0 || (amountType === "Percentage" && (value <= 0 || value > 100))) return showError(amountType === "Percentage" ? "Enter a percentage above zero and no more than 100%." : "Enter a valid planned amount of zero or more.");
     setSavingKey(key);
-    const result = await saveFuturePlanningAmount({ amount: value, columnId, periodMonth: `${monthKey}-01` });
+    const result = await saveFuturePlanningAmount({ amount: amountType === "Fixed" ? value : 0, amountType, columnId, percentage: amountType === "Percentage" ? value : 0, periodMonth: `${monthKey}-01` });
     setSavingKey("");
     if (result.error) return showError(result.error);
     showSuccess("Planned amount saved.");
@@ -322,7 +327,7 @@ function ManualPlanTable({
                       <span className="mt-1 block text-[10px] normal-case text-[#0058be]">6-mo avg {formatMmk(column.monthlyAverage)}</span>
                       {column.linkedSavingsGoals.length > 0 ? (
                         <span className="mt-1 block max-w-52 text-[10px] normal-case leading-4 text-[#4f46e5]">
-                          Goals: {column.linkedSavingsGoals.map((goal) => goal.name).join(", ")}
+                          Goals: {column.linkedSavingsGoals.map((goal) => `${goal.name} (${goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% income` : `${formatMmk(goal.monthlyContribution)}/mo`})`).join(", ")}
                         </span>
                       ) : null}
                     </span>
@@ -366,27 +371,59 @@ function ManualPlanTable({
                   const key = amountKey(column.id, row.monthKey);
                   const planned = row.columnAmounts[column.id] ?? 0;
                   const actual = row.actualColumnAmounts[column.id] ?? 0;
+                  const amountType = amountTypes[key] ?? "Fixed";
+                  const linkedGoalRule = column.linkedSavingsGoals.find((goal) => goal.contributionType === "Percentage" && goal.contributionPercentage > 0)
+                    ?? column.linkedSavingsGoals.find((goal) => goal.contributionType === "Fixed" && goal.monthlyContribution > 0);
                   return (
                     <td className="px-4 py-3 text-right" key={column.id}>
+                      <select
+                        aria-label={`${column.name} planning value type for ${row.monthLabel} ${row.year}`}
+                        className="mb-1 h-8 w-36 rounded-md border border-[#c6c6cd] bg-[#f8f9ff] px-2 text-xs font-semibold text-[#45464d]"
+                        disabled={column.direction === "income"}
+                        onChange={(event) => {
+                          const nextType = event.target.value === "Percentage" ? "Percentage" : "Fixed";
+                          setAmountTypes((current) => ({ ...current, [key]: nextType }));
+                          setDrafts((current) => ({ ...current, [key]: "" }));
+                        }}
+                        value={column.direction === "income" ? "Fixed" : amountType}
+                      >
+                        <option>Fixed</option>
+                        <option>Percentage</option>
+                      </select>
                       <input
                         aria-label={`${column.name} planned amount for ${row.monthLabel} ${row.year}`}
                         className="h-10 w-36 rounded-md border border-[#c6c6cd] bg-white px-3 text-right font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                         onBlur={() => persistAmount(column.id, row.monthKey)}
                         onChange={(event) => setDrafts((current) => ({ ...current, [key]: cleanAmountInputValue(event.target.value) }))}
-                        placeholder="0"
+                        placeholder={amountType === "Percentage" ? "% of income" : "0"}
                         inputMode="decimal"
                         type="text"
-                        value={formatAmountInputValue(drafts[key] ?? (planned === 0 ? "" : String(planned)))}
+                        value={amountType === "Percentage" ? drafts[key] ?? "" : formatAmountInputValue(drafts[key] ?? (planned === 0 ? "" : String(planned)))}
                       />
+                      {amountType === "Percentage" ? <span className="mt-1 block text-[11px] font-semibold text-[#4f46e5]">Derived from total planned Credit</span> : null}
                       {column.monthlyAverage > 0 ? (
                         <button
                           className="mt-1 text-[11px] font-semibold text-[#0058be] hover:underline"
                           onClick={() => {
                             setDrafts((current) => ({ ...current, [key]: String(column.monthlyAverage) }));
-                            void persistAmount(column.id, row.monthKey, column.monthlyAverage);
+                            setAmountTypes((current) => ({ ...current, [key]: "Fixed" }));
+                            void persistAmount(column.id, row.monthKey, column.monthlyAverage, "Fixed");
                           }}
                           type="button"
                         >Use 6-mo average</button>
+                      ) : null}
+                      {linkedGoalRule ? (
+                        <button
+                          className="mt-1 block w-full text-[11px] font-semibold text-[#4f46e5] hover:underline"
+                          onClick={() => {
+                            const nextType = linkedGoalRule.contributionType;
+                            const nextValue = nextType === "Percentage" ? linkedGoalRule.contributionPercentage : linkedGoalRule.monthlyContribution;
+                            setAmountTypes((current) => ({ ...current, [key]: nextType }));
+                            setDrafts((current) => ({ ...current, [key]: String(nextValue) }));
+                            void persistAmount(column.id, row.monthKey, nextValue, nextType);
+                          }}
+                          type="button"
+                        >Use {linkedGoalRule.name} rule</button>
                       ) : null}
                       {savingKey === key ? <span className="mt-1 block text-[11px] font-semibold text-[#0058be]">Saving…</span> : controlComparison(actual, planned, column.direction)}
                     </td>

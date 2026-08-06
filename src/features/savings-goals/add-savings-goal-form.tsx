@@ -18,6 +18,7 @@ import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals/supabase";
+import type { SavingsContributionType, SavingsGoalType } from "@/types/finance";
 
 function parseAmount(value: string) {
   return Number(value.replace(/[^0-9.-]/g, ""));
@@ -60,22 +61,28 @@ export function AddSavingsGoalForm({
   const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals", "Savings Goal"), [categories]);
   const [selectedStyleId, setSelectedStyleId] = useState(goal?.categoryId ?? goalStyleCategories[0]?.id ?? "");
   const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
+  const [accountAmountType, setAccountAmountType] = useState(goal?.accountAmountType ?? accountOptions[0]?.balanceBreakdowns[0]?.type ?? "General");
+  const [goalType, setGoalType] = useState<SavingsGoalType>(goal?.goalType ?? "Target");
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.targetAmountValue) : "");
   const [savedAmount, setSavedAmount] = useState(goal ? String(goal.storedSavedAmountValue) : "");
   const [targetDate, setTargetDate] = useState(goal?.targetDateValue ?? defaultTargetDate());
   const [monthlyContribution, setMonthlyContribution] = useState(goal ? String(goal.monthlyContributionValue) : "");
+  const [contributionType, setContributionType] = useState<SavingsContributionType>(goal?.contributionType ?? "Fixed");
+  const [contributionPercentage, setContributionPercentage] = useState(goal?.contributionPercentage ? String(goal.contributionPercentage) : "");
   const [description, setDescription] = useState(goal?.description ?? "");
   const [showErrors, setShowErrors] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
   const savedIsInvalid = savedAmount.trim() !== "" && (!Number.isFinite(parseAmount(savedAmount)) || parseAmount(savedAmount) < 0);
-  const contributionIsInvalid = monthlyContribution.trim() !== "" && (!Number.isFinite(parseAmount(monthlyContribution)) || parseAmount(monthlyContribution) < 0);
-  const targetHasError = showErrors && (targetAmount.trim() === "" || !Number.isFinite(parseAmount(targetAmount)) || parseAmount(targetAmount) <= 0);
+  const contributionIsInvalid = contributionType === "Fixed"
+    ? monthlyContribution.trim() !== "" && (!Number.isFinite(parseAmount(monthlyContribution)) || parseAmount(monthlyContribution) < 0)
+    : contributionPercentage.trim() === "" || !Number.isFinite(Number(contributionPercentage)) || Number(contributionPercentage) <= 0 || Number(contributionPercentage) > 100;
+  const targetHasError = showErrors && goalType === "Target" && (targetAmount.trim() === "" || !Number.isFinite(parseAmount(targetAmount)) || parseAmount(targetAmount) <= 0);
   const savedHasError = showErrors && savedIsInvalid;
   const contributionHasError = showErrors && contributionIsInvalid;
-  const dateHasError = showErrors && !isValidCalendarDate(targetDate);
+  const dateHasError = showErrors && goalType === "Target" && !isValidCalendarDate(targetDate);
   const target = parseAmount(targetAmount);
   const storedSaved = Number.isFinite(parseAmount(savedAmount)) ? parseAmount(savedAmount) : 0;
   const linkedSaved = goal?.linkedSavedAmountValue ?? 0;
@@ -85,29 +92,33 @@ export function AddSavingsGoalForm({
   const effectiveAccountId = accountId || accountOptions[0]?.id || "";
   const selectedStyle = goalStyleCategories.find((category) => category.id === effectiveStyleId) ?? goalStyleCategories[0] ?? fallbackStyle;
   const selectedAccount = accountOptions.find((account) => account.id === effectiveAccountId);
+  const amountTypeOptions = selectedAccount?.balanceBreakdowns.map((item) => item.type) ?? ["General"];
+  const effectiveAccountAmountType = amountTypeOptions.includes(accountAmountType) ? accountAmountType : amountTypeOptions[0] ?? "General";
   const selectedAccountName = selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "";
 
   async function handleSaveGoal(addAnother = false) {
     const hasErrors = name.trim() === ""
-      || targetAmount.trim() === ""
-      || !Number.isFinite(target)
-      || target <= 0
+      || (goalType === "Target" && (targetAmount.trim() === "" || !Number.isFinite(target) || target <= 0))
       || savedIsInvalid
       || contributionIsInvalid
-      || !isValidCalendarDate(targetDate);
+      || (goalType === "Target" && !isValidCalendarDate(targetDate));
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
 
     const input: SavingsGoalFormData = {
       accountId: effectiveAccountId,
+      accountAmountType: effectiveAccountAmountType,
       categoryId: effectiveStyleId,
+      contributionPercentage: contributionType === "Percentage" ? Number(contributionPercentage) : 0,
+      contributionType,
       description,
       monthlyContribution: monthlyContribution.trim() === "" ? 0 : Number(monthlyContribution),
       name,
+      goalType,
       savedAmount: savedAmount.trim() === "" ? 0 : Number(savedAmount),
-      targetAmount: Number(targetAmount),
-      targetDate,
+      targetAmount: goalType === "Target" ? Number(targetAmount) : 0,
+      targetDate: goalType === "Target" ? targetDate : "",
     };
 
     setIsSaving(true);
@@ -125,6 +136,7 @@ export function AddSavingsGoalForm({
       setTargetAmount("");
       setSavedAmount("");
       setMonthlyContribution("");
+      setContributionPercentage("");
       setDescription("");
       setShowErrors(false);
       showSuccess("Savings goal saved successfully.");
@@ -140,6 +152,22 @@ export function AddSavingsGoalForm({
   return (
     <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
       <div className="min-w-0 space-y-6 xl:col-span-8">
+        <FormCard title="Savings Type">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(["Fund", "Target"] as SavingsGoalType[]).map((type) => (
+              <button
+                aria-pressed={goalType === type}
+                className={goalType === type ? "rounded-lg border border-[#2170e4] bg-[#eff6ff] p-4 text-left text-[#0058be] shadow-sm" : "rounded-lg border border-[#c6c6cd]/70 bg-[#f8f9ff] p-4 text-left text-[#45464d]"}
+                key={type}
+                onClick={() => setGoalType(type)}
+                type="button"
+              >
+                <span className="block text-sm font-bold">{type === "Fund" ? "Reusable fund / capital" : "Target goal"}</span>
+                <span className="mt-1 block text-xs leading-5">{type === "Fund" ? "Open-ended money you can add to and use later; no target amount or date." : "Save toward a defined amount by a target date."}</span>
+              </button>
+            ))}
+          </div>
+        </FormCard>
         <FormCard title="Goal Details">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -148,15 +176,20 @@ export function AddSavingsGoalForm({
             </div>
             <SelectInput
               label="Savings Account"
-              onChange={(accountName) => setAccountId(findAccountByOptionLabel(accountOptions, accountName)?.id ?? "")}
+              onChange={(accountName) => {
+                const nextAccount = findAccountByOptionLabel(accountOptions, accountName);
+                setAccountId(nextAccount?.id ?? "");
+                setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
+              }}
               options={accountOptions.length > 0 ? getAccountOptionLabels(accountOptions) : ["No accounts available"]}
               value={selectedAccountName || "No accounts available"}
             />
-            <p className="text-sm font-semibold text-[#45464d]">{selectedAccount ? getAccountOptionDescription(selectedAccount) : "Create an account before linking a savings goal."}</p>
+            <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={amountTypeOptions} value={effectiveAccountAmountType} />
+            <p className="text-sm font-semibold text-[#45464d] md:col-span-2">{selectedAccount ? getAccountOptionDescription(selectedAccount) : "Create an account before linking a savings goal."}</p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
+            {goalType === "Target" ? <div>
               <TextInput
                 error={targetHasError}
                 label="Target Amount"
@@ -166,7 +199,7 @@ export function AddSavingsGoalForm({
                 value={targetAmount}
               />
               {targetHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target amount is required.</p> : null}
-            </div>
+            </div> : null}
             <div>
               <TextInput error={savedHasError} label="Already Saved (Manual)" onChange={setSavedAmount} placeholder="0" type="amount" value={savedAmount} />
               {savedHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Already saved amount cannot be negative.</p> : null}
@@ -175,13 +208,18 @@ export function AddSavingsGoalForm({
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
+            {goalType === "Target" ? <div>
               <TextInput error={dateHasError} label="Target Date" onChange={setTargetDate} placeholder="YYYY-MM-DD" type="date" value={targetDate} />
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
+            </div> : null}
+            <div>
+              <SelectInput label="Contribution Rule" onChange={(value) => setContributionType(value === "Percentage of planned income" ? "Percentage" : "Fixed")} options={["Fixed amount", "Percentage of planned income"]} value={contributionType === "Percentage" ? "Percentage of planned income" : "Fixed amount"} />
             </div>
             <div>
-              <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="amount" value={monthlyContribution} />
-              {contributionHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Monthly contribution cannot be negative.</p> : null}
+              {contributionType === "Percentage"
+                ? <TextInput error={contributionHasError} label="Income Percentage" onChange={setContributionPercentage} placeholder="10" type="number" value={contributionPercentage} />
+                : <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="amount" value={monthlyContribution} />}
+              {contributionHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{contributionType === "Percentage" ? "Enter a percentage above 0 and up to 100." : "Monthly contribution cannot be negative."}</p> : null}
             </div>
           </div>
         </FormCard>
@@ -265,13 +303,18 @@ export function AddSavingsGoalForm({
               </div>
             </div>
 
-            <ProgressCircle percent={progressPercent} tone={selectedStyle.tone} />
+            {goalType === "Target" ? <ProgressCircle percent={progressPercent} tone={selectedStyle.tone} /> : (
+              <div className="rounded-lg bg-[#ecfdf5] p-5 text-center">
+                <p className="text-xs font-bold uppercase text-[#166534]">Available fund</p>
+                <ResponsiveAmount className="mt-2 font-bold text-[#047857]">{formatMmkPreview(saved)}</ResponsiveAmount>
+              </div>
+            )}
 
             <dl className="mt-5 grid grid-cols-2 gap-3 text-center">
-              <div>
+              {goalType === "Target" ? <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
                 <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(saved)}</ResponsiveAmount></dd>
-              </div>
+              </div> : null}
               <div>
                 <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
                 <dd><ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{targetAmount ? formatMmkPreview(targetAmount) : formatMmkPreview(0)}</ResponsiveAmount></dd>
@@ -279,10 +322,10 @@ export function AddSavingsGoalForm({
             </dl>
 
             <div className="mt-5 border-t border-[#c6c6cd]/40 pt-4 text-center text-sm font-medium text-[#45464d]">
-              Target: {targetDate || "Not set"}
+              {goalType === "Target" ? `Target: ${targetDate || "Not set"}` : `Open-ended fund · ${effectiveAccountAmountType}`}
             </div>
             <div className="mt-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
-              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{monthlyContribution ? formatMmkPreview(monthlyContribution) : formatMmkPreview(0)}</ResponsiveAmount>
+              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{contributionType === "Percentage" ? `${contributionPercentage || 0}% of planned income` : monthlyContribution ? formatMmkPreview(monthlyContribution) : formatMmkPreview(0)}</ResponsiveAmount>
               <p className="mt-2">{description || "Savings plan note will appear here."}</p>
             </div>
           </div>

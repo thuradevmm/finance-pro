@@ -375,11 +375,13 @@ export type Database = {
         Row: {
           archived_at: string | null
           category_type: string
+          category_level: string
           color: string | null
           created_at: string
           deleted_at: string | null
           icon: string | null
           id: string
+          financial_role: string | null
           is_active: boolean
           is_default: boolean
           metadata: Json
@@ -395,11 +397,13 @@ export type Database = {
         Insert: {
           archived_at?: string | null
           category_type?: string
+          category_level?: string
           color?: string | null
           created_at?: string
           deleted_at?: string | null
           icon?: string | null
           id?: string
+          financial_role?: string | null
           is_active?: boolean
           is_default?: boolean
           metadata?: Json
@@ -415,11 +419,13 @@ export type Database = {
         Update: {
           archived_at?: string | null
           category_type?: string
+          category_level?: string
           color?: string | null
           created_at?: string
           deleted_at?: string | null
           icon?: string | null
           id?: string
+          financial_role?: string | null
           is_active?: boolean
           is_default?: boolean
           metadata?: Json
@@ -741,30 +747,36 @@ export type Database = {
       future_planning_amounts: {
         Row: {
           amount: number
+          amount_type: string
           column_id: string
           created_at: string
           id: string
           metadata: Json
+          percentage: number | null
           period_month: string
           updated_at: string
           user_id: string
         }
         Insert: {
           amount?: number
+          amount_type?: string
           column_id: string
           created_at?: string
           id?: string
           metadata?: Json
+          percentage?: number | null
           period_month: string
           updated_at?: string
           user_id: string
         }
         Update: {
           amount?: number
+          amount_type?: string
           column_id?: string
           created_at?: string
           id?: string
           metadata?: Json
+          percentage?: number | null
           period_month?: string
           updated_at?: string
           user_id?: string
@@ -1026,12 +1038,16 @@ export type Database = {
       savings_goals: {
         Row: {
           account_id: string | null
+          account_amount_type: string
           category_id: string | null
           created_at: string
           current_amount: number
           deleted_at: string | null
           description: string | null
+          contribution_percentage: number | null
+          contribution_type: string
           id: string
+          goal_type: string
           initial_saved_amount: number
           metadata: Json
           monthly_contribution: number
@@ -1045,12 +1061,16 @@ export type Database = {
         }
         Insert: {
           account_id?: string | null
+          account_amount_type?: string
           category_id?: string | null
           created_at?: string
           current_amount?: number
           deleted_at?: string | null
           description?: string | null
+          contribution_percentage?: number | null
+          contribution_type?: string
           id?: string
+          goal_type?: string
           initial_saved_amount?: number
           metadata?: Json
           monthly_contribution?: number
@@ -1064,12 +1084,16 @@ export type Database = {
         }
         Update: {
           account_id?: string | null
+          account_amount_type?: string
           category_id?: string | null
           created_at?: string
           current_amount?: number
           deleted_at?: string | null
           description?: string | null
+          contribution_percentage?: number | null
+          contribution_type?: string
           id?: string
+          goal_type?: string
           initial_saved_amount?: number
           metadata?: Json
           monthly_contribution?: number
@@ -1338,6 +1362,7 @@ export type Database = {
           payment_method: string | null
           related_entity_id: string | null
           related_entity_type: string | null
+          savings_action: string | null
           status: string
           title: string | null
           transaction_date: string
@@ -1359,6 +1384,7 @@ export type Database = {
           payment_method?: string | null
           related_entity_id?: string | null
           related_entity_type?: string | null
+          savings_action?: string | null
           status?: string
           title?: string | null
           transaction_date?: string
@@ -1380,6 +1406,7 @@ export type Database = {
           payment_method?: string | null
           related_entity_id?: string | null
           related_entity_type?: string | null
+          savings_action?: string | null
           status?: string
           title?: string | null
           transaction_date?: string

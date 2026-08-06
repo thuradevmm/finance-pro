@@ -11,10 +11,11 @@ import {
   resolveStoredSavingsAmount,
   type SavingsGoalEntryInput,
 } from "@/lib/savings-goals/calculations";
-import type { SavingsGoal, SavingsGoalStatus, SummaryMetric } from "@/types/finance";
+import type { AccountAmountType, SavingsContributionType, SavingsGoal, SavingsGoalStatus, SavingsGoalType, SummaryMetric } from "@/types/finance";
 
 export type SavingsGoalRecord = SavingsGoal & {
   accountId: string;
+  accountAmountType: AccountAmountType;
   cashReserveAmountValue: number;
   categoryId: string;
   categoryName: string;
@@ -30,10 +31,14 @@ export type SavingsGoalRecord = SavingsGoal & {
 
 export type SavingsGoalFormData = {
   accountId: string;
+  accountAmountType: AccountAmountType;
   categoryId: string;
+  contributionPercentage: number;
+  contributionType: SavingsContributionType;
   description: string;
   monthlyContribution: number;
   name: string;
+  goalType: SavingsGoalType;
   savedAmount: number;
   targetAmount: number;
   targetDate: string;
@@ -41,11 +46,15 @@ export type SavingsGoalFormData = {
 
 type SavingsGoalRow = {
   account_id?: string | null;
+  account_amount_type?: string | null;
   category_id?: string | null;
   created_at?: string | null;
   current_amount?: number | string | null;
+  contribution_percentage?: number | string | null;
+  contribution_type?: string | null;
   description?: string | null;
   id: string;
+  goal_type?: string | null;
   initial_saved_amount?: number | string | null;
   metadata?: unknown;
   monthly_contribution?: number | string | null;
@@ -94,6 +103,7 @@ function formatDate(value: string) {
 }
 
 function deriveStatus(rowStatus: string | null | undefined, progressPercent: number, targetDate: string): SavingsGoalStatus {
+  if (!targetDate) return "Active";
   const normalizedStatus = rowStatus?.toLowerCase();
   // Progress is authoritative. A linked contribution can complete a goal and
   // a later reversal can reopen it even when the stored status is stale.
@@ -118,10 +128,12 @@ function mapGoal(
 ): SavingsGoalRecord {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
+  const accountAmountType = row.account_amount_type ?? (typeof metadata.account_amount_type === "string" ? metadata.account_amount_type : "General");
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const account = accountId ? accountsById.get(accountId) : undefined;
   const category = categoryId ? categoriesById.get(categoryId) : undefined;
   const targetAmountValue = numericValue(row.target_amount) || numericValue(metadata.target_amount);
+  const goalType: SavingsGoalType = row.goal_type === "fund" || metadata.goal_type === "fund" ? "Fund" : "Target";
   const storedSavedAmountValue = resolveStoredSavingsAmount({
     currentAmount: row.current_amount,
     initialSavedAmount: row.initial_saved_amount,
@@ -143,6 +155,10 @@ function mapGoal(
   const remainingAmountValue = Math.max(targetAmountValue - savedAmountValue, 0);
   const progressPercent = targetAmountValue > 0 ? Math.min(Math.round((savedAmountValue / targetAmountValue) * 100), 100) : 0;
   const targetDateValue = row.target_date ?? (typeof metadata.target_date === "string" ? metadata.target_date : "");
+  const contributionType: SavingsContributionType = row.contribution_type === "percentage" || metadata.contribution_type === "percentage" ? "Percentage" : "Fixed";
+  const contributionPercentage = contributionType === "Percentage"
+    ? numericValue(row.contribution_percentage) || numericValue(metadata.contribution_percentage)
+    : 0;
   const appearance = category
     ? { bg: category.bg, icon: category.icon, tone: category.tone }
     : {
@@ -153,12 +169,16 @@ function mapGoal(
   return {
     ...appearance,
     account: account?.name ?? (typeof metadata.account_name === "string" ? metadata.account_name : "No account selected"),
+    accountAmountType,
     accountId,
     cashReserveAmountValue,
     categoryId,
     categoryName: category?.name ?? "Uncategorized goal",
     createdAtValue: row.created_at ?? "",
     description: row.description ?? (typeof metadata.description === "string" ? metadata.description : ""),
+    contributionPercentage,
+    contributionType,
+    goalType,
     id: row.id,
     linkedSavedAmountValue,
     monthlyContribution: formatMmk(monthlyContributionValue),
@@ -247,14 +267,15 @@ export async function getSavingsGoal(
 }
 
 export function getSavingsGoalSummaries(goals: SavingsGoalRecord[]): SummaryMetric[] {
-  const totalTarget = goals.reduce((total, goal) => total + goal.targetAmountValue, 0);
+  const targetGoals = goals.filter((goal) => goal.goalType === "Target");
+  const totalTarget = targetGoals.reduce((total, goal) => total + goal.targetAmountValue, 0);
   const totalSaved = goals.reduce((total, goal) => total + goal.savedAmountValue, 0);
-  const remaining = goals.reduce((total, goal) => total + Math.max(goal.targetAmountValue - goal.savedAmountValue, 0), 0);
+  const remaining = targetGoals.reduce((total, goal) => total + Math.max(goal.targetAmountValue - goal.savedAmountValue, 0), 0);
 
   return [
     { label: "Total Target", value: formatMmk(totalTarget), icon: "target", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
     { label: "Total Saved", value: formatMmk(totalSaved), icon: "savings", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Remaining", value: formatMmk(remaining), icon: "timeline", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Active Goals", value: String(goals.filter((goal) => goal.status !== "Completed").length), icon: "dashboard", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Active Goals & Funds", value: String(goals.filter((goal) => goal.status !== "Completed").length), icon: "dashboard", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
 }

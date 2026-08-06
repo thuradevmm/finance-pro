@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { AddCategoryForm } from "@/features/categories/add-category-form";
-import { getCategory } from "@/lib/categories/supabase";
+import { getCategories } from "@/lib/categories/supabase";
 
 export default async function EditCategoryPage({ params }: { params: Promise<{ categoryId: string }> }) {
   const { categoryId } = await params;
-  const category = await getCategory(categoryId);
+  const categories = await getCategories();
+  const category = categories.find((item) => item.id === categoryId) ?? null;
 
   if (!category) {
     notFound();
@@ -22,7 +23,7 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ c
       topSearchPlaceholder="Search categories..."
     >
       <PageHeader description={`Update category details for ${category.name}.`} title="Edit Category" />
-      <AddCategoryForm category={category} />
+      <AddCategoryForm categories={categories} category={category} />
     </AppShell>
   );
 }

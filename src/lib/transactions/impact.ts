@@ -25,7 +25,7 @@ export function relatedImpactSupportsTransactionType(
 ) {
   if (option.type === "none" || !option.value) return false;
   if (option.type === "asset" || option.type === "subscription") return transactionType === "Expense";
-  if (option.type === "savings_goal") return transactionType === "Expense" || transactionType === "Transfer";
+  if (option.type === "savings_goal") return transactionType === "Income" || transactionType === "Expense" || transactionType === "Transfer";
   if (transactionType === "Transfer") return option.debtRepaymentType !== "Income";
   return !option.debtRepaymentType || option.debtRepaymentType === transactionType;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildManualFuturePlanningTable, movePlanningColumn, normalizePlanningYears } from "../src/lib/future-planning/manual-table.ts";
+import { buildManualFuturePlanningTable, movePlanningColumn, normalizePlanningYears, resolvePercentagePlanningAmounts } from "../src/lib/future-planning/manual-table.ts";
 
 const columns = [
   { direction: "income", id: "salary", name: "Salary", sortOrder: 0 },
@@ -70,4 +70,13 @@ test("amounts are isolated by month and never inferred from scheduled transactio
   assert.equal(january.totalIncome, 100);
   assert.equal(february.totalIncome, 110);
   assert.equal(january.plans.length, 1);
+});
+
+test("percentage plans derive from the same month's defined planned income", () => {
+  const resolved = resolvePercentagePlanningAmounts([
+    { actualAmount: 0, amount: 4_000, amountType: "Fixed", columnId: "salary", id: "salary-jan", percentage: 0, periodMonth: "2026-01-01" },
+    { actualAmount: 0, amount: 1_000, amountType: "Fixed", columnId: "freelance", id: "freelance-jan", percentage: 0, periodMonth: "2026-01-01" },
+    { actualAmount: 0, amount: 0, amountType: "Percentage", columnId: "reserve", id: "reserve-jan", percentage: 10, periodMonth: "2026-01-01" },
+  ], columns);
+  assert.equal(resolved.find((amount) => amount.id === "reserve-jan")?.amount, 500);
 });

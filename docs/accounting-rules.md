@@ -22,6 +22,56 @@ not require a destructive migration.
 - Soft-deleted records do not affect any total. A finalized reversal subtracts
   from its original bucket and both records remain immutable history.
 
+## Savings goals and reusable funds
+
+- A **Target** savings record requires a positive target and target date.
+- A **Fund** is open-ended reusable capital and has neither requirement.
+- Every goal or fund is assigned to one real account amount type. The savings
+  record earmarks money; the account ledger remains the source of cash truth.
+- New linked savings activity stores an explicit action. A Credit or inbound
+  Transfer is a deposit; a Debit or outbound Transfer is a withdrawal. Only a
+  Fund permits withdrawals. A withdrawal cannot exceed its derived available
+  amount.
+- Historical linked rows without an explicit action retain their former
+  Expense-as-contribution behavior. This compatibility rule must not be
+  applied to newly created activity.
+- Transfer pairs contribute once through their debit half. Reversals invert
+  the original deposit or withdrawal, and pending/scheduled rows do not change
+  saved progress.
+
+## Category hierarchy and planning rules
+
+- Existing and newly created selectable categories are **Subcategories**.
+  They may optionally belong to one same-type **Super category**.
+- Super categories are reporting-only groups and carry an optional financial
+  purpose such as essential living, debt obligation, emergency reserve,
+  savings, or discretionary spending. They are never valid posting targets.
+- Super-category activity is the sum of its child activity; changing hierarchy
+  never rewrites historical transaction category IDs.
+- Future-planning rows are either a fixed amount or a percentage of the same
+  month's total fixed planned Credit. Percentage-based Credit rows are not
+  allowed, which keeps the calculation base non-circular and explainable.
+- A Savings Goal contribution rule is a reusable suggestion in Future
+  Planning; applying it writes the normal monthly fixed/percentage control.
+
+## Dashboard health signals
+
+Dashboard indicators intentionally show qualitative states rather than the
+underlying ratios. They use finalized activity in the selected period:
+
+- Cash-flow direction compares operating Credits and Debits.
+- Essential expense load uses the Essential living super-category purpose and
+  the common CFPB needs guideline as a reference, not a personalized mandate.
+- Saving momentum uses net explicit savings deposits less withdrawals.
+- Emergency readiness compares emergency-purpose fund balances with typical
+  monthly essential spending; a six-month cushion is the strongest state.
+
+If the required income, activity, or category purpose is absent, the indicator
+must show **Setup needed** instead of guessing. Reference guidance:
+[CFPB spending rule](https://files.consumerfinance.gov/f/201603_cfpb_rules-to-live-by_my-spending-rule-to-live-by.pdf),
+[Federal Reserve liquid-savings research](https://www.federalreserve.gov/econres/notes/feds-notes/assessing-families-liquid-savings-using-the-survey-of-consumer-finances-20181119.html),
+and [FDIC emergency-saving guidance](https://www.fdic.gov/consumer-resource-center/2025-01/saving-unexpected-and-your-future).
+
 ## Authoritative formulas
 
 The functions in `src/lib/ledger.ts`, `src/lib/reconciliation.ts`, and

@@ -18,6 +18,7 @@ export type SavingsGoalTransactionInput = LedgerTransactionInput & {
   account_id?: string | null;
   id: string | null;
   related_entity_id?: string | null;
+  savings_action?: string | null;
   transfer_account_id?: string | null;
 };
 
@@ -25,6 +26,42 @@ function presentNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function explicitSavingsAction(transaction: SavingsGoalTransactionInput) {
+  const metadata = transaction.metadata && typeof transaction.metadata === "object" && !Array.isArray(transaction.metadata)
+    ? transaction.metadata as Record<string, unknown>
+    : {};
+  const value = String(transaction.savings_action ?? metadata.savings_action ?? "").trim().toLowerCase();
+  return value === "deposit" || value === "withdrawal" ? value : "";
+}
+
+/**
+ * New savings activity is explicit: Credits and inbound Transfers can fund a
+ * goal, while Debits and outbound Transfers can use it. Rows created before
+ * savings_action existed retain the former Expense-as-contribution behavior.
+ */
+export function savingsTransactionDelta(transaction: SavingsGoalTransactionInput, goalAccountId = "") {
+  if (!transactionStatusIsFinalized(transaction.status)) return 0;
+  const action = explicitSavingsAction(transaction);
+  if (!action) {
+    return transactionReservesTrackedCash(transaction) && goalAccountId
+      ? transferContributionForGoal(transaction, goalAccountId)
+      : linkedExpenseContributionDelta(transaction);
+  }
+
+  const amount = roundCurrencyValue(Math.abs(Number(transaction.amount) || 0));
+  if (amount <= 0) return 0;
+  const sourceType = reversedTransactionType(transaction)
+    || String(transaction.type ?? "").trim().toLowerCase();
+  if (sourceType === "transfer") {
+    const metadata = transaction.metadata && typeof transaction.metadata === "object" && !Array.isArray(transaction.metadata)
+      ? transaction.metadata as Record<string, unknown>
+      : {};
+    if (transferDirection(metadata) === "credit") return 0;
+  }
+  const direction = action === "deposit" ? 1 : -1;
+  return roundCurrencyValue(reversedTransactionType(transaction) ? -amount * direction : amount * direction);
 }
 
 export function resolveStoredSavingsAmount(values: {
@@ -118,9 +155,7 @@ export function calculateLinkedSavingsAmounts(
     if (!transaction.related_entity_id || (transaction.id && representedTransactionIds.has(transaction.id))) continue;
     if (!transactionStatusIsFinalized(transaction.status)) continue;
     const goalAccountId = goalAccountIdByGoalId.get(transaction.related_entity_id) ?? "";
-    const amount = transactionReservesTrackedCash(transaction) && goalAccountId
-      ? transferContributionForGoal(transaction, goalAccountId)
-      : linkedExpenseContributionDelta(transaction);
+    const amount = savingsTransactionDelta(transaction, goalAccountId);
     add(progressByGoalId, transaction.related_entity_id, amount);
     if (transactionReservesTrackedCash(transaction)) add(reserveByGoalId, transaction.related_entity_id, amount);
   }

@@ -128,6 +128,7 @@ const ledgerRelevantMetadataKeys = [
   "reversed_transaction_id",
   "reversed_transaction_type",
   "same_account_transfer_role",
+  "savings_action",
   "transfer_account_amount_type",
   "transfer_counter_amount",
   "transfer_direction",

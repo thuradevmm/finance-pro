@@ -4,10 +4,11 @@ import { getAccounts, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategories, type CategoryRecord } from "@/lib/categories/supabase";
 import { formatMmk } from "@/lib/currency";
 import { categoryMonthlyAverages, planningDirectionForCategoryType, type CategoryActual } from "@/lib/future-planning/category-controls";
-import { normalizePlanningYears, type FuturePlanningAmount, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
+import { normalizePlanningYears, resolvePercentagePlanningAmounts, type FuturePlanningAmount, type FuturePlanningColumn, type FuturePlanningColumnDirection } from "@/lib/future-planning/manual-table";
 import { futureLinkAmountSnapshot, futurePredictedAmount, type FutureTransactionRecord } from "@/lib/future-planning/records";
-import { economicTransactionDelta, linkedExpenseContributionDelta } from "@/lib/ledger";
+import { economicTransactionDelta } from "@/lib/ledger";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
+import { savingsTransactionDelta } from "@/lib/savings-goals/calculations";
 import { isMissingDatabaseObject, jsonSettingsSection } from "@/lib/supabase/schema-compat";
 import { getTransaction, getTransactions, type TransactionRecord } from "@/lib/transactions/supabase";
 import { transactionStatusIsFinalized } from "@/lib/transactions/status";
@@ -72,6 +73,7 @@ function categoryType(category: CategoryRecord | undefined): CategoryType {
 function transactionActual(
   transaction: TransactionRecord,
   savingsGoalCategoryById: Map<string, string>,
+  savingsGoalAccountById: Map<string, string>,
 ): CategoryActual | null {
   if (!transactionStatusIsFinalized(transaction.status)) return null;
   const savingsCategoryId = transaction.relatedEntityType === "savings_goal"
@@ -80,14 +82,17 @@ function transactionActual(
   const categoryId = savingsCategoryId || transaction.categoryId;
   if (!categoryId) return null;
   const amount = savingsCategoryId
-    ? linkedExpenseContributionDelta({
+    ? savingsTransactionDelta({
+      account_id: transaction.accountId,
       amount: transaction.amountValue,
+      id: transaction.id,
       metadata: transaction.ledgerMetadata,
       related_entity_id: transaction.relatedEntityId,
       related_entity_type: transaction.relatedEntityType,
       status: transaction.status,
+      transfer_account_id: transaction.transferAccountId,
       type: transaction.type,
-    })
+    }, savingsGoalAccountById.get(transaction.relatedEntityId) ?? "")
     : (() => {
       const delta = economicTransactionDelta({
         amount: transaction.amountValue,
@@ -119,7 +124,7 @@ export async function getManualFuturePlanningData(
       .eq("is_active", true)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
-    supabase.from("future_planning_amounts").select("id,column_id,period_month,amount").eq("user_id", userId),
+    supabase.from("future_planning_amounts").select("id,column_id,period_month,amount,amount_type,percentage").eq("user_id", userId),
     supabase.from("user_settings").select("settings").eq("user_id", userId).maybeSingle(),
   ]);
   const settingsTableMissing = isMissingDatabaseObject(settingsResult.error, ["future_planning_settings"]);
@@ -134,8 +139,9 @@ export async function getManualFuturePlanningData(
     getSavingsGoals(supabase, userId, accounts, categories),
   ]);
   const savingsGoalCategoryById = new Map(savingsGoals.map((goal) => [goal.id, goal.categoryId]));
+  const savingsGoalAccountById = new Map(savingsGoals.map((goal) => [goal.id, goal.accountId]));
   const actuals = transactions.flatMap((transaction) => {
-    const actual = transactionActual(transaction, savingsGoalCategoryById);
+    const actual = transactionActual(transaction, savingsGoalCategoryById, savingsGoalAccountById);
     return actual ? [actual] : [];
   });
   const actualByCategoryMonth = new Map<string, number>();
@@ -151,6 +157,8 @@ export async function getManualFuturePlanningData(
     linkedGoalsByCategoryId.set(goal.categoryId, [
       ...(linkedGoalsByCategoryId.get(goal.categoryId) ?? []),
       {
+        contributionPercentage: goal.contributionPercentage,
+        contributionType: goal.contributionType,
         id: goal.id,
         monthlyContribution: goal.monthlyContributionValue,
         name: goal.name,
@@ -187,19 +195,22 @@ export async function getManualFuturePlanningData(
     `${amount.column_id}:${amount.period_month.slice(0, 7)}`,
     amount,
   ]));
-  const amounts: FuturePlanningAmount[] = columns.flatMap((column) => selectedYears.flatMap((year) => (
+  const rawAmounts: FuturePlanningAmount[] = columns.flatMap((column) => selectedYears.flatMap((year) => (
     Array.from({ length: 12 }, (_, monthIndex) => {
       const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
       const stored = storedAmountsByColumnMonth.get(`${column.id}:${monthKey}`);
       return {
         actualAmount: actualByCategoryMonth.get(`${column.categoryId}:${monthKey}`) ?? 0,
         amount: Number(stored?.amount) || 0,
+        amountType: stored?.amount_type === "percentage" ? "Percentage" : "Fixed",
         columnId: column.id,
         id: stored?.id ?? `category:${column.categoryId}:${monthKey}`,
+        percentage: Number(stored?.percentage) || 0,
         periodMonth: stored?.period_month ?? `${monthKey}-01`,
       };
     })
   )));
+  const amounts = resolvePercentagePlanningAmounts(rawAmounts, columns);
 
   return { amounts, categories, columns, plannedTransactions, selectedYears };
 }
@@ -222,25 +233,35 @@ export async function getFuturePlanningTransactionOptions(
 ): Promise<FuturePlanningTransactionOption[]> {
   const [columnsResult, amountsResult] = await Promise.all([
     supabase.from("future_planning_columns").select("id,name,direction,category_id,is_active").eq("user_id", userId),
-    supabase.from("future_planning_amounts").select("id,column_id,period_month,amount").eq("user_id", userId).order("period_month", { ascending: true }),
+    supabase.from("future_planning_amounts").select("id,column_id,period_month,amount,amount_type,percentage").eq("user_id", userId).order("period_month", { ascending: true }),
   ]);
   if (isMissingDatabaseObject(amountsResult.error, ["future_planning_amounts"])) return [];
   if (columnsResult.error) throw new Error(columnsResult.error.message);
   if (amountsResult.error) throw new Error(amountsResult.error.message);
-  const columns = new Map((columnsResult.data ?? []).map((column) => [column.id, column]));
-  return (amountsResult.data ?? []).flatMap((amount) => {
-    const column = columns.get(amount.column_id);
-    const amountValue = Number(amount.amount) || 0;
+  const columnRows = columnsResult.data ?? [];
+  const columns = new Map(columnRows.map((column) => [column.id, column]));
+  const resolvedAmounts = resolvePercentagePlanningAmounts((amountsResult.data ?? []).map((amount) => ({
+    actualAmount: 0,
+    amount: Number(amount.amount) || 0,
+    amountType: amount.amount_type === "percentage" ? "Percentage" as const : "Fixed" as const,
+    columnId: amount.column_id,
+    id: amount.id,
+    percentage: Number(amount.percentage) || 0,
+    periodMonth: amount.period_month,
+  })), columnRows.map((column) => ({ direction: planningColumnDirection(column.direction), id: column.id })));
+  return resolvedAmounts.flatMap((amount) => {
+    const column = columns.get(amount.columnId);
+    const amountValue = amount.amount;
     if (!column || ((!column.is_active || amountValue <= 0) && amount.id !== preservedAmountId)) return [];
     const periodLabel = new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" })
-      .format(new Date(`${amount.period_month}T00:00:00Z`));
+      .format(new Date(`${amount.periodMonth}T00:00:00Z`));
     return [{
       amount: amountValue,
       categoryId: column.category_id,
       direction: planningColumnDirection(column.direction),
       id: amount.id,
       label: `${column.name} · ${periodLabel} · ${formatMmk(amountValue)}`,
-      periodMonth: amount.period_month,
+      periodMonth: amount.periodMonth,
     }];
   });
 }

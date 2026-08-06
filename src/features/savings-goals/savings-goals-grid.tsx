@@ -19,6 +19,7 @@ import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
 const statusStyles: Record<SavingsGoalStatus, string> = {
+  Active: "bg-[#ecfdf5] text-[#166534]",
   "In Progress": "bg-[#ecfdf5] text-[#166534]",
   Behind: "bg-[#fffbeb] text-[#92400e]",
   Completed: "bg-[#eff6ff] text-[#0058be]",
@@ -40,13 +41,18 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
         <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[goal.status]}`}>{goal.status}</span>
       </div>
 
-      <ProgressCircle percent={goal.progressPercent} tone={goal.tone} />
+      {goal.goalType === "Target" ? <ProgressCircle percent={goal.progressPercent} tone={goal.tone} /> : (
+        <div className="rounded-lg border border-[#bbf7d0] bg-[#ecfdf5] p-4 text-center">
+          <p className="text-xs font-bold uppercase text-[#166534]">Reusable fund balance</p>
+          <p className="mt-2 amount-value text-xl font-bold text-[#047857]">{goal.savedAmount}</p>
+        </div>
+      )}
 
       <dl className="mt-5 grid min-w-0 grid-cols-1 gap-3 text-left min-[420px]:grid-cols-2 min-[420px]:text-center">
-        <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0">
+        {goal.goalType === "Target" ? <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0">
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Saved</dt>
           <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.savedAmount}>{goal.savedAmount}</dd>
-        </div>
+        </div> : <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0"><dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Account bucket</dt><dd className="text-base font-semibold text-[#0b1c30] sm:text-lg">{goal.accountAmountType}</dd></div>}
         <div className="min-w-0 rounded-md bg-[#f8f9ff] p-3 min-[420px]:bg-transparent min-[420px]:p-0">
           <dt className="mb-1 text-xs font-bold uppercase text-[#45464d]">Target</dt>
           <dd className="amount-value text-base font-semibold text-[#0b1c30] sm:text-lg" title={goal.targetAmount}>{goal.targetAmount}</dd>
@@ -56,10 +62,10 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
       <div className="mt-5 border-t border-[#c6c6cd]/40 pt-4">
         <div className="flex min-w-0 items-center justify-center gap-2 text-sm font-medium text-[#45464d]">
           <Icon className="size-4" name="calendar" />
-          <span className="min-w-0 truncate">Target: {goal.targetDate}</span>
+          <span className="min-w-0 truncate">{goal.goalType === "Target" ? `Target: ${goal.targetDate}` : "Open-ended fund"}</span>
         </div>
         <div className="mt-3 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">
-          Future plan · {goal.categoryName} · {goal.monthlyContribution} / month
+          Future plan · {goal.categoryName} · {goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% of income` : `${goal.monthlyContribution} / month`}
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning">
@@ -150,18 +156,20 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       >
         {viewedGoal ? <div className="space-y-5">
           <DetailModalSection title="Goal information">
+            <DetailModalField label="Type" value={viewedGoal.goalType === "Fund" ? "Reusable fund / capital" : "Target goal"} />
             <DetailModalField label="Status" value={viewedGoal.status} />
-            <DetailModalField label="Progress" value={`${viewedGoal.progressPercent}%`} />
+            {viewedGoal.goalType === "Target" ? <DetailModalField label="Progress" value={`${viewedGoal.progressPercent}%`} /> : null}
             <DetailModalField label="Category" value={viewedGoal.categoryName} />
             <DetailModalField label="Savings account" value={viewedGoal.account} />
-            <DetailModalField label="Target date" value={viewedGoal.targetDate} />
+            <DetailModalField label="Account amount type" value={viewedGoal.accountAmountType} />
+            {viewedGoal.goalType === "Target" ? <DetailModalField label="Target date" value={viewedGoal.targetDate} /> : null}
             <DetailModalField label="Created" value={formatDisplayDate(viewedGoal.createdAtValue, "Not set")} />
           </DetailModalSection>
           <DetailModalSection title="Amounts">
-            <DetailModalField label="Target amount" value={viewedGoal.targetAmount} />
+            {viewedGoal.goalType === "Target" ? <DetailModalField label="Target amount" value={viewedGoal.targetAmount} /> : null}
             <DetailModalField label="Saved amount" value={viewedGoal.savedAmount} />
-            <DetailModalField label="Remaining" value={viewedGoal.remainingAmount} />
-            <DetailModalField label="Monthly contribution" value={viewedGoal.monthlyContribution} />
+            {viewedGoal.goalType === "Target" ? <DetailModalField label="Remaining" value={viewedGoal.remainingAmount} /> : null}
+            <DetailModalField label="Contribution rule" value={viewedGoal.contributionType === "Percentage" ? `${viewedGoal.contributionPercentage}% of planned income` : `${viewedGoal.monthlyContribution} monthly`} />
             <DetailModalField label="Opening saved amount" value={formatMmk(viewedGoal.storedSavedAmountValue)} />
             <DetailModalField label="Linked transaction contributions" value={formatMmk(viewedGoal.linkedSavedAmountValue)} />
             <DetailModalField label="Available cash reserve" value={formatMmk(viewedGoal.cashReserveAmountValue)} />

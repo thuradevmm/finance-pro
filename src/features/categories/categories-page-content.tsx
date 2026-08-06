@@ -61,6 +61,7 @@ function CategoryLifecycleActions({
   const isMerged = Boolean(category.mergedIntoCategoryId);
   const mergeTargets = categories.filter((target) => target.id !== category.id
     && target.type === category.type
+    && target.level === category.level
     && target.status === "Active"
     && !target.mergedIntoCategoryId);
 
@@ -168,6 +169,8 @@ function CategoryListItem({
           <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
             <h2 className="min-w-0 break-words text-lg font-semibold leading-tight text-[#0b1c30]">{category.name}</h2>
             <CategoryBadge type={category.type} />
+            <span className={category.level === "Super" ? "rounded bg-[#e0f2fe] px-2 py-0.5 text-xs font-semibold text-[#075985]" : "rounded bg-[#f1f1f4] px-2 py-0.5 text-xs font-semibold text-[#45464d]"}>{category.level === "Super" ? "Super" : "Sub"}</span>
+            {category.parentName ? <span className="rounded bg-[#f8f9ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">Under {category.parentName}</span> : null}
             {category.isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
             <span className={category.status === "Active"
               ? "rounded bg-[#ecfdf5] px-2 py-0.5 text-xs font-semibold text-[#166534]"
@@ -315,11 +318,21 @@ export function CategoriesPageContent({
   const filteredCategories = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return visibleCategories.filter((category) => {
-      const searchable = `${category.name} ${category.description} ${category.type} ${category.activityLabel} ${category.monthlyAverage} ${category.countLabel} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
+      const searchable = `${category.name} ${category.description} ${category.type} ${category.level} ${category.parentName} ${category.financialRole} ${category.activityLabel} ${category.monthlyAverage} ${category.countLabel} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
       const matchesStatus = status === "All statuses" || category.status === status;
       return category.type === activeType && matchesStatus && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [activeType, search, status, visibleCategories]);
+  const hierarchicalCategories = useMemo(() => {
+    const order = new Map(filteredCategories.map((category, index) => [category.id, index]));
+    return [...filteredCategories].sort((first, second) => {
+      const firstGroup = first.level === "Super" ? first.id : first.parentId || `~${first.id}`;
+      const secondGroup = second.level === "Super" ? second.id : second.parentId || `~${second.id}`;
+      if (firstGroup !== secondGroup) return firstGroup.localeCompare(secondGroup);
+      if (first.level !== second.level) return first.level === "Super" ? -1 : 1;
+      return (order.get(first.id) ?? 0) - (order.get(second.id) ?? 0);
+    });
+  }, [filteredCategories]);
   const hasCategoriesForActiveType = visibleCategories.some((category) => category.type === activeType);
   const hasActiveCategoryFilters = Boolean(search.trim() || status !== "All statuses");
 
@@ -464,8 +477,10 @@ export function CategoriesPageContent({
       ) : null}
 
       {filteredCategories.length > 0 ? <section className="space-y-3">
-        {filteredCategories.map((category) => (
-          <CategoryListItem categories={visibleCategories} category={category} key={category.id} onDelete={handleDelete} onMerge={handleMerge} onStatusChange={handleStatusChange} onView={() => setViewedCategory(category)} />
+        {hierarchicalCategories.map((category) => (
+          <div className={category.level === "Subcategory" && category.parentId ? "ml-3 border-l-2 border-[#bfdbfe] pl-3 sm:ml-6 sm:pl-4" : ""} key={category.id}>
+            <CategoryListItem categories={visibleCategories} category={category} onDelete={handleDelete} onMerge={handleMerge} onStatusChange={handleStatusChange} onView={() => setViewedCategory(category)} />
+          </div>
         ))}
       </section> : null}
       <DetailModal
@@ -480,6 +495,9 @@ export function CategoriesPageContent({
         {viewedCategory ? <div className="space-y-5">
           <DetailModalSection title="Category information">
             <DetailModalField label="Type" value={categoryTypeLabel(viewedCategory.type)} />
+            <DetailModalField label="Level" value={viewedCategory.level} />
+            <DetailModalField label="Super category" value={viewedCategory.parentName || "Ungrouped"} />
+            <DetailModalField label="Financial purpose" value={viewedCategory.financialRole || "Inherited / not set"} />
             <DetailModalField label="Status" value={viewedCategory.status} />
             <DetailModalField label="Scopes" value={viewedCategory.scopes.join(", ") || "Not assigned"} />
             <DetailModalField label="Default category" value={viewedCategory.isDefault ? viewedCategory.isSharedDefault ? "Shared system default" : "Default" : "No"} />

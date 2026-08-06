@@ -69,6 +69,8 @@ export type TransactionRelatedEntityType = "asset" | "debt" | "none" | "savings_
 
 export type TransactionRelatedOption = {
   accountId?: string;
+  accountAmountType?: AccountAmountType;
+  availableAmount?: number;
   categoryId?: string;
   creditCardDebt?: {
     accountId: string;
@@ -87,6 +89,7 @@ export type TransactionRelatedOption = {
   };
   debtRepaymentType?: "Expense" | "Income";
   label: string;
+  savingsGoalType?: "Fund" | "Target";
   oneTimeDebtPayoff?: {
     amount: number;
     dueDate: string;
@@ -119,6 +122,7 @@ export type TransactionFormData = {
   note: string;
   relatedEntityId: string;
   relatedEntityType: TransactionRelatedEntityType;
+  savingsAction?: "" | "deposit" | "withdrawal";
   status: string;
   subscriptionPayment?: {
     billedAmount: number;
@@ -427,7 +431,7 @@ export async function getTransaction(supabase: SupabaseClient, userId: string, t
 export function getTransactionFilterOptions(transactions: TransactionRecord[], accounts: AccountRecord[], categories: CategoryRecord[]): TransactionFilterOptions {
   return {
     account: ["Account", ...getAccountOptionLabels(accounts)],
-    category: ["Category", ...categories.filter((category) => category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
+    category: ["Category", ...categories.filter((category) => category.level === "Subcategory" && category.scopes.includes("Transactions") && isTransactionCategoryType(category.type)).map((category) => category.name)],
     status: ["Status", ...transactionStatusFilterLabels()],
     type: ["Type", "Credit", "Debit", "Transfer"],
   };

@@ -87,13 +87,14 @@ export async function createFuturePlanningColumn(input: {
 
   const { data: category, error: categoryError } = await supabase
     .from("categories")
-    .select("id,name,type,category_type,is_active,metadata")
+    .select("id,name,type,category_type,category_level,is_active,metadata")
     .eq("id", input.categoryId)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .maybeSingle();
   if (categoryError) return { error: categoryError.message };
   if (!category || category.is_active === false) return { error: "Choose an active category." };
+  if (category.category_level === "super" || metadataRecord(category.metadata).category_level === "super") return { error: "Choose a subcategory; super categories are reporting groups." };
   const categoryType = normalizedCategoryType(category);
   if (!["expense", "income", "savings_goal"].includes(categoryType)) {
     return { error: "Future Planning supports Credit, Debit, and Savings Goal categories." };
@@ -204,33 +205,42 @@ export async function moveFuturePlanningColumn(input: {
 
 export async function saveFuturePlanningAmount(input: {
   amount: number;
+  amountType: "Fixed" | "Percentage";
   columnId: string;
+  percentage: number;
   periodMonth: string;
 }): Promise<SettingsActionResult & { id?: string }> {
   if (!input.columnId?.trim()) return { error: "Planning category not found." };
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(input.periodMonth)) return { error: "Choose a valid planning month." };
+  if (input.amountType !== "Fixed" && input.amountType !== "Percentage") return { error: "Choose a fixed amount or percentage." };
   if (!Number.isFinite(input.amount) || input.amount < 0 || input.amount > 1_000_000_000_000_000) {
     return { error: "Enter a valid planned amount of zero or more." };
+  }
+  if (input.amountType === "Percentage" && (!Number.isFinite(input.percentage) || input.percentage <= 0 || input.percentage > 100)) {
+    return { error: "Enter a percentage above zero and no more than 100%." };
   }
 
   const { authError, supabase, user } = await authenticatedClient();
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const { data: column, error: columnError } = await supabase
     .from("future_planning_columns")
-    .select("id,category_id")
+    .select("id,category_id,direction")
     .eq("id", input.columnId)
     .eq("user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
   if (columnError) return { error: columnError.message };
   if (!column) return { error: "Planning category not found." };
+  if (input.amountType === "Percentage" && column.direction === "income") return { error: "Income plans must use a defined amount so percentage plans have a stable base." };
 
   const { data, error } = await supabase
     .from("future_planning_amounts")
     .upsert({
-      amount: input.amount,
+      amount: input.amountType === "Fixed" ? input.amount : 0,
+      amount_type: input.amountType.toLowerCase(),
       column_id: input.columnId,
       period_month: input.periodMonth,
+      percentage: input.amountType === "Percentage" ? input.percentage : null,
       user_id: user.id,
     }, { onConflict: "user_id,column_id,period_month" })
     .select("id")

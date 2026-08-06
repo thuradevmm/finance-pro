@@ -198,7 +198,7 @@ test("page category labels match the related module's primary metric", () => {
     Account: { activity: "Current Balance", count: "Accounts" },
     Asset: { activity: "Purchase Value", count: "Assets" },
     Debt: { activity: "Total Debt", count: "Debts" },
-    "Savings Goal": { activity: "Total Target", count: "Goals" },
+    "Savings Goal": { activity: "Tracked Capital", count: "Goals & Funds" },
     Subscription: { activity: "Monthly Cost", count: "Ongoing Subscriptions" },
   });
 });
