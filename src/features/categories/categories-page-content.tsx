@@ -15,6 +15,7 @@ import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
 import { CategoryMergeDialog } from "@/features/categories/category-merge-dialog";
 import { isTransactionCategoryType } from "@/lib/categories/category-scopes";
+import { financialPurposeFieldLabel, financialPurposeLabel } from "@/lib/categories/financial-purpose";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { normalizeTransactionDate } from "@/lib/transactions/filters";
 import type { CategoryType } from "@/types/finance";
@@ -356,6 +357,10 @@ export function CategoriesPageContent({
       || (hierarchyView === "Super categories" && category.level === "Super")
       || (hierarchyView === "Subcategories" && category.level === "Subcategory")));
   const hasActiveCategoryFilters = Boolean(search.trim() || status !== "All statuses");
+  const viewedParentCategory = viewedCategory?.parentId
+    ? visibleCategories.find((category) => category.id === viewedCategory.parentId)
+    : undefined;
+  const viewedFinancialRole = viewedCategory?.financialRole || viewedParentCategory?.financialRole || "";
 
   function applyFilters(nextSearch: string, nextStatus: string, nextDateFrom: string, nextDateTo: string) {
     const normalizedStatus = ["All statuses", "Active", "Hidden"].includes(nextStatus) ? nextStatus : "All statuses";
@@ -553,7 +558,7 @@ export function CategoriesPageContent({
             <DetailModalField label="Type" value={categoryTypeLabel(viewedCategory.type)} />
             <DetailModalField label="Level" value={viewedCategory.level} />
             <DetailModalField label="Super category" value={viewedCategory.parentName || "Ungrouped"} />
-            <DetailModalField label="Financial purpose" value={viewedCategory.financialRole || "Inherited / not set"} />
+            <DetailModalField label={viewedCategory.level === "Super" ? financialPurposeFieldLabel(viewedCategory.type) : "Inherited dashboard classification"} value={viewedFinancialRole ? financialPurposeLabel(viewedFinancialRole) : "Not set"} />
             <DetailModalField label="Status" value={viewedCategory.status} />
             <DetailModalField label="Scopes" value={viewedCategory.scopes.join(", ") || "Not assigned"} />
             <DetailModalField label="Default category" value={viewedCategory.isDefault ? viewedCategory.isSharedDefault ? "Shared system default" : "Default" : "No"} />

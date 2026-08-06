@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
+import { financialPurposeSupports } from "@/lib/categories/financial-purpose";
 import { getScopesForCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData } from "@/lib/categories/supabase";
 import { createClient } from "@/lib/supabase/server";
@@ -138,8 +139,9 @@ function validateCategoryInput(input: CategoryFormData) {
   if (!allowedTypes.includes(input.type)) return "Choose a valid category type.";
   if (input.level !== "Super" && input.level !== "Subcategory") return "Choose a valid category level.";
   const allowedRoles = ["", "essential", "debt_obligation", "emergency_reserve", "savings", "discretionary", "income", "other"];
-  if (!allowedRoles.includes(input.financialRole)) return "Choose a valid financial purpose.";
-  if (input.level === "Subcategory" && input.financialRole) return "Financial purpose is set on super categories.";
+  if (!allowedRoles.includes(input.financialRole)) return "Choose a valid dashboard classification.";
+  if (input.level === "Subcategory" && input.financialRole) return "Dashboard classification is inherited from a super category.";
+  if (input.level === "Super" && !financialPurposeSupports(input.type, input.financialRole)) return `Choose a dashboard classification compatible with this ${input.type === "Expense" ? "Debit" : input.type === "Income" ? "Credit" : input.type} category.`;
   if (input.level === "Super" && input.parentId) return "A super category cannot belong to another category.";
   if (input.level === "Subcategory" && input.childCategoryIds.length > 0) return "Only a super category can link multiple subcategories.";
   if (input.childCategoryIds.length > 200 || new Set(input.childCategoryIds).size !== input.childCategoryIds.length) return "Choose up to 200 unique subcategories.";

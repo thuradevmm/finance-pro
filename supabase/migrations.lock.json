@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "20260806120058",
+  "sealedThrough": "20260806121608",
   "migrations": [
     {
       "version": "202606180001",
@@ -211,6 +211,11 @@
       "version": "20260806120058",
       "file": "20260806120058_enforce_single_super_category_parent.sql",
       "sha256": "486eac2c7870842943e54bdf0e399241d8b7758a33ffe0b608fe11a3525573ca"
+    },
+    {
+      "version": "20260806121608",
+      "file": "20260806121608_category_financial_purpose_by_direction.sql",
+      "sha256": "9b19aa436dd2e409e571faff431d1dbcac6097d3bdb9f11cc35561a7e8fc7d1c"
     }
   ],
   "historyRepairs": [

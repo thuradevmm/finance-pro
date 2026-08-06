@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { FormCard, SelectInput, TextAreaInput, TextInput } from "@/components/ui/form-controls";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { formatMmkPreview } from "@/lib/currency";
+import { financialPurposeFieldLabel, financialPurposeLabel, financialPurposeOptionsFor } from "@/lib/categories/financial-purpose";
 import { getCategoryTypeStyle } from "@/lib/categories/category-style";
 import { getScopesForCategoryType } from "@/lib/categories/category-scopes";
 import type { CategoryFormData, CategoryRecord } from "@/lib/categories/supabase";
@@ -19,15 +20,6 @@ import type { CategoryFinancialRole, CategoryLevel, CategoryType } from "@/types
 import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
-const financialRoleOptions: Array<{ label: string; value: Exclude<CategoryFinancialRole, ""> }> = [
-  { label: "Essential living", value: "essential" },
-  { label: "Debt obligation", value: "debt_obligation" },
-  { label: "Emergency reserve", value: "emergency_reserve" },
-  { label: "Savings & capital", value: "savings" },
-  { label: "Discretionary", value: "discretionary" },
-  { label: "Income source", value: "income" },
-  { label: "Other", value: "other" },
-];
 
 export function AddCategoryForm({ categories, category }: { categories: CategoryRecord[]; category?: CategoryRecord }) {
   const { showError, showSuccess } = useToast();
@@ -51,6 +43,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
   const nameHasError = showErrors && name.trim() === "";
   const selectedScopes = getScopesForCategoryType(selectedType);
   const selectedStyle = getCategoryTypeStyle(selectedType);
+  const financialRoleOptions = financialPurposeOptionsFor(selectedType);
   const parentOptions = categories.filter((item) => item.id !== category?.id
     && item.level === "Super"
     && item.type === selectedType
@@ -64,7 +57,8 @@ export function AddCategoryForm({ categories, category }: { categories: Category
     && (!item.parentId || item.parentId === category?.id)
     && (item.status === "Active" || item.parentId === category?.id));
   const selectedChildCategories = childCategoryOptions.filter((item) => selectedChildCategoryIds.includes(item.id));
-  const selectedRoleLabel = financialRoleOptions.find((option) => option.value === financialRole)?.label ?? "Other";
+  const selectedRoleLabel = financialRoleOptions.find((option) => option.value === financialRole)?.label ?? "General / no indicator";
+  const selectedParentRoleLabel = selectedParent?.financialRole ? financialPurposeLabel(selectedParent.financialRole) : "No dashboard classification";
   const monthlyAverage = category && category.type === selectedType ? category.monthlyAverage : formatMmkPreview(0);
   const transactionCount = category && category.type === selectedType ? category.transactionCount : 0;
   const activityLabel = category && category.type === selectedType ? category.activityLabel : selectedType === "Expense" || selectedType === "Income" ? "Monthly Avg" : "Tracked Value";
@@ -142,6 +136,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                     setSelectedType(type);
                     setParentId("");
                     setSelectedChildCategoryIds([]);
+                    setFinancialRole((current) => financialPurposeOptionsFor(type).some((option) => option.value === current) ? current : "other");
                   }}
                   type="button"
                 >
@@ -186,7 +181,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               );
             })}
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {level === "Subcategory" ? <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             {level === "Subcategory" ? (
               <SelectInput
                 label="Super Category (Optional)"
@@ -194,19 +189,38 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                 options={["Ungrouped", ...parentOptions.map((item) => item.name)]}
                 value={selectedParent?.name ?? "Ungrouped"}
               />
-            ) : (
-              <SelectInput
-                label="Financial Purpose"
-                onChange={(value) => setFinancialRole(financialRoleOptions.find((option) => option.label === value)?.value ?? "other")}
-                options={financialRoleOptions.map((option) => option.label)}
-                value={selectedRoleLabel}
-              />
-            )}
+            ) : null}
             <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] px-4 py-3">
               <span className="block text-xs font-bold uppercase text-[#45464d]">System behavior</span>
-              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{level === "Super" ? "Rolls up its subcategories" : selectedParent ? `Grouped under ${selectedParent.name}` : "Selectable and currently ungrouped"}</span>
+              <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{selectedParent ? `Grouped under ${selectedParent.name}` : "Selectable and currently ungrouped"}</span>
+              <span className="mt-1 block text-xs leading-5 text-[#45464d]">{selectedParent ? `Automatically inherits: ${selectedParentRoleLabel}.` : "It will inherit a dashboard classification when linked to a super category."}</span>
             </div>
-          </div>
+          </div> : (
+            <fieldset className="mt-5 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-4">
+              <legend className="px-1 text-sm font-bold text-[#0b1c30]">{financialPurposeFieldLabel(selectedType)}</legend>
+              <p className="text-xs leading-5 text-[#45464d]">Optional: choose how this super category should participate in dashboard analysis. Every linked subcategory inherits this selection automatically.</p>
+              <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {financialRoleOptions.map((option) => {
+                  const isSelected = financialRole === option.value;
+                  return (
+                    <button
+                      aria-pressed={isSelected}
+                      className={isSelected
+                        ? "rounded-lg border border-[#2170e4] bg-white p-3 text-left shadow-sm"
+                        : "rounded-lg border border-[#d4d4d8] bg-white/70 p-3 text-left transition hover:border-[#93c5fd] hover:bg-white"}
+                      key={option.value}
+                      onClick={() => setFinancialRole(option.value)}
+                      type="button"
+                    >
+                      <span className={isSelected ? "block text-sm font-bold text-[#0058be]" : "block text-sm font-bold text-[#0b1c30]"}>{option.label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-[#45464d]">{option.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 rounded-md bg-[#eff6ff] px-3 py-2 text-xs font-semibold text-[#0058be]">Selected: {selectedRoleLabel}. This classification applies to all linked subcategories.</div>
+            </fieldset>
+          )}
           {level === "Super" ? (
             <div className="mt-5 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -289,7 +303,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
         <FormCard title="Category Usage">
           <p className="text-sm leading-6 text-[#45464d]">
             {level === "Super"
-              ? "Super categories organize and roll up subcategories for analysis. They are never offered in transaction or linked-record selectors."
+              ? "Super categories organize and roll up subcategories for analysis. Dashboard classification is optional and inherited by every linked child; super categories are never offered in transaction or linked-record selectors."
               : "Subcategory usage is controlled by category type. Credit and Debit categories are used by transaction-related pages; page categories stay scoped to their related feature."}
           </p>
           <p className="mt-3 text-sm leading-6 text-[#45464d]">
@@ -365,7 +379,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               </span>
             </div>
             <p className="mb-4 text-sm text-[#45464d]">{description || "Category description preview"}</p>
-            <p className="mb-4 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">{level === "Super" ? `Purpose: ${selectedRoleLabel} · ${selectedChildCategories.length} linked subcategories` : selectedParent ? `Super category: ${selectedParent.name}` : "Ungrouped subcategory"}</p>
+            <p className="mb-4 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">{level === "Super" ? `Dashboard: ${selectedRoleLabel} · ${selectedChildCategories.length} linked subcategories` : selectedParent ? `Super category: ${selectedParent.name} · Inherits ${selectedParentRoleLabel}` : "Ungrouped · No inherited dashboard classification"}</p>
             {level === "Super" && selectedChildCategories.length > 0 ? (
               <div className="mb-4 flex flex-wrap gap-1.5">
                 {selectedChildCategories.map((item) => <span className="rounded bg-[#e0f2fe] px-2 py-1 text-xs font-semibold text-[#075985]" key={item.id}>{item.name}</span>)}
