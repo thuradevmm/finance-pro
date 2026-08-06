@@ -69,6 +69,7 @@ export type CategoryRollupSavingsGoal = {
   current_amount?: number | string | null;
   goal_type?: string | null;
   initial_saved_amount?: number | string | null;
+  linked_saved_amount?: number | string | null;
   metadata: unknown;
   saved_amount?: number | string | null;
   target_amount: number | string | null;
@@ -181,6 +182,7 @@ export function transactionCategoryActivityRows(
 export function pageCategoryActivityRows(input: {
   accounts: CategoryRollupAccount[];
   assets: CategoryRollupAsset[];
+  baseTransactions?: CategoryRollupTransaction[];
   categoryIdByName: ReadonlyMap<string, string>;
   debts: CategoryRollupDebt[];
   savingsGoals: CategoryRollupSavingsGoal[];
@@ -191,12 +193,13 @@ export function pageCategoryActivityRows(input: {
     ...transaction,
     metadata: deriveCreditCardDebtMetadata(transaction, input.debts, input.accounts),
   }));
+  const baseTransactions = input.baseTransactions ?? derivedTransactions;
   const accountActivities = buildAccountLedgerActivities(derivedTransactions, input.accounts);
   const creditCardOpenings = creditCardOpeningBalancesByAccount(input.debts);
   const debtLedgers = buildDebtTransactionLedgers(derivedTransactions, input.debts);
   const linkedPurchasesByAssetId = new Map<string, number>();
 
-  for (const transaction of derivedTransactions) {
+  for (const transaction of baseTransactions) {
     if (String(transaction.related_entity_type ?? "").toLowerCase() !== "asset" || !transaction.related_entity_id) continue;
     linkedPurchasesByAssetId.set(
       transaction.related_entity_id,
@@ -252,14 +255,14 @@ export function pageCategoryActivityRows(input: {
       const metadata = metadataRecord(goal.metadata);
       const categoryId = metadataCategoryId(goal.category_id, metadata);
       if (!categoryId) return [];
-      const goalType = String(goal.goal_type ?? metadata.goal_type ?? "target").toLowerCase();
       const savedAmount = presentNumber(goal.saved_amount)
         ?? presentNumber(goal.initial_saved_amount)
         ?? presentNumber(goal.current_amount)
         ?? presentNumber(metadata.saved_amount)
         ?? 0;
+      const trackedSavedAmount = roundCurrencyValue(savedAmount + numericValue(goal.linked_saved_amount));
       return [{
-        amount: goalType === "fund" ? savedAmount : numericValue(goal.target_amount) || numericValue(metadata.target_amount),
+        amount: trackedSavedAmount,
         category_id: categoryId,
         date: goal.target_date ?? goal.created_at,
       }];

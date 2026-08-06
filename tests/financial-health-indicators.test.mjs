@@ -50,6 +50,33 @@ test("missing purpose mappings request setup instead of presenting misleading ra
   assert.equal(signals.find((signal) => signal.label === "Emergency readiness")?.signal, "Setup needed");
 });
 
+test("a configured emergency reserve is not mislabeled as needing setup", () => {
+  const categories = [
+    category("essential", "Super", "essential"),
+    category("food", "Subcategory", "", "essential"),
+    category("emergency", "Super", "emergency_reserve"),
+    category("reserve", "Subcategory", "", "emergency"),
+  ];
+  const fundedSignals = buildFinancialHealthSignals({
+    categories,
+    dateFrom: "2026-08-01",
+    dateTo: "2026-08-31",
+    savingsGoals: [{ accountId: "bank", categoryId: "reserve", id: "goal", savedAmountValue: 10_000 }],
+    transactions: [],
+  });
+  const unfundedSignals = buildFinancialHealthSignals({
+    categories,
+    dateFrom: "2026-08-01",
+    dateTo: "2026-08-31",
+    savingsGoals: [{ accountId: "bank", categoryId: "reserve", id: "goal", savedAmountValue: 0 }],
+    transactions: [],
+  });
+
+  assert.equal(fundedSignals.find((signal) => signal.label === "Emergency readiness")?.signal, "Building");
+  assert.match(fundedSignals.find((signal) => signal.label === "Emergency readiness")?.detail ?? "", /configured and funded/);
+  assert.equal(unfundedSignals.find((signal) => signal.label === "Emergency readiness")?.signal, "Warning");
+});
+
 test("health indicators use an accessible segmented semicircle and directional needle", () => {
   assert.match(indicatorSource, /role="img"/);
   assert.match(indicatorSource, /M25 100 A75 75/);

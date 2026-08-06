@@ -63,6 +63,17 @@ test("explicit fund activity accepts Credits and signs withdrawals without chang
   assert.equal(savingsTransactionDelta({ id: "out-pair", account_id: "bank", transfer_account_id: "saving", amount: 25, metadata: { savings_action: "withdrawal", transfer_direction: "credit" }, status: "cleared", type: "transfer" }, "saving"), 0);
 });
 
+test("cross-currency savings transfers use the amount posted to the goal account", () => {
+  const transferPair = [
+    { id: "source", account_id: "usd-bank", transfer_account_id: "mmk-saving", related_entity_id: "goal", amount: 100, metadata: { savings_action: "deposit", transfer_direction: "debit" }, status: "cleared", type: "transfer" },
+    { id: "destination", account_id: "mmk-saving", transfer_account_id: "usd-bank", related_entity_id: "goal", amount: 300_000, metadata: { savings_action: "deposit", transfer_direction: "credit" }, status: "cleared", type: "transfer" },
+  ];
+  const result = calculateLinkedSavingsAmounts([], transferPair, new Map([["goal", "mmk-saving"]]));
+
+  assert.equal(result.progressByGoalId.get("goal"), 300_000);
+  assert.equal(result.reserveByGoalId.get("goal"), 300_000);
+});
+
 test("subscription periods preserve anchors and weekly annualization uses 52 weeks", () => {
   assert.equal(annualizedSubscriptionCost(10, "Weekly"), 520);
   assert.equal(monthlySubscriptionCost(10, "Weekly"), 520 / 12);

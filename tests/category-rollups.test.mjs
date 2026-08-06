@@ -119,6 +119,7 @@ test("page category rollups mirror module fallbacks and ongoing-record semantics
     savingsGoals: [{
       category_id: null,
       created_at: "2028-01-01T00:00:00Z",
+      linked_saved_amount: 250,
       metadata: { category_id: "goals", target_amount: 900 },
       target_amount: 0,
       target_date: "2028-12-31",
@@ -189,7 +190,7 @@ test("page category rollups mirror module fallbacks and ongoing-record semantics
 
   assert.deepEqual(activity.get("assets"), { monthlyAverage: 500, total: 500, transactionCount: 2 });
   assert.deepEqual(activity.get("debts"), { monthlyAverage: 1_200, total: 1_200, transactionCount: 1 });
-  assert.deepEqual(activity.get("goals"), { monthlyAverage: 900, total: 900, transactionCount: 1 });
+  assert.deepEqual(activity.get("goals"), { monthlyAverage: 250, total: 250, transactionCount: 1 });
   assert.deepEqual(activity.get("subscriptions"), { monthlyAverage: 620 / 12, total: 620, transactionCount: 2 });
 });
 

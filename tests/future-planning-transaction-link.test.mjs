@@ -8,7 +8,9 @@ test("future-planning directions map to compatible transaction types", () => {
   assert.equal(futurePlanningDirectionSupportsTransactionType("income", "Income"), true);
   assert.equal(futurePlanningDirectionSupportsTransactionType("income", "Expense"), false);
   assert.equal(futurePlanningDirectionSupportsTransactionType("expense", "Expense"), true);
-  assert.equal(futurePlanningDirectionSupportsTransactionType("saving", "Expense"), true);
+  assert.equal(futurePlanningDirectionSupportsTransactionType("saving", "Expense"), false);
+  assert.equal(futurePlanningDirectionSupportsTransactionType("saving", "Income"), true);
+  assert.equal(futurePlanningDirectionSupportsTransactionType("saving", "Transfer"), true);
   assert.equal(futurePlanningDirectionSupportsTransactionType("neutral", "Expense"), true);
   assert.equal(futurePlanningDirectionSupportsTransactionType("expense", "Transfer"), false);
 });

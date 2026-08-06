@@ -43,10 +43,26 @@ export function resolvePercentagePlanningAmounts(
     const monthKey = amount.periodMonth.slice(0, 7);
     incomeByMonth.set(monthKey, roundMoney((incomeByMonth.get(monthKey) ?? 0) + amount.amount));
   }
-  return amounts.map((amount) => {
-    if (amount.amountType !== "Percentage" || directionByColumnId.get(amount.columnId) === "income") return amount;
+
+  const incomeBasedAmounts = amounts.map((amount) => {
+    const direction = directionByColumnId.get(amount.columnId);
+    if (amount.amountType !== "Percentage" || direction === "income" || direction === "saving") return amount;
     const income = incomeByMonth.get(amount.periodMonth.slice(0, 7)) ?? 0;
     return { ...amount, amount: roundMoney(income * amount.percentage / 100) };
+  });
+
+  const expensesByMonth = new Map<string, number>();
+  for (const amount of incomeBasedAmounts) {
+    if (directionByColumnId.get(amount.columnId) !== "expense") continue;
+    const monthKey = amount.periodMonth.slice(0, 7);
+    expensesByMonth.set(monthKey, roundMoney((expensesByMonth.get(monthKey) ?? 0) + amount.amount));
+  }
+
+  return incomeBasedAmounts.map((amount) => {
+    if (amount.amountType !== "Percentage" || directionByColumnId.get(amount.columnId) !== "saving") return amount;
+    const monthKey = amount.periodMonth.slice(0, 7);
+    const surplus = Math.max((incomeByMonth.get(monthKey) ?? 0) - (expensesByMonth.get(monthKey) ?? 0), 0);
+    return { ...amount, amount: roundMoney(surplus * amount.percentage / 100) };
   });
 }
 

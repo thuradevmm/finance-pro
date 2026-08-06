@@ -327,7 +327,7 @@ function ManualPlanTable({
                       <span className="mt-1 block text-[10px] normal-case text-[#0058be]">6-mo avg {formatMmk(column.monthlyAverage)}</span>
                       {column.linkedSavingsGoals.length > 0 ? (
                         <span className="mt-1 block max-w-52 text-[10px] normal-case leading-4 text-[#4f46e5]">
-                          Goals: {column.linkedSavingsGoals.map((goal) => `${goal.name} (${goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% income` : `${formatMmk(goal.monthlyContribution)}/mo`})`).join(", ")}
+                          Goals: {column.linkedSavingsGoals.map((goal) => `${goal.name} (${goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% surplus` : `${formatMmk(goal.monthlyContribution)}/mo`})`).join(", ")}
                         </span>
                       ) : null}
                     </span>
@@ -395,12 +395,12 @@ function ManualPlanTable({
                         className="h-10 w-36 rounded-md border border-[#c6c6cd] bg-white px-3 text-right font-semibold text-[#0b1c30] outline-none focus:border-[#2170e4] focus:ring-2 focus:ring-[#2170e4]/20"
                         onBlur={() => persistAmount(column.id, row.monthKey)}
                         onChange={(event) => setDrafts((current) => ({ ...current, [key]: cleanAmountInputValue(event.target.value) }))}
-                        placeholder={amountType === "Percentage" ? "% of income" : "0"}
+                        placeholder={amountType === "Percentage" ? column.direction === "saving" ? "% of surplus" : "% of income" : "0"}
                         inputMode="decimal"
                         type="text"
                         value={amountType === "Percentage" ? drafts[key] ?? "" : formatAmountInputValue(drafts[key] ?? (planned === 0 ? "" : String(planned)))}
                       />
-                      {amountType === "Percentage" ? <span className="mt-1 block text-[11px] font-semibold text-[#4f46e5]">Derived from total planned Credit</span> : null}
+                      {amountType === "Percentage" ? <span className="mt-1 block text-[11px] font-semibold text-[#4f46e5]">{column.direction === "saving" ? "Derived from planned Credit minus planned Debit" : "Derived from total planned Credit"}</span> : null}
                       {column.monthlyAverage > 0 ? (
                         <button
                           className="mt-1 text-[11px] font-semibold text-[#0058be] hover:underline"

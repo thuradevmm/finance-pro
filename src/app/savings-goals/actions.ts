@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { isCreditCardType, roundCurrencyValue } from "@/lib/ledger";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
+import { convertToBaseCurrency } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import type { SavingsGoalFormData } from "@/lib/savings-goals/supabase";
 import { calculateLinkedSavingsAmounts, type SavingsGoalEntryInput } from "@/lib/savings-goals/calculations";
 import { isValidCalendarDate } from "@/lib/date-validation";
@@ -38,7 +40,7 @@ function validateGoalInput(input: SavingsGoalFormData) {
   if (input.goalType === "Fund" && (!Number.isFinite(input.targetAmount) || input.targetAmount < 0)) return "Fund target amount cannot be negative.";
   if (!Number.isFinite(input.savedAmount) || input.savedAmount < 0) return "Already saved amount cannot be negative.";
   if (input.contributionType === "Fixed" && (!Number.isFinite(input.monthlyContribution) || input.monthlyContribution < 0)) return "Monthly contribution cannot be negative.";
-  if (input.contributionType === "Percentage" && (!Number.isFinite(input.contributionPercentage) || input.contributionPercentage <= 0 || input.contributionPercentage > 100)) return "Contribution percentage must be greater than zero and no more than 100%.";
+  if (input.contributionType === "Percentage" && (!Number.isFinite(input.contributionPercentage) || input.contributionPercentage <= 0 || input.contributionPercentage > 100)) return "Surplus percentage must be greater than zero and no more than 100%.";
   if (input.goalType === "Target" && !isValidCalendarDate(input.targetDate)) return "Enter a valid target date.";
   if (input.goalType === "Fund" && input.targetDate) return "Open-ended funds do not use a target date.";
   if (!input.accountAmountType.trim() || input.accountAmountType.trim().length > 80) return "Choose a valid account amount type.";
@@ -97,6 +99,7 @@ function goalPayload(input: SavingsGoalFormData, linkedSavedAmount = 0) {
       account_amount_type: input.accountAmountType.trim(),
       category_id: input.categoryId || null,
       contribution_percentage: input.contributionType === "Percentage" ? input.contributionPercentage : null,
+      contribution_basis: input.contributionType === "Percentage" ? "surplus" : null,
       contribution_type: input.contributionType.toLowerCase(),
       current_amount: input.savedAmount,
       description: input.description.trim(),
@@ -124,17 +127,28 @@ async function linkedSavingsAmount(
   goalId: string,
   goalAccountId: string,
 ) {
-  const [entriesResult, transactionsResult] = await Promise.all([
+  const [entriesResult, transactionsResult, accountsResult, currencySettings] = await Promise.all([
     supabase.from("savings_goal_entries").select("savings_goal_id,transaction_id,amount,type").eq("user_id", userId).eq("savings_goal_id", goalId),
-    supabase.from("transactions").select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,metadata").eq("user_id", userId).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null),
+    supabase.from("transactions").select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata").eq("user_id", userId).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null),
+    supabase.from("accounts").select("id,currency_code").eq("user_id", userId).is("deleted_at", null),
+    getCurrencySettings(supabase, userId),
   ]);
-  const error = entriesResult.error ?? transactionsResult.error;
+  const error = entriesResult.error ?? transactionsResult.error ?? accountsResult.error;
   if (error) return { error: error.message, value: 0 };
+  const currencyByAccountId = new Map((accountsResult.data ?? []).map((account) => [account.id, account.currency_code]));
   return {
     error: "",
     value: calculateLinkedSavingsAmounts(
       (entriesResult.data ?? []) as SavingsGoalEntryInput[],
-      transactionsResult.data ?? [],
+      (transactionsResult.data ?? []).map((transaction) => ({
+        ...transaction,
+        amount: convertToBaseCurrency(
+          Math.abs(Number(transaction.amount) || 0),
+          currencyByAccountId.get(transaction.account_id ?? ""),
+          currencySettings,
+          transaction.transaction_date ?? undefined,
+        ) ?? 0,
+      })),
       new Map([[goalId, goalAccountId]]),
     ).progressByGoalId.get(goalId) ?? 0,
   };
@@ -192,6 +206,16 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
 export async function deleteSavingsGoal(goalId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
+
+  const [transactionsResult, entriesResult] = await Promise.all([
+    supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null).limit(1),
+    supabase.from("savings_goal_entries").select("id").eq("user_id", user.id).eq("savings_goal_id", goalId).limit(1),
+  ]);
+  const historyError = transactionsResult.error ?? entriesResult.error;
+  if (historyError) return { error: historyError.message };
+  if ((transactionsResult.data?.length ?? 0) > 0 || (entriesResult.data?.length ?? 0) > 0) {
+    return { error: "This savings goal or fund has linked financial history and cannot be deleted because its transactions must remain reconcilable." };
+  }
 
   const { data, error } = await supabase
     .from("savings_goals")

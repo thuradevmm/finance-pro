@@ -37,7 +37,7 @@ test("shows saving plans only when the linked Savings Goal uses that category", 
   const input = {
     categoryId: "food",
     date: "2026-08-04",
-    transactionType: "Expense",
+    transactionType: "Income",
   };
 
   assert.equal(planningOptionMatchesTransaction(options[3], input), false);
@@ -45,4 +45,9 @@ test("shows saving plans only when the linked Savings Goal uses that category", 
     ...input,
     relatedSavingsGoalCategoryId: "emergency",
   }), true);
+  assert.equal(planningOptionMatchesTransaction(options[3], {
+    ...input,
+    relatedSavingsGoalCategoryId: "emergency",
+    transactionType: "Expense",
+  }), false);
 });

@@ -213,13 +213,14 @@ export function AddSavingsGoalForm({
               {dateHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target date is required.</p> : null}
             </div> : null}
             <div>
-              <SelectInput label="Contribution Rule" onChange={(value) => setContributionType(value === "Percentage of planned income" ? "Percentage" : "Fixed")} options={["Fixed amount", "Percentage of planned income"]} value={contributionType === "Percentage" ? "Percentage of planned income" : "Fixed amount"} />
+              <SelectInput label="Contribution Rule" onChange={(value) => setContributionType(value === "Percentage of planned surplus" ? "Percentage" : "Fixed")} options={["Fixed amount", "Percentage of planned surplus"]} value={contributionType === "Percentage" ? "Percentage of planned surplus" : "Fixed amount"} />
             </div>
             <div>
               {contributionType === "Percentage"
-                ? <TextInput error={contributionHasError} label="Income Percentage" onChange={setContributionPercentage} placeholder="10" type="number" value={contributionPercentage} />
+                ? <TextInput error={contributionHasError} label="Surplus Percentage" onChange={setContributionPercentage} placeholder="10" type="number" value={contributionPercentage} />
                 : <TextInput error={contributionHasError} label="Monthly Contribution" onChange={setMonthlyContribution} placeholder="500" type="amount" value={monthlyContribution} />}
               {contributionHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">{contributionType === "Percentage" ? "Enter a percentage above 0 and up to 100." : "Monthly contribution cannot be negative."}</p> : null}
+              {contributionType === "Percentage" ? <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">Planned surplus is planned Credit minus planned Debit before savings.</p> : null}
             </div>
           </div>
         </FormCard>
@@ -325,7 +326,7 @@ export function AddSavingsGoalForm({
               {goalType === "Target" ? `Target: ${targetDate || "Not set"}` : `Open-ended fund · ${effectiveAccountAmountType}`}
             </div>
             <div className="mt-4 rounded-lg border border-[#c6c6cd]/40 bg-[#f8f9ff] p-4 text-sm font-medium text-[#45464d]">
-              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{contributionType === "Percentage" ? `${contributionPercentage || 0}% of planned income` : monthlyContribution ? formatMmkPreview(monthlyContribution) : formatMmkPreview(0)}</ResponsiveAmount>
+              Monthly: <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={0.875}>{contributionType === "Percentage" ? `${contributionPercentage || 0}% of planned surplus` : monthlyContribution ? formatMmkPreview(monthlyContribution) : formatMmkPreview(0)}</ResponsiveAmount>
               <p className="mt-2">{description || "Savings plan note will appear here."}</p>
             </div>
           </div>

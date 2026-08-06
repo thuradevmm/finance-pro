@@ -259,6 +259,15 @@ export async function updateSubscription(subscriptionId: string, input: Subscrip
 export async function deleteSubscription(subscriptionId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
+  const [transactionsResult, paymentsResult] = await Promise.all([
+    supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "subscription").eq("related_entity_id", subscriptionId).is("deleted_at", null).limit(1),
+    supabase.from("subscription_payments").select("id").eq("user_id", user.id).eq("subscription_id", subscriptionId).limit(1),
+  ]);
+  const historyError = transactionsResult.error ?? paymentsResult.error;
+  if (historyError) return { error: historyError.message };
+  if ((transactionsResult.data?.length ?? 0) > 0 || (paymentsResult.data?.length ?? 0) > 0) {
+    return { error: "This subscription has payment history and cannot be deleted. Change its status to Paused so its transactions remain reconcilable." };
+  }
   const { data, error } = await supabase.from("subscriptions").update({ deleted_at: new Date().toISOString(), status: "archived" }).eq("id", subscriptionId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: "Subscription not found." };

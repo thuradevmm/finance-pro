@@ -84,7 +84,7 @@ function transactionActual(
   const amount = savingsCategoryId
     ? savingsTransactionDelta({
       account_id: transaction.accountId,
-      amount: transaction.amountValue,
+      amount: transaction.amountBaseValue,
       id: transaction.id,
       metadata: transaction.ledgerMetadata,
       related_entity_id: transaction.relatedEntityId,
@@ -95,7 +95,7 @@ function transactionActual(
     }, savingsGoalAccountById.get(transaction.relatedEntityId) ?? "")
     : (() => {
       const delta = economicTransactionDelta({
-        amount: transaction.amountValue,
+        amount: transaction.amountBaseValue,
         metadata: transaction.ledgerMetadata,
         related_entity_id: transaction.relatedEntityId || null,
         related_entity_type: transaction.relatedEntityType || null,

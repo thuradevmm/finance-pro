@@ -72,11 +72,21 @@ test("amounts are isolated by month and never inferred from scheduled transactio
   assert.equal(january.plans.length, 1);
 });
 
-test("percentage plans derive from the same month's defined planned income", () => {
+test("saving percentage plans derive from the same month's planned surplus", () => {
   const resolved = resolvePercentagePlanningAmounts([
     { actualAmount: 0, amount: 4_000, amountType: "Fixed", columnId: "salary", id: "salary-jan", percentage: 0, periodMonth: "2026-01-01" },
     { actualAmount: 0, amount: 1_000, amountType: "Fixed", columnId: "freelance", id: "freelance-jan", percentage: 0, periodMonth: "2026-01-01" },
+    { actualAmount: 0, amount: 2_000, amountType: "Fixed", columnId: "rent", id: "rent-jan", percentage: 0, periodMonth: "2026-01-01" },
     { actualAmount: 0, amount: 0, amountType: "Percentage", columnId: "reserve", id: "reserve-jan", percentage: 10, periodMonth: "2026-01-01" },
   ], columns);
-  assert.equal(resolved.find((amount) => amount.id === "reserve-jan")?.amount, 500);
+  assert.equal(resolved.find((amount) => amount.id === "reserve-jan")?.amount, 300);
+});
+
+test("saving percentage never creates a negative plan when Debit exceeds Credit", () => {
+  const resolved = resolvePercentagePlanningAmounts([
+    { actualAmount: 0, amount: 1_000, amountType: "Fixed", columnId: "salary", id: "salary-jan", percentage: 0, periodMonth: "2026-01-01" },
+    { actualAmount: 0, amount: 1_500, amountType: "Fixed", columnId: "rent", id: "rent-jan", percentage: 0, periodMonth: "2026-01-01" },
+    { actualAmount: 0, amount: 0, amountType: "Percentage", columnId: "reserve", id: "reserve-jan", percentage: 10, periodMonth: "2026-01-01" },
+  ], columns);
+  assert.equal(resolved.find((amount) => amount.id === "reserve-jan")?.amount, 0);
 });

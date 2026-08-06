@@ -65,7 +65,7 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
           <span className="min-w-0 truncate">{goal.goalType === "Target" ? `Target: ${goal.targetDate}` : "Open-ended fund"}</span>
         </div>
         <div className="mt-3 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">
-          Future plan · {goal.categoryName} · {goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% of income` : `${goal.monthlyContribution} / month`}
+          Future plan · {goal.categoryName} · {goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% of surplus` : `${goal.monthlyContribution} / month`}
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning">
@@ -169,7 +169,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
             {viewedGoal.goalType === "Target" ? <DetailModalField label="Target amount" value={viewedGoal.targetAmount} /> : null}
             <DetailModalField label="Saved amount" value={viewedGoal.savedAmount} />
             {viewedGoal.goalType === "Target" ? <DetailModalField label="Remaining" value={viewedGoal.remainingAmount} /> : null}
-            <DetailModalField label="Contribution rule" value={viewedGoal.contributionType === "Percentage" ? `${viewedGoal.contributionPercentage}% of planned income` : `${viewedGoal.monthlyContribution} monthly`} />
+            <DetailModalField label="Contribution rule" value={viewedGoal.contributionType === "Percentage" ? `${viewedGoal.contributionPercentage}% of planned surplus` : `${viewedGoal.monthlyContribution} monthly`} />
             <DetailModalField label="Opening saved amount" value={formatMmk(viewedGoal.storedSavedAmountValue)} />
             <DetailModalField label="Linked transaction contributions" value={formatMmk(viewedGoal.linkedSavedAmountValue)} />
             <DetailModalField label="Available cash reserve" value={formatMmk(viewedGoal.cashReserveAmountValue)} />

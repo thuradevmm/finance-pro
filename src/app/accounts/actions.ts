@@ -472,6 +472,60 @@ async function migrateRemovedAmountTypeTransactions(
     if (updateResult.error) return updateResult.error.message;
   }
 
+  const [goalsResult, debtsResult] = await Promise.all([
+    supabase
+      .from("savings_goals")
+      .select("id,account_amount_type,metadata")
+      .eq("user_id", userId)
+      .or(`account_id.eq.${accountId},metadata->>account_id.eq.${accountId}`),
+    supabase
+      .from("debts")
+      .select("id,metadata")
+      .eq("user_id", userId)
+      .or(`payment_account_id.eq.${accountId},metadata->>payment_account_id.eq.${accountId}`),
+  ]);
+  const dependencyError = goalsResult.error ?? debtsResult.error;
+  if (dependencyError) return dependencyError.message;
+
+  for (const goal of goalsResult.data ?? []) {
+    const goalMetadata = metadataRecord(goal.metadata);
+    const previous = String(goal.account_amount_type ?? goalMetadata.account_amount_type ?? "General");
+    const next = migratedAmountType(previous, migrations);
+    if (!next) continue;
+    const updateResult = await supabase
+      .from("savings_goals")
+      .update({
+        account_amount_type: next,
+        metadata: {
+          ...goalMetadata,
+          account_amount_type: next,
+          amount_type_migration: { account_id: accountId, from: previous, migrated_at: migratedAt, to: next },
+        },
+      })
+      .eq("id", goal.id)
+      .eq("user_id", userId);
+    if (updateResult.error) return updateResult.error.message;
+  }
+
+  for (const debt of debtsResult.data ?? []) {
+    const debtMetadata = metadataRecord(debt.metadata);
+    const previous = String(debtMetadata.origination_account_amount_type ?? "");
+    const next = migratedAmountType(previous, migrations);
+    if (!next) continue;
+    const updateResult = await supabase
+      .from("debts")
+      .update({
+        metadata: {
+          ...debtMetadata,
+          amount_type_migration: { account_id: accountId, from: previous, migrated_at: migratedAt, to: next },
+          origination_account_amount_type: next,
+        },
+      })
+      .eq("id", debt.id)
+      .eq("user_id", userId);
+    if (updateResult.error) return updateResult.error.message;
+  }
+
   return null;
 }
 

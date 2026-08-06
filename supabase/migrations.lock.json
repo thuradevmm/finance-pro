@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "20260806121608",
+  "sealedThrough": "20260806174500",
   "migrations": [
     {
       "version": "202606180001",
@@ -216,6 +216,11 @@
       "version": "20260806121608",
       "file": "20260806121608_category_financial_purpose_by_direction.sql",
       "sha256": "9b19aa436dd2e409e571faff431d1dbcac6097d3bdb9f11cc35561a7e8fc7d1c"
+    },
+    {
+      "version": "20260806174500",
+      "file": "20260806174500_savings_percentage_surplus_basis.sql",
+      "sha256": "44acb2067c017fcecbfc44db143310e45bc8f490fc2a98f6d9979122b127856a"
     }
   ],
   "historyRepairs": [

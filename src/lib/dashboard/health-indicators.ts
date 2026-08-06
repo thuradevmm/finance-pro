@@ -67,9 +67,11 @@ export function buildFinancialHealthSignals(input: {
   const netCashFlow = roundCurrencyValue(income - expenses);
   const essentialRatio = income > 0 ? essentialExpenses / income : null;
   const savingsRate = income > 0 ? netSavings / income : null;
-  const emergencyBalance = input.savingsGoals
-    .filter((goal) => roleForCategory(goal.categoryId, categoriesById) === "emergency_reserve")
-    .reduce((total, goal) => total + goal.savedAmountValue, 0);
+  const emergencyGoals = input.savingsGoals
+    .filter((goal) => roleForCategory(goal.categoryId, categoriesById) === "emergency_reserve");
+  const emergencyBalance = emergencyGoals.reduce((total, goal) => total + goal.savedAmountValue, 0);
+  const hasEssentialClassification = input.categories
+    .some((category) => roleForCategory(category.id, categoriesById) === "essential");
   const monthlyEssentials = essentialExpenses / inclusiveMonthCount(input.dateFrom, input.dateTo);
   const emergencyCoverage = monthlyEssentials > 0 ? emergencyBalance / monthlyEssentials : null;
 
@@ -99,13 +101,19 @@ export function buildFinancialHealthSignals(input: {
         ? { detail: "Linked savings are growing; keep the contribution habit consistent.", label: "Saving momentum", signal: "Building" }
         : { detail: "Linked funds had no net growth in the selected period.", label: "Saving momentum", signal: "Warning" };
 
-  const emergencyReadiness: FinancialHealthSignal = emergencyBalance <= 0 || emergencyCoverage == null
+  const emergencyReadiness: FinancialHealthSignal = emergencyGoals.length === 0
     ? { detail: "Create or group a savings fund under an Emergency reserve super category.", label: "Emergency readiness", signal: "Setup needed" }
-    : emergencyCoverage >= 6
-      ? { detail: "Emergency funds cover a strong multi-month cushion of essential costs.", label: "Emergency readiness", signal: "Winning" }
-      : emergencyCoverage >= 1
-        ? { detail: "An emergency cushion exists and is progressing toward stronger coverage.", label: "Emergency readiness", signal: "Building" }
-        : { detail: "The emergency cushion covers less than one typical month of essential costs.", label: "Emergency readiness", signal: "Warning" };
+    : !hasEssentialClassification
+      ? { detail: "Classify living-cost Debits as Essential living so coverage can be estimated.", label: "Emergency readiness", signal: "Setup needed" }
+      : emergencyBalance <= 0
+        ? { detail: "The emergency fund is configured but currently has no saved balance.", label: "Emergency readiness", signal: "Warning" }
+        : emergencyCoverage == null
+          ? { detail: "The reserve is configured and funded. No essential Debit activity exists in this period, so coverage months are unavailable.", label: "Emergency readiness", signal: "Building" }
+          : emergencyCoverage >= 6
+            ? { detail: "Emergency funds cover a strong multi-month cushion of essential costs.", label: "Emergency readiness", signal: "Winning" }
+            : emergencyCoverage >= 1
+              ? { detail: "An emergency cushion exists and is progressing toward stronger coverage.", label: "Emergency readiness", signal: "Building" }
+              : { detail: "The emergency cushion covers less than one typical month of essential costs.", label: "Emergency readiness", signal: "Warning" };
 
   return [cashFlow, essentialLoad, savingMomentum, emergencyReadiness];
 }

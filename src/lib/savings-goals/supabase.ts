@@ -5,6 +5,8 @@ import { formatMmk } from "@/lib/currency";
 import { combineDateWithTimestampTime, dateTimeSortValue } from "@/lib/date-format";
 import type { AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
+import { convertToBaseCurrency } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { roundCurrencyValue } from "@/lib/ledger";
 import {
   calculateLinkedSavingsAmounts,
@@ -72,6 +74,7 @@ type LinkedTransactionRow = {
   metadata: unknown;
   related_entity_id: string | null;
   status: string | null;
+  transaction_date: string | null;
   transfer_account_id: string | null;
   type: string | null;
 };
@@ -214,7 +217,7 @@ export async function getSavingsGoals(
 
   if (options.limit) goalsQuery = goalsQuery.limit(options.limit);
 
-  const [goalsResult, entriesResult, transactionsResult] = await Promise.all([
+  const [goalsResult, entriesResult, transactionsResult, currencySettings] = await Promise.all([
     goalsQuery,
     supabase
       .from("savings_goal_entries")
@@ -222,10 +225,11 @@ export async function getSavingsGoals(
       .eq("user_id", userId),
     supabase
       .from("transactions")
-      .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,metadata")
+      .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata")
       .eq("user_id", userId)
       .eq("related_entity_type", "savings_goal")
       .is("deleted_at", null),
+    getCurrencySettings(supabase, userId),
   ]);
 
   if (goalsResult.error) throw new Error(goalsResult.error.message);
@@ -234,13 +238,22 @@ export async function getSavingsGoals(
 
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const currencyByAccountId = new Map(accounts.map((account) => [account.id, account.currency]));
   const goalAccountIdByGoalId = new Map((goalsResult.data as SavingsGoalRow[]).map((goal) => {
     const metadata = metadataRecord(goal.metadata);
     return [goal.id, goal.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "")];
   }));
   const linkedAmounts = calculateLinkedSavingsAmounts(
     entriesResult.data as SavingsGoalEntryInput[],
-    transactionsResult.data as LinkedTransactionRow[],
+    (transactionsResult.data as LinkedTransactionRow[]).map((transaction) => ({
+      ...transaction,
+      amount: convertToBaseCurrency(
+        Math.abs(Number(transaction.amount) || 0),
+        currencyByAccountId.get(transaction.account_id ?? ""),
+        currencySettings,
+        transaction.transaction_date ?? undefined,
+      ) ?? 0,
+    })),
     goalAccountIdByGoalId,
   );
 

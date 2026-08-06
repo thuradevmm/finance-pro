@@ -10,6 +10,9 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { deriveCreditCardDebtMetadata } from "@/lib/ledger";
+import { convertToBaseCurrency } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
+import { calculateLinkedSavingsAmounts, type SavingsGoalEntryInput } from "@/lib/savings-goals/calculations";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 import type { CategoryFinancialRole, CategoryLevel, CategoryScope, CategoryType, FinancialCategory, SummaryMetric } from "@/types/finance";
 
@@ -71,6 +74,7 @@ type CategoryTransactionRow = {
 
 type CategoryAccountRow = {
   created_at: string | null;
+  currency_code: string | null;
   id: string;
   initial_balance: number | string | null;
   metadata: unknown;
@@ -215,7 +219,7 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
   const { user, error: userError } = await getUserSafely(supabase);
   if (userError || !user) throw new Error(userError ?? "You must be signed in to view categories.");
 
-  const [categoryRows, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, subscriptionsResult, accountsResult] = await Promise.all([
+  const [categoryRows, transactionsResult, assetsResult, debtsResult, savingsGoalsResult, savingsEntriesResult, subscriptionsResult, accountsResult, currencySettings] = await Promise.all([
     getCategoryRows(supabase, user.id, options),
     supabase
       .from("transactions")
@@ -234,9 +238,13 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
       .is("deleted_at", null),
     supabase
       .from("savings_goals")
-      .select("category_id,target_amount,target_date,goal_type,current_amount,initial_saved_amount,saved_amount,created_at,metadata")
+      .select("id,account_id,category_id,target_amount,target_date,goal_type,current_amount,initial_saved_amount,saved_amount,created_at,metadata")
       .eq("user_id", user.id)
       .is("deleted_at", null),
+    supabase
+      .from("savings_goal_entries")
+      .select("savings_goal_id,transaction_id,amount,type")
+      .eq("user_id", user.id),
     supabase
       .from("subscriptions")
       .select("category_id,amount,billing_cycle,next_billing_date,created_at,status,metadata")
@@ -244,15 +252,17 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
       .is("deleted_at", null),
     supabase
       .from("accounts")
-      .select("id,type,initial_balance,metadata,created_at")
+      .select("id,type,currency_code,initial_balance,metadata,created_at")
       .eq("user_id", user.id)
       .is("deleted_at", null),
+    getCurrencySettings(supabase, user.id),
   ]);
 
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (debtsResult.error) throw new Error(debtsResult.error.message);
   if (savingsGoalsResult.error) throw new Error(savingsGoalsResult.error.message);
+  if (savingsEntriesResult.error) throw new Error(savingsEntriesResult.error.message);
   if (subscriptionsResult.error) throw new Error(subscriptionsResult.error.message);
   if (accountsResult.error) throw new Error(accountsResult.error.message);
 
@@ -260,24 +270,45 @@ export async function getCategories(options: { dateFrom?: string; dateTo?: strin
   const categoryIdByName = new Map(categoryRows.map((category) => [category.name.trim().toLowerCase(), category.id]));
   const debtRows = debtsResult.data as CategoryDebtRow[];
   const accountRows = accountsResult.data as CategoryAccountRow[];
+  const currencyByAccountId = new Map(accountRows.map((account) => [account.id, account.currency_code]));
   const transactionRows = (transactionsResult.data as CategoryTransactionRow[]).map((transaction) => ({
     ...transaction,
     metadata: deriveCreditCardDebtMetadata(transaction, debtRows, accountRows),
   }));
+  const baseTransactionRows = transactionRows.map((transaction) => ({
+    ...transaction,
+    amount: convertToBaseCurrency(
+      Math.abs(Number(transaction.amount) || 0),
+      currencyByAccountId.get(transaction.account_id ?? ""),
+      currencySettings,
+      transaction.transaction_date,
+    ) ?? 0,
+  }));
+  const savingsGoalRows = savingsGoalsResult.data ?? [];
+  const goalAccountById = new Map(savingsGoalRows.map((goal) => {
+    const metadata = metadataRecord(goal.metadata);
+    return [goal.id, goal.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "")];
+  }));
+  const linkedSavings = calculateLinkedSavingsAmounts(
+    savingsEntriesResult.data as SavingsGoalEntryInput[],
+    baseTransactionRows,
+    goalAccountById,
+  ).progressByGoalId;
   const dateRange = { dateFrom: options.dateFrom, dateTo: options.dateTo };
   const activityByCategory = buildCategoryActivity(
     pageCategoryActivityRows({
       accounts: accountRows,
       assets: assetsResult.data,
+      baseTransactions: baseTransactionRows,
       categoryIdByName,
       debts: debtRows,
-      savingsGoals: savingsGoalsResult.data,
+      savingsGoals: savingsGoalRows.map((goal) => ({ ...goal, linked_saved_amount: linkedSavings.get(goal.id) ?? 0 })),
       subscriptions: subscriptionsResult.data,
       transactions: transactionRows,
     }),
   );
   const transactionActivityByCategory = buildCategoryActivity(
-    transactionCategoryActivityRows(transactionRows, dateRange),
+    transactionCategoryActivityRows(baseTransactionRows, dateRange),
     dateRange,
   );
   for (const [categoryId, activity] of transactionActivityByCategory) {

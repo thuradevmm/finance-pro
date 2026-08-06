@@ -58,7 +58,14 @@ export function savingsTransactionDelta(transaction: SavingsGoalTransactionInput
     const metadata = transaction.metadata && typeof transaction.metadata === "object" && !Array.isArray(transaction.metadata)
       ? transaction.metadata as Record<string, unknown>
       : {};
-    if (transferDirection(metadata) === "credit") return 0;
+    const direction = transferDirection(metadata);
+    if (goalAccountId) {
+      const isGoalAccountRow = transaction.account_id === goalAccountId;
+      const expectedDirection = action === "deposit" ? "credit" : "debit";
+      if (!isGoalAccountRow || (direction && direction !== expectedDirection)) return 0;
+    } else if (direction === "credit") {
+      return 0;
+    }
   }
   const direction = action === "deposit" ? 1 : -1;
   return roundCurrencyValue(reversedTransactionType(transaction) ? -amount * direction : amount * direction);

@@ -27,7 +27,6 @@ export function validateTransactionInput(input: ValidatableTransactionInput) {
   if (!input.accountId) return "Select an account.";
   if (!input.accountAmountType.trim()) return "Select an account amount type.";
   if (!["Expense", "Income", "Transfer", "Debit", "Credit"].includes(input.type)) return "Choose Credit, Debit, or Transfer.";
-  if (input.type === "Transfer" && input.futurePlanningAmountId) return "Transfers cannot be linked to a future-planning amount.";
   if (!["cleared", "pending", "scheduled"].includes(input.status.trim().toLowerCase())) return "Choose a supported transaction status.";
 
   if (input.type === "Transfer") {

@@ -27,31 +27,44 @@ export async function getFuturePlanLinkOptions(
   return [
     ...savingsGoals
       .filter((goal) => goal.status !== "Completed")
-      .map((goal): FuturePlanLinkOption => ({
-        amount: positiveAmount(goal.monthlyContributionValue) || Math.max(goal.targetAmountValue - goal.savedAmountValue, 0),
-        categoryId: goal.categoryId,
-        id: goal.id,
-        label: `Savings goal · ${goal.name}`,
-        type: "savings_goal",
-      }))
-      .filter((option) => option.amount > 0),
+      .flatMap((goal): FuturePlanLinkOption[] => {
+        const amount = goal.contributionType === "Percentage"
+          ? 0
+          : positiveAmount(goal.monthlyContributionValue) || Math.max(goal.targetAmountValue - goal.savedAmountValue, 0);
+        if (amount <= 0 && goal.contributionType !== "Percentage") return [];
+        return [{
+          accountAmountType: goal.accountAmountType,
+          accountId: goal.accountId,
+          amount,
+          categoryId: goal.categoryId,
+          id: goal.id,
+          label: `Savings goal · ${goal.name}`,
+          transactionType: "Income",
+          type: "savings_goal",
+        }];
+      }),
     ...debts
       .filter((debt) => debt.status !== "Paid")
       .map((debt): FuturePlanLinkOption => ({
+        accountAmountType: debt.accountAmountType,
+        accountId: debt.paymentAccountId,
         amount: positiveAmount(debt.monthlyPaymentValue) || positiveAmount(debt.remainingBalanceValue),
         categoryId: debt.categoryId,
         id: debt.id,
         label: `Debt · ${debt.name}`,
+        transactionType: debt.nature === "Lending" ? "Income" : "Expense",
         type: "debt",
       }))
       .filter((option) => option.amount > 0),
     ...subscriptions
       .filter((subscription) => subscription.status !== "Paused" && positiveAmount(subscription.amountValue) > 0)
       .map((subscription): FuturePlanLinkOption => ({
+        accountId: subscription.accountId,
         amount: subscription.amountValue,
         categoryId: subscription.categoryId,
         id: subscription.id,
         label: `Subscription · ${subscription.name}`,
+        transactionType: "Expense",
         type: "subscription",
       })),
     ...assets
@@ -61,6 +74,7 @@ export async function getFuturePlanLinkOptions(
         categoryId: asset.categoryId,
         id: asset.id,
         label: `Asset · ${asset.name}`,
+        transactionType: "Expense",
         type: "asset",
       })),
   ].sort((first, second) => first.label.localeCompare(second.label));

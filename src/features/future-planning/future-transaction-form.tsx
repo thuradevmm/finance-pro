@@ -130,6 +130,7 @@ export function FutureTransactionForm({
         categoryId: transaction.categoryId,
         id: transaction.relatedEntityId,
         label: transaction.relatedEntityLabel || `${transaction.relatedEntityType.replaceAll("_", " ")} · linked record unavailable`,
+        transactionType: transaction.type,
         type: transaction.relatedEntityType,
       });
     }
@@ -174,6 +175,12 @@ export function FutureTransactionForm({
     setType(nextType);
     const nextCategories = categoriesForPlan(categories, nextType, transaction?.categoryId);
     setCategoryId(nextCategories[0]?.id ?? "");
+    if (selectedLink && selectedLink.transactionType !== nextType) {
+      setRelatedEntityId("");
+      setRelatedEntityLabel("");
+      setRelatedEntityType("none");
+      setRelatedEntityAmountSnapshot(null);
+    }
   }
 
   function handleAccountChange(label: string) {
@@ -206,9 +213,21 @@ export function FutureTransactionForm({
     setRelatedEntityType(option.type);
     setRelatedEntityAmountSnapshot(option.amount);
     setAmount((currentAmount) => suggestedFutureAmount(currentAmount, option.amount, amountWasEdited));
-    if (type !== "Expense") handleTypeChange("Expense");
-    const expenseCategories = getCategoriesForScope(categories, "Transactions", "Expense");
-    if (expenseCategories.some((category) => category.id === option.categoryId)) setCategoryId(option.categoryId);
+    setType(option.transactionType);
+    const compatibleCategories = getCategoriesForScope(categories, "Transactions", option.transactionType);
+    setCategoryId(compatibleCategories.some((category) => category.id === option.categoryId)
+      ? option.categoryId
+      : compatibleCategories[0]?.id ?? "");
+    if (option.accountId) {
+      const linkedAccount = accounts.find((account) => account.id === option.accountId);
+      if (linkedAccount) {
+        setAccountId(linkedAccount.id);
+        const linkedAmountTypes = accountAmountTypeOptions(linkedAccount);
+        setAccountAmountType(option.accountAmountType && linkedAmountTypes.includes(option.accountAmountType)
+          ? option.accountAmountType
+          : linkedAmountTypes[0] ?? "General");
+      }
+    }
   }
 
   function useLinkedAmountSuggestion() {

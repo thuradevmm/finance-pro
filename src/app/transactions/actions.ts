@@ -337,7 +337,6 @@ async function validateFuturePlanningAmount(
   input: TransactionFormData,
 ) {
   if (!input.futurePlanningAmountId) return "";
-  if (input.type === "Transfer") return "Transfers cannot be linked to a future-planning amount.";
   const { data: amount, error } = await supabase
     .from("future_planning_amounts")
     .select("id,column_id,period_month")
@@ -354,7 +353,12 @@ async function validateFuturePlanningAmount(
     .maybeSingle();
   if (columnError) return columnError.message;
   if (!column || column.is_active === false) return "The selected planning type is no longer available.";
-  const requiredType = column.direction === "income" ? "Credit" : "Debit";
+  if (input.type === "Transfer" && column.direction !== "saving") {
+    return "Transfers can only be linked to a saving plan.";
+  }
+  const requiredType = column.direction === "income"
+    ? "Credit"
+    : column.direction === "saving" ? "Credit or inbound Transfer" : "Debit";
   if (!futurePlanningDirectionSupportsTransactionType(column.direction, input.type)) {
     return `${directionLabelForError(column.direction)} planning amounts require a ${requiredType} transaction.`;
   }
@@ -619,7 +623,7 @@ async function validateAndResolveTransactionReferences(
       return { error: "This target savings goal is already complete.", input };
     }
     const ignoredIds = new Set(preservesExistingRelated ? allowedExistingRelated?.transactionIds ?? [] : []);
-    const [entriesResult, transactionsResult] = await Promise.all([
+    const [entriesResult, transactionsResult, savingsAccountsResult, currencySettings] = await Promise.all([
       supabase
         .from("savings_goal_entries")
         .select("savings_goal_id,transaction_id,amount,type")
@@ -627,18 +631,35 @@ async function validateAndResolveTransactionReferences(
         .eq("savings_goal_id", savingsGoalRecord.id),
       supabase
         .from("transactions")
-        .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,metadata")
+        .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata")
         .eq("user_id", userId)
         .eq("related_entity_type", "savings_goal")
         .eq("related_entity_id", savingsGoalRecord.id)
         .is("deleted_at", null),
+      supabase
+        .from("accounts")
+        .select("id,currency_code")
+        .eq("user_id", userId)
+        .is("deleted_at", null),
+      getCurrencySettings(supabase, userId),
     ]);
-    const savingsError = entriesResult.error ?? transactionsResult.error;
+    const savingsError = entriesResult.error ?? transactionsResult.error ?? savingsAccountsResult.error;
     if (savingsError) return { error: savingsError.message, input };
+    const currencyByAccountId = new Map((savingsAccountsResult.data ?? []).map((account) => [account.id, account.currency_code]));
     const linkedAmount = calculateLinkedSavingsAmounts(
       ((entriesResult.data ?? []) as SavingsGoalEntryInput[])
         .filter((entry) => !entry.transaction_id || !ignoredIds.has(entry.transaction_id)),
-      (transactionsResult.data ?? []).filter((transaction) => !transaction.id || !ignoredIds.has(transaction.id)),
+      (transactionsResult.data ?? [])
+        .filter((transaction) => !transaction.id || !ignoredIds.has(transaction.id))
+        .map((transaction) => ({
+          ...transaction,
+          amount: convertToBaseCurrency(
+            Math.abs(Number(transaction.amount) || 0),
+            currencyByAccountId.get(transaction.account_id ?? ""),
+            currencySettings,
+            transaction.transaction_date ?? undefined,
+          ) ?? 0,
+        })),
       new Map([[savingsGoalRecord.id, savingsGoalRecord.account_id ?? ""]]),
     ).progressByGoalId.get(savingsGoalRecord.id) ?? 0;
     const metadata = goalMetadata;
@@ -650,8 +671,23 @@ async function validateAndResolveTransactionReferences(
       savedAmount: savingsGoalRecord.saved_amount,
     });
     const targetAmount = storedNumericValue(savingsGoalRecord.target_amount, metadata.target_amount);
+    const contributionAccountId = input.type === "Transfer" && savingsAction === "deposit"
+      ? input.transferAccountId
+      : input.accountId;
+    const contributionNativeAmount = input.type === "Transfer" && savingsAction === "deposit"
+      ? input.transferAmount ?? input.amount
+      : input.amount;
+    const contributionAmount = convertToBaseCurrency(
+      contributionNativeAmount,
+      currencyByAccountId.get(contributionAccountId),
+      currencySettings,
+      input.date,
+    );
+    if (contributionAmount == null) {
+      return { error: "Add an exchange rate for the savings account currency before recording this activity.", input };
+    }
     const capacity = calculateSavingsContributionCapacity({
-      contributionAmount: input.amount,
+      contributionAmount,
       linkedSavedAmount: linkedAmount,
       storedSavedAmount: storedAmount,
       targetAmount,
@@ -662,7 +698,7 @@ async function validateAndResolveTransactionReferences(
     if (savingsAction === "deposit" && goalType === "target" && capacity.exceedsRemaining) {
       return { error: `This contribution exceeds the ${formatMmk(capacity.remainingAmount)} remaining on the savings goal.`, input };
     }
-    if (savingsAction === "withdrawal" && input.amount > capacity.savedAmount + 0.005) {
+    if (savingsAction === "withdrawal" && contributionAmount > capacity.savedAmount + 0.005) {
       return { error: `This fund only has ${formatMmk(capacity.savedAmount)} available.`, input };
     }
     return { input: { ...input, savingsAction } };

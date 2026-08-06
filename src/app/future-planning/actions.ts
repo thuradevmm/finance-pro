@@ -7,6 +7,8 @@ import { getFutureOccurrenceDates, materializeFuturePredictions, type FutureTran
 import { isCreditCardType } from "@/lib/ledger";
 import { transactionTypeLabel } from "@/lib/transactions/terminology";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
+import { categoryRowSupports } from "@/lib/categories/category-scopes";
+import { normalizeDebtNature } from "@/lib/debts/nature";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -145,7 +147,7 @@ async function validateOwnedReferences(
 ) {
   const [accountResult, categoryResult] = await Promise.all([
     supabase.from("accounts").select("id,is_active,type,metadata").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
-    supabase.from("categories").select("id,is_active,type,metadata").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
+    supabase.from("categories").select("id,is_active,type,category_type,category_level,metadata").eq("id", input.categoryId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
   ]);
   const error = accountResult.error ?? categoryResult.error;
   if (error) return error.message;
@@ -166,26 +168,54 @@ async function validateOwnedReferences(
   if (!categoryResult.data && !preservesCategory) return "The selected category is no longer available.";
   if (categoryResult.data) {
     if (categoryResult.data.is_active === false && !preservesCategory) return "Choose an active category for this plan.";
-    const categoryMetadata = metadataRecord(categoryResult.data.metadata);
-    const categoryType = String(categoryMetadata.category_type ?? categoryResult.data.type).trim().toLowerCase();
-    if (categoryType !== input.type.toLowerCase()) return `Choose a ${transactionTypeLabel(input.type).toLowerCase()} category for this plan.`;
+    if (!categoryRowSupports(categoryResult.data, "Transactions", input.type)) {
+      return `Choose a selectable ${transactionTypeLabel(input.type).toLowerCase()} subcategory for this plan.`;
+    }
   }
 
   if (input.relatedEntityType !== "none") {
-    let linkedResult: { data: { id: string } | null; error: { message: string } | null };
-    if (input.relatedEntityType === "asset") {
-      linkedResult = await supabase.from("assets").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
-    } else if (input.relatedEntityType === "debt") {
-      linkedResult = await supabase.from("debts").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
-    } else if (input.relatedEntityType === "savings_goal") {
-      linkedResult = await supabase.from("savings_goals").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
-    } else {
-      linkedResult = await supabase.from("subscriptions").select("id").eq("id", input.relatedEntityId).eq("user_id", userId).maybeSingle();
-    }
-    if (linkedResult.error) return linkedResult.error.message;
     const preservesLinkedRecord = input.relatedEntityId === existing?.relatedEntityId
       && input.relatedEntityType === existing?.relatedEntityType;
+    let linkedResult: { data: Record<string, unknown> | null; error: { message: string } | null };
+    if (input.relatedEntityType === "asset") {
+      linkedResult = await supabase.from("assets").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    } else if (input.relatedEntityType === "debt") {
+      linkedResult = await supabase.from("debts").select("id,name,status,type,payment_account_id,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    } else if (input.relatedEntityType === "savings_goal") {
+      linkedResult = await supabase.from("savings_goals").select("id,status,account_id,account_amount_type,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    } else {
+      linkedResult = await supabase.from("subscriptions").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    }
+    if (linkedResult.error) return linkedResult.error.message;
     if (!linkedResult.data && !preservesLinkedRecord) return "The linked record is no longer available.";
+    if (!linkedResult.data) return "The linked record is no longer available.";
+
+    const linkedMetadata = metadataRecord(linkedResult.data.metadata);
+    const linkedStatus = String(linkedResult.data.status ?? linkedMetadata.status ?? "active").trim().toLowerCase();
+    if (input.relatedEntityType === "asset") {
+      if (!preservesLinkedRecord && linkedStatus !== "active") return "Only active assets can receive a new planned purchase.";
+      if (input.type !== "Expense") return "Asset purchases must be planned as Debits.";
+    } else if (input.relatedEntityType === "subscription") {
+      if (!preservesLinkedRecord && !["active", "expiring"].includes(linkedStatus)) return "Only active subscriptions can receive a new planned payment.";
+      if (input.type !== "Expense") return "Subscription payments must be planned as Debits.";
+    } else if (input.relatedEntityType === "debt") {
+      if (!preservesLinkedRecord && ["archived", "cancelled", "canceled", "completed", "paid"].includes(linkedStatus)) {
+        return "Completed or archived borrowing / lending records cannot receive a new plan.";
+      }
+      const nature = normalizeDebtNature(linkedMetadata.debt_nature, String(linkedResult.data.name ?? ""));
+      const requiredType = nature === "Lending" ? "Income" : "Expense";
+      if (input.type !== requiredType) return nature === "Lending"
+        ? "Returned lending money must be planned as a Credit."
+        : "Borrowing repayments must be planned as Debits.";
+    } else if (input.relatedEntityType === "savings_goal") {
+      if (!preservesLinkedRecord && ["archived", "completed"].includes(linkedStatus)) return "Completed or archived savings goals cannot receive a new contribution plan.";
+      if (input.type !== "Income") return "Savings contributions must be planned as Credits.";
+      const goalAccountId = String(linkedResult.data.account_id ?? linkedMetadata.account_id ?? "");
+      const goalAmountType = String(linkedResult.data.account_amount_type ?? linkedMetadata.account_amount_type ?? "General");
+      if (input.accountId !== goalAccountId || input.accountAmountType.trim().toLowerCase() !== goalAmountType.trim().toLowerCase()) {
+        return "A savings contribution plan must use the account amount type assigned to the goal or fund.";
+      }
+    }
   }
   return "";
 }

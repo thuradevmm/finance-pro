@@ -129,6 +129,18 @@ export async function updateAsset(assetId: string, input: AssetFormData): Promis
 export async function deleteAsset(assetId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
+  const { data: linkedTransactions, error: linkedError } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("related_entity_type", "asset")
+    .eq("related_entity_id", assetId)
+    .is("deleted_at", null)
+    .limit(1);
+  if (linkedError) return { error: linkedError.message };
+  if ((linkedTransactions?.length ?? 0) > 0) {
+    return { error: "This asset has linked purchase history and cannot be deleted. Change its status to Archived so its transactions remain reconcilable." };
+  }
   const { data, error } = await supabase.from("assets").update({ deleted_at: new Date().toISOString(), status: "Archived" }).eq("id", assetId).eq("user_id", user.id).select("id").maybeSingle();
   if (error) return { error: error.message };
   if (!data) return { error: "Asset not found." };

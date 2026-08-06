@@ -107,9 +107,15 @@ export async function getNotifications(
     const currentPlan = planning.amounts.find((amount) => amount.periodMonth.slice(0, 7) === currentMonth
       && planningColumnsById.get(amount.columnId)?.categoryId === goal.categoryId
       && amount.amount > 0);
-    if (goal.monthlyContributionValue > 0 && !currentPlan) {
+    const hasContributionRule = goal.contributionType === "Percentage"
+      ? goal.contributionPercentage > 0
+      : goal.monthlyContributionValue > 0;
+    if (hasContributionRule && !currentPlan) {
+      const contributionLabel = goal.contributionType === "Percentage"
+        ? `${goal.contributionPercentage}% of planned surplus`
+        : goal.monthlyContribution;
       notifications.push({
-        detail: `${goal.categoryName} has no control for ${currentMonth} · suggested contribution ${goal.monthlyContribution}`,
+        detail: `${goal.categoryName} has no control for ${currentMonth} · suggested contribution ${contributionLabel}`,
         dueDate: `${currentMonth}-01`,
         href: "/future-planning",
         id: `goal-plan:${goal.id}:${currentMonth}`,

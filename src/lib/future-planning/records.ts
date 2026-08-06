@@ -5,10 +5,13 @@ export type FuturePlanStatus = "Active" | "Paused";
 export type FuturePlanRelatedEntityType = "asset" | "debt" | "none" | "savings_goal" | "subscription";
 
 export type FuturePlanLinkOption = {
+  accountAmountType?: AccountAmountType;
+  accountId?: string;
   amount: number;
   categoryId: string;
   id: string;
   label: string;
+  transactionType: Exclude<TransactionType, "Transfer">;
   type: Exclude<FuturePlanRelatedEntityType, "none">;
 };
 
