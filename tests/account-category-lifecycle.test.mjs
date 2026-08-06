@@ -15,6 +15,7 @@ const accountRecordActions = readFileSync(join(projectRoot, "src/features/accoun
 const categoryActions = readFileSync(join(projectRoot, "src/app/categories/actions.ts"), "utf8");
 const financialFundsMigration = readFileSync(join(projectRoot, "supabase/migrations/202608060001_financial_funds_category_hierarchy_and_percentage_plans.sql"), "utf8");
 const superCategoryAssignmentMigration = readFileSync(join(projectRoot, "supabase/migrations/20260806105318_super_category_child_assignment.sql"), "utf8");
+const singleSuperParentMigration = readFileSync(join(projectRoot, "supabase/migrations/20260806120058_enforce_single_super_category_parent.sql"), "utf8");
 
 test("amount-type catalog reuses active names and keeps metadata-only legacy names", () => {
   assert.deepEqual(mergeAmountTypeCatalog(
@@ -59,6 +60,18 @@ test("super category child assignment is atomic, owned, and same-type", () => {
   assert.doesNotMatch(superCategoryAssignmentMigration, /delete\s+from\s+public\.categories/i);
   assert.match(categoryActions, /assignSuperCategoryChildren/);
   assert.match(categoryActions, /p_child_category_ids: childCategoryIds/);
+});
+
+test("category hierarchy enforces one valid super parent and repairs legacy metadata", () => {
+  assert.match(singleSuperParentMigration, /create or replace function public\.enforce_category_hierarchy/);
+  assert.match(singleSuperParentMigration, /create trigger enforce_category_hierarchy_before_write/);
+  assert.match(singleSuperParentMigration, /v_parent\.user_id is distinct from new\.user_id/);
+  assert.match(singleSuperParentMigration, /v_parent\.category_level <> 'super'/);
+  assert.match(singleSuperParentMigration, /v_parent\.category_type <> new\.category_type/);
+  assert.match(singleSuperParentMigration, /Reassign or unlink this super category''s subcategories first/);
+  assert.match(singleSuperParentMigration, /'previous_parent_id', child\.parent_id/);
+  assert.match(singleSuperParentMigration, /new\.metadata := \(new\.metadata - 'parent_id' - 'category_level' - 'financial_role'\)/);
+  assert.doesNotMatch(singleSuperParentMigration, /delete\s+from\s+public\.categories/i);
 });
 
 test("account retirement is distinct from deletion in actions and every record action", () => {

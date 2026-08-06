@@ -180,7 +180,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                   type="button"
                 >
                   <span className="block text-sm font-bold">{option === "Super" ? "Super category" : "Subcategory"}</span>
-                  <span className="mt-1 block text-xs leading-5">{option === "Super" ? "Reporting group used for analysis; it cannot be posted directly." : "Selectable category used by transactions and linked features."}</span>
+                  <span className="mt-1 block text-xs leading-5">{option === "Super" ? "Reporting group used for analysis; it cannot be posted directly." : "Selectable category with no more than one super-category parent."}</span>
                 </button>
               );
             })}
@@ -211,7 +211,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-[#0b1c30]">Link subcategories</h3>
-                  <p className="mt-1 text-xs leading-5 text-[#45464d]">Select several existing {categoryTypeLabel(selectedType).toLowerCase()} subcategories. A subcategory already linked elsewhere will move to this super category.</p>
+                  <p className="mt-1 text-xs leading-5 text-[#45464d]">Select several existing {categoryTypeLabel(selectedType).toLowerCase()} subcategories. Each subcategory has one parent, so a category linked elsewhere will move to this super category.</p>
                 </div>
                 <span className="w-fit rounded-full bg-[#e0f2fe] px-3 py-1 text-xs font-bold text-[#075985]">{selectedChildCategoryIds.length} selected</span>
               </div>

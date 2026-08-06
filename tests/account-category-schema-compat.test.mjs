@@ -40,6 +40,8 @@ test("category UI supports bulk child linking and separate hierarchy views", () 
   const page = source("src/features/categories/categories-page-content.tsx");
   assert.match(form, /childCategoryIds: level === "Super" \? selectedChildCategoryIds : \[\]/);
   assert.match(form, /Link subcategories/);
+  assert.match(form, /no more than one super-category parent/);
+  assert.match(form, /Each subcategory has one parent/);
   assert.match(form, /type="checkbox"/);
   assert.match(page, /const hierarchyViews = \["Hierarchy", "Super categories", "Subcategories"\]/);
   assert.match(page, /Rolled-up/);
