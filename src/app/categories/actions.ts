@@ -141,6 +141,8 @@ function validateCategoryInput(input: CategoryFormData) {
   if (!allowedRoles.includes(input.financialRole)) return "Choose a valid financial purpose.";
   if (input.level === "Subcategory" && input.financialRole) return "Financial purpose is set on super categories.";
   if (input.level === "Super" && input.parentId) return "A super category cannot belong to another category.";
+  if (input.level === "Subcategory" && input.childCategoryIds.length > 0) return "Only a super category can link multiple subcategories.";
+  if (input.childCategoryIds.length > 200 || new Set(input.childCategoryIds).size !== input.childCategoryIds.length) return "Choose up to 200 unique subcategories.";
   if (input.reportingRole && (input.type !== "Income" || input.reportingRole !== "salary")) return "Choose a valid Credit reporting role.";
   const expectedScopes = getScopesForCategoryType(input.type);
   if (input.scopes.length !== expectedScopes.length || expectedScopes.some((scope) => !input.scopes.includes(scope))) {
@@ -149,11 +151,58 @@ function validateCategoryInput(input: CategoryFormData) {
   return "";
 }
 
+async function validateSuperCategoryChildren(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: CategoryFormData,
+  categoryId = "",
+) {
+  if (input.level !== "Super" || input.childCategoryIds.length === 0) return "";
+  if (categoryId && input.childCategoryIds.includes(categoryId)) return "A super category cannot contain itself.";
+
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,category_type,category_level,is_active,parent_id,merged_into_category_id")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .in("id", input.childCategoryIds);
+  if (error) {
+    return isMissingDatabaseObject(error, ["category_level", "merged_into_category_id"])
+      ? schemaUpgradeRequiredMessage("Super category child assignment")
+      : error.message;
+  }
+  const expectedType = categoryTypeKeys[input.type];
+  const validIds = new Set((data ?? []).filter((child) => child.category_level === "subcategory"
+    && child.category_type === expectedType
+    && (child.is_active || child.parent_id === categoryId)
+    && !child.merged_into_category_id).map((child) => child.id));
+  return input.childCategoryIds.every((id) => validIds.has(id))
+    ? ""
+    : "Every linked child must be an owned subcategory with the same category type.";
+}
+
+async function assignSuperCategoryChildren(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  superCategoryId: string,
+  childCategoryIds: string[],
+) {
+  const { error } = await supabase.rpc("set_super_category_children", {
+    p_child_category_ids: childCategoryIds,
+    p_super_category_id: superCategoryId,
+  });
+  return error
+    ? isMissingDatabaseObject(error, ["set_super_category_children"])
+      ? schemaUpgradeRequiredMessage("Super category child assignment")
+      : error.message
+    : "";
+}
+
 async function validateParentCategory(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   input: CategoryFormData,
   categoryId = "",
+  allowedExistingParentId = "",
 ) {
   if (input.level === "Super" || !input.parentId) return "";
   if (input.parentId === categoryId) return "A category cannot be its own parent.";
@@ -165,7 +214,7 @@ async function validateParentCategory(
     .is("deleted_at", null)
     .maybeSingle();
   if (error) return error.message;
-  if (!data || data.is_active === false) return "Choose an active super category.";
+  if (!data || (data.is_active === false && data.id !== allowedExistingParentId)) return "Choose an active super category.";
   const metadata = metadataRecord(data.metadata);
   const level = String(data.category_level ?? metadata.category_level ?? "subcategory").toLowerCase();
   const type = String(data.category_type ?? metadata.category_type ?? "").toLowerCase().replace(/[\s-]+/g, "_");
@@ -261,21 +310,31 @@ export async function createCategory(input: CategoryFormData): Promise<ActionRes
   if (validationError) return { error: validationError };
   const parentError = await validateParentCategory(supabase, user.id, input);
   if (parentError) return { error: parentError };
+  const childrenError = await validateSuperCategoryChildren(supabase, user.id, input);
+  if (childrenError) return { error: childrenError };
 
   const payload = categoryPayload(input);
-  let { error } = await supabase.from("categories").insert({
+  let { data, error } = await supabase.from("categories").insert({
     ...payload,
     is_default: false,
     user_id: user.id,
-  });
+  }).select("id").maybeSingle();
   if (error && isMissingDatabaseObject(error, ["category_type", "category_level", "financial_role", "reporting_role", "archived_at"])) {
-    ({ error } = await supabase.from("categories").insert({
+    ({ data, error } = await supabase.from("categories").insert({
       ...legacyCategoryPayload(payload),
       is_default: false,
       user_id: user.id,
-    }));
+    }).select("id").maybeSingle());
   }
   if (error) return { error: error.code === "23505" ? "A category with this name and type already exists." : error.message };
+  if (!data) return { error: "Category could not be created." };
+  if (input.level === "Super") {
+    const assignmentError = await assignSuperCategoryChildren(supabase, data.id, input.childCategoryIds);
+    if (assignmentError) {
+      await supabase.from("categories").delete().eq("id", data.id).eq("user_id", user.id);
+      return { error: assignmentError };
+    }
+  }
 
   revalidateCategoryPaths();
   return {};
@@ -286,13 +345,17 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
   if (authError || !user) return { error: authError ?? "You must be signed in." };
   const validationError = validateCategoryInput(input);
   if (validationError) return { error: validationError };
-  const parentError = await validateParentCategory(supabase, user.id, input, categoryId);
-  if (parentError) return { error: parentError };
+  const childrenError = await validateSuperCategoryChildren(supabase, user.id, input, categoryId);
+  if (childrenError) return { error: childrenError };
 
   const { data: target, error: targetError } = await getOwnedCategory(supabase, user.id, categoryId);
   if (targetError) return { error: targetError };
   if (!target) return { error: "Category not found." };
   if (mergedIntoCategoryId(target)) return { error: "A merged category is read-only. Edit its target category instead." };
+  const targetMetadata = metadataRecord(target.metadata);
+  const existingParentId = target.parent_id ?? (typeof targetMetadata.parent_id === "string" ? targetMetadata.parent_id : "");
+  const parentError = await validateParentCategory(supabase, user.id, input, categoryId, existingParentId);
+  if (parentError) return { error: parentError };
   const stored = storedCategoryDefinition(target);
   const definitionChanged = stored.type !== input.type
     || stored.scopes.join("\u0000") !== [...input.scopes].sort().join("\u0000");
@@ -308,7 +371,7 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
     if (usage.used) return { error: `This category's type and scope cannot be changed because it is used by ${usage.reasons.join(", ")}.` };
   }
 
-  const payload = categoryPayload(input, metadataRecord(target.metadata));
+  const payload = categoryPayload(input, targetMetadata);
   let { data, error } = await supabase
     .from("categories")
     .update(payload)
@@ -327,6 +390,10 @@ export async function updateCategory(categoryId: string, input: CategoryFormData
   }
   if (error) return { error: error.code === "23505" ? "A category with this name and type already exists." : error.message };
   if (!data) return { error: "This category cannot be edited." };
+  if (input.level === "Super") {
+    const assignmentError = await assignSuperCategoryChildren(supabase, categoryId, input.childCategoryIds);
+    if (assignmentError) return { error: assignmentError };
+  }
 
   revalidateCategoryPaths();
   revalidatePath(`/categories/${categoryId}/edit`);

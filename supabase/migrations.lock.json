@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "202608060001",
+  "sealedThrough": "20260806105318",
   "migrations": [
     {
       "version": "202606180001",
@@ -201,6 +201,11 @@
       "version": "202608060001",
       "file": "202608060001_financial_funds_category_hierarchy_and_percentage_plans.sql",
       "sha256": "d8b6ee337e8d246d6318bae5f129363cc6d2d25b8cf5a50c36ef8afe5c20c012"
+    },
+    {
+      "version": "20260806105318",
+      "file": "20260806105318_super_category_child_assignment.sql",
+      "sha256": "e0639bed75dfcbf3ebb2f2727d1d6f0c711c1c3dce93c1ce8d5aa53830a83bb3"
     }
   ],
   "historyRepairs": [

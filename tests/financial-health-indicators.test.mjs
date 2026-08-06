@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { buildFinancialHealthSignals } from "../src/lib/dashboard/health-indicators.ts";
 
 const category = (id, level, financialRole = "", parentId = "") => ({ id, level, financialRole, parentId });
+const indicatorSource = readFileSync(new URL("../src/features/dashboard/financial-health-indicators.tsx", import.meta.url), "utf8");
 const transaction = (overrides) => ({
   accountId: "bank",
   amountBaseValue: 0,
@@ -46,4 +48,17 @@ test("missing purpose mappings request setup instead of presenting misleading ra
   });
   assert.equal(signals.find((signal) => signal.label === "Essential expense load")?.signal, "Setup needed");
   assert.equal(signals.find((signal) => signal.label === "Emergency readiness")?.signal, "Setup needed");
+});
+
+test("health indicators use an accessible segmented semicircle and directional needle", () => {
+  assert.match(indicatorSource, /role="img"/);
+  assert.match(indicatorSource, /M25 100 A75 75/);
+  assert.match(indicatorSource, /#16df35/);
+  assert.match(indicatorSource, /#facc15/);
+  assert.match(indicatorSource, /#fb923c/);
+  assert.match(indicatorSource, /#ff2d2d/);
+  assert.match(indicatorSource, /needleAngle/);
+  assert.match(indicatorSource, /<line/);
+  assert.match(indicatorSource, /<circle/);
+  assert.match(indicatorSource, /aria-label=\{`\$\{signal\} indicator`\}/);
 });

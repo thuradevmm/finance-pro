@@ -60,7 +60,7 @@ export default async function CategoriesPage({
         defaultDateTo={defaultDateRange.dateTo}
         initialDateFrom={dateFrom}
         initialDateTo={dateTo}
-        key={`${dateFrom ?? ""}:${dateTo ?? ""}:${categories.map((category) => `${category.id}:${category.status}:${category.mergedIntoCategoryId}:${category.reportingRole}:${category.monthlyAverage}:${category.transactionCount}`).join("|")}`}
+        key={`${dateFrom ?? ""}:${dateTo ?? ""}:${categories.map((category) => `${category.id}:${category.level}:${category.parentId}:${category.status}:${category.mergedIntoCategoryId}:${category.financialRole}:${category.reportingRole}:${category.monthlyAverage}:${category.transactionCount}`).join("|")}`}
       />
     </AppShell>
   );

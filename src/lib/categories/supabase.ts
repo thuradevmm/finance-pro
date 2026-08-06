@@ -22,6 +22,7 @@ export type CategoryRecord = FinancialCategory & {
 };
 
 export type CategoryFormData = {
+  childCategoryIds: string[];
   description: string;
   financialRole: CategoryFinancialRole;
   isActive: boolean;
@@ -304,13 +305,16 @@ export async function getCategory(categoryId: string) {
 }
 
 export function getCategorySummaries(categories: CategoryRecord[]): SummaryMetric[] {
-  const currentCategories = categories.filter((category) => !category.mergedIntoCategoryId && category.level === "Subcategory");
+  const currentCategories = categories.filter((category) => !category.mergedIntoCategoryId);
+  const superCategories = currentCategories.filter((category) => category.level === "Super");
+  const subcategories = currentCategories.filter((category) => category.level === "Subcategory");
+  const linkedSubcategories = subcategories.filter((category) => category.parentId);
   const activeCategories = currentCategories.filter((category) => category.status === "Active");
 
   return [
-    { label: "Debit Categories", value: String(currentCategories.filter((category) => category.type === "Expense").length), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
-    { label: "Credit Categories", value: String(currentCategories.filter((category) => category.type === "Income").length), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Page Categories", value: String(currentCategories.filter((category) => category.type !== "Expense" && category.type !== "Income").length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Super Categories", value: String(superCategories.length), icon: "category", tone: "text-[#075985]", bg: "bg-[#e0f2fe]" },
+    { label: "Subcategories", value: String(subcategories.length), icon: "category", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
+    { label: "Linked Subcategories", value: String(linkedSubcategories.length), icon: "sync", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Active Categories", value: String(activeCategories.length), icon: "category", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
 }

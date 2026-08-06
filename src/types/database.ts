@@ -1880,6 +1880,16 @@ export type Database = {
         }
         Returns: string
       }
+      set_super_category_children: {
+        Args: {
+          p_child_category_ids?: string[]
+          p_super_category_id: string
+        }
+        Returns: {
+          linked_count: number
+          unlinked_count: number
+        }[]
+      }
       seed_default_categories: {
         Args: { p_user_id: string }
         Returns: undefined

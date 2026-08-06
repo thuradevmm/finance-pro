@@ -32,6 +32,18 @@ test("category mutations mirror lifecycle data into metadata and retry legacy wr
   assert.match(actions, /eq\("category_id", categoryId\)\.eq\("is_active", true\)/);
   assert.match(actions, /\.delete\(\)[\s\S]*\.eq\("category_id", categoryId\)[\s\S]*\.eq\("is_active", false\)/);
   assert.match(actions, /usage\.reasons\.join/);
+  assert.match(actions, /schemaUpgradeRequiredMessage\("Super category child assignment"\)/);
+});
+
+test("category UI supports bulk child linking and separate hierarchy views", () => {
+  const form = source("src/features/categories/add-category-form.tsx");
+  const page = source("src/features/categories/categories-page-content.tsx");
+  assert.match(form, /childCategoryIds: level === "Super" \? selectedChildCategoryIds : \[\]/);
+  assert.match(form, /Link subcategories/);
+  assert.match(form, /type="checkbox"/);
+  assert.match(page, /const hierarchyViews = \["Hierarchy", "Super categories", "Subcategories"\]/);
+  assert.match(page, /Rolled-up/);
+  assert.match(page, /Linked subcategories/);
 });
 
 test("account amount types remain metadata-backed until the reusable catalog exists", () => {

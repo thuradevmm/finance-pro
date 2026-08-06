@@ -86,7 +86,7 @@ export function ImportTransactionsForm({
         <section className="rounded-xl border border-[#c6c6cd]/70 bg-white p-5">
           <h2 className="font-semibold text-[#0b1c30]">Category IDs</h2>
           <ul className="mt-3 max-h-80 space-y-3 overflow-auto text-xs">
-            {categories.map((category) => <li className="break-all" key={category.id}><strong>{category.name}</strong><br />{category.id}</li>)}
+            {categories.filter((category) => category.level === "Subcategory").map((category) => <li className="break-all" key={category.id}><strong>{category.name}</strong><br />{category.id}</li>)}
           </ul>
         </section>
       </aside>

@@ -1,14 +1,106 @@
 import { Icon, type IconName } from "@/components/ui/icon";
 import type { FinancialHealthSignal } from "@/lib/dashboard/health-indicators";
 
-const signalStyle: Record<FinancialHealthSignal["signal"], { badge: string; card: string; icon: IconName }> = {
-  Building: { badge: "bg-[#eff6ff] text-[#0058be]", card: "border-[#bfdbfe] bg-[#fbfdff]", icon: "timeline" },
-  Healthy: { badge: "bg-[#ecfdf5] text-[#166534]", card: "border-[#bbf7d0] bg-[#fbfffc]", icon: "check" },
-  "Setup needed": { badge: "bg-[#f1f1f4] text-[#45464d]", card: "border-[#c6c6cd] bg-[#f8f9ff]", icon: "settings" },
-  Warning: { badge: "bg-[#fff1f0] text-[#991b1b]", card: "border-[#fecaca] bg-[#fffafa]", icon: "trendingDown" },
-  Watch: { badge: "bg-[#fffbeb] text-[#92400e]", card: "border-[#fde68a] bg-[#fffdf7]", icon: "eye" },
-  Winning: { badge: "bg-[#dcfce7] text-[#166534]", card: "border-[#86efac] bg-[#f0fdf4]", icon: "trendingUp" },
+const signalStyle: Record<FinancialHealthSignal["signal"], {
+  accent: string;
+  badge: string;
+  card: string;
+  icon: IconName;
+  needleAngle: number;
+}> = {
+  Building: {
+    accent: "text-[#0058be]",
+    badge: "border-[#bfdbfe] bg-[#eff6ff] text-[#0058be]",
+    card: "border-[#bfdbfe]",
+    icon: "timeline",
+    needleAngle: -108,
+  },
+  Healthy: {
+    accent: "text-[#15803d]",
+    badge: "border-[#bbf7d0] bg-[#ecfdf5] text-[#166534]",
+    card: "border-[#bbf7d0]",
+    icon: "check",
+    needleAngle: -146,
+  },
+  "Setup needed": {
+    accent: "text-[#6b7280]",
+    badge: "border-[#d4d4d8] bg-[#f1f1f4] text-[#45464d]",
+    card: "border-[#d4d4d8]",
+    icon: "settings",
+    needleAngle: -90,
+  },
+  Warning: {
+    accent: "text-[#dc2626]",
+    badge: "border-[#fecaca] bg-[#fff1f0] text-[#991b1b]",
+    card: "border-[#fecaca]",
+    icon: "trendingDown",
+    needleAngle: -18,
+  },
+  Watch: {
+    accent: "text-[#d97706]",
+    badge: "border-[#fde68a] bg-[#fffbeb] text-[#92400e]",
+    card: "border-[#fde68a]",
+    icon: "eye",
+    needleAngle: -62,
+  },
+  Winning: {
+    accent: "text-[#15803d]",
+    badge: "border-[#86efac] bg-[#dcfce7] text-[#166534]",
+    card: "border-[#86efac]",
+    icon: "trendingUp",
+    needleAngle: -166,
+  },
 };
+
+const gaugeSegments = [
+  { color: "#16df35", path: "M25 100 A75 75 0 0 1 44.3 49.8" },
+  { color: "#facc15", path: "M47.9 46 A75 75 0 0 1 97.4 25" },
+  { color: "#fb923c", path: "M102.6 25 A75 75 0 0 1 152.1 46" },
+  { color: "#ff2d2d", path: "M155.7 49.8 A75 75 0 0 1 175 100" },
+];
+
+function HealthDial({ signal }: { signal: FinancialHealthSignal["signal"] }) {
+  const style = signalStyle[signal];
+  const isSetupNeeded = signal === "Setup needed";
+  const angle = style.needleAngle * (Math.PI / 180);
+  const needleEnd = {
+    x: 100 + Math.cos(angle) * 61,
+    y: 100 + Math.sin(angle) * 61,
+  };
+
+  return (
+    <div className="h-[6.75rem] w-44 shrink-0" data-signal={signal}>
+      <svg
+        aria-label={`${signal} indicator`}
+        className={`h-full w-full overflow-visible drop-shadow-[0_4px_4px_rgba(15,23,42,0.16)] ${isSetupNeeded ? "opacity-45 grayscale" : ""}`}
+        role="img"
+        viewBox="0 0 200 120"
+      >
+        <title>{signal} indicator</title>
+        <g aria-hidden="true" fill="none" strokeLinecap="butt">
+          {gaugeSegments.map((segment) => (
+            <path d={segment.path} key={`outline-${segment.color}`} stroke="#64748b" strokeOpacity="0.18" strokeWidth="30" />
+          ))}
+          {gaugeSegments.map((segment) => (
+            <path d={segment.path} key={segment.color} stroke={segment.color} strokeWidth="25" />
+          ))}
+        </g>
+        <line
+          aria-hidden="true"
+          className="transition-all duration-500"
+          stroke="#34373b"
+          strokeLinecap="round"
+          strokeWidth="10"
+          x1="100"
+          x2={needleEnd.x}
+          y1="100"
+          y2={needleEnd.y}
+        />
+        <circle aria-hidden="true" cx="100" cy="100" fill="#787b80" r="12" stroke="#34373b" strokeWidth="4" />
+      </svg>
+    </div>
+  );
+}
 
 export function FinancialHealthIndicators({ signals }: { signals: FinancialHealthSignal[] }) {
   return (
@@ -22,13 +114,18 @@ export function FinancialHealthIndicators({ signals }: { signals: FinancialHealt
         {signals.map((item) => {
           const style = signalStyle[item.signal];
           return (
-            <article className={`rounded-lg border p-4 ${style.card}`} key={item.label}>
-              <div className="flex items-start justify-between gap-3">
-                <span className="grid size-10 place-items-center rounded-full bg-white text-[#0b1c30]"><Icon className="size-5" name={style.icon} /></span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${style.badge}`}>{item.signal}</span>
+            <article className={`rounded-xl border bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)] ${style.card}`} key={item.label}>
+              <div className="flex items-center gap-4 sm:items-start md:flex-col md:items-center">
+                <HealthDial signal={item.signal} />
+                <div className="min-w-0 flex-1 md:text-center">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${style.badge}`}>
+                    <Icon className="size-3.5" name={style.icon} />
+                    {item.signal}
+                  </span>
+                  <h3 className="mt-2 font-semibold text-[#0b1c30]">{item.label}</h3>
+                  <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">{item.detail}</p>
+                </div>
               </div>
-              <h3 className="mt-4 font-semibold text-[#0b1c30]">{item.label}</h3>
-              <p className="mt-1 text-xs font-medium leading-5 text-[#45464d]">{item.detail}</p>
             </article>
           );
         })}

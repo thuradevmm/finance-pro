@@ -14,6 +14,7 @@ const accountPage = readFileSync(join(projectRoot, "src/app/accounts/page.tsx"),
 const accountRecordActions = readFileSync(join(projectRoot, "src/features/accounts/account-record-actions.tsx"), "utf8");
 const categoryActions = readFileSync(join(projectRoot, "src/app/categories/actions.ts"), "utf8");
 const financialFundsMigration = readFileSync(join(projectRoot, "supabase/migrations/202608060001_financial_funds_category_hierarchy_and_percentage_plans.sql"), "utf8");
+const superCategoryAssignmentMigration = readFileSync(join(projectRoot, "supabase/migrations/20260806105318_super_category_child_assignment.sql"), "utf8");
 
 test("amount-type catalog reuses active names and keeps metadata-only legacy names", () => {
   assert.deepEqual(mergeAmountTypeCatalog(
@@ -42,7 +43,22 @@ test("normalized category columns take precedence while Hidden categories remain
   const hiddenCategory = { ...activeCategory, status: "Hidden" };
 
   assert.equal(categoryRowSupports(activeCategory, "Savings Goals", "Savings Goal"), true);
+  assert.equal(categoryRowSupports({ ...activeCategory, category_level: "super" }, "Savings Goals", "Savings Goal"), false);
   assert.deepEqual(getCategoriesForScope([activeCategory, hiddenCategory], "Savings Goals"), [activeCategory]);
+});
+
+test("super category child assignment is atomic, owned, and same-type", () => {
+  assert.match(superCategoryAssignmentMigration, /create or replace function public\.set_super_category_children/);
+  assert.match(superCategoryAssignmentMigration, /security invoker/);
+  assert.match(superCategoryAssignmentMigration, /category\.user_id = v_user_id/);
+  assert.match(superCategoryAssignmentMigration, /child\.category_level = 'subcategory'/);
+  assert.match(superCategoryAssignmentMigration, /child\.category_type = v_super_type/);
+  assert.match(superCategoryAssignmentMigration, /set parent_id = null/);
+  assert.match(superCategoryAssignmentMigration, /set parent_id = p_super_category_id/);
+  assert.match(superCategoryAssignmentMigration, /jsonb_set\([\s\S]*'\{parent_id\}'/);
+  assert.doesNotMatch(superCategoryAssignmentMigration, /delete\s+from\s+public\.categories/i);
+  assert.match(categoryActions, /assignSuperCategoryChildren/);
+  assert.match(categoryActions, /p_child_category_ids: childCategoryIds/);
 });
 
 test("account retirement is distinct from deletion in actions and every record action", () => {

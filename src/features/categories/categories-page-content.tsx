@@ -22,6 +22,8 @@ import { categoryTypeLabel } from "@/lib/transactions/terminology";
 
 const categoryTypes: CategoryType[] = ["Expense", "Income", "Account", "Savings Goal", "Debt", "Subscription", "Asset"];
 const tabs = categoryTypes.map((type) => `${categoryTypeLabel(type)} Categories`);
+const hierarchyViews = ["Hierarchy", "Super categories", "Subcategories"] as const;
+type HierarchyView = (typeof hierarchyViews)[number];
 
 function categoryTypeFromTab(tab: string): CategoryType {
   const label = tab.replace(/ Categories$/, "");
@@ -158,6 +160,10 @@ function CategoryListItem({
   onStatusChange: (category: CategoryRecord, isActive: boolean) => Promise<boolean>;
   onView: () => void;
 }) {
+  const childCategories = category.level === "Super"
+    ? categories.filter((item) => item.parentId === category.id && !item.mergedIntoCategoryId)
+    : [];
+
   return (
     <article className="grid min-w-0 gap-4 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] transition hover:shadow-[0_8px_24px_rgba(15,23,42,0.07)] xl:grid-cols-[minmax(16rem,1.5fr)_minmax(11rem,1fr)_minmax(11rem,0.7fr)_auto] xl:items-center sm:p-5">
       <div className="flex min-w-0 items-center gap-3">
@@ -170,6 +176,7 @@ function CategoryListItem({
             <h2 className="min-w-0 break-words text-lg font-semibold leading-tight text-[#0b1c30]">{category.name}</h2>
             <CategoryBadge type={category.type} />
             <span className={category.level === "Super" ? "rounded bg-[#e0f2fe] px-2 py-0.5 text-xs font-semibold text-[#075985]" : "rounded bg-[#f1f1f4] px-2 py-0.5 text-xs font-semibold text-[#45464d]"}>{category.level === "Super" ? "Super" : "Sub"}</span>
+            {category.level === "Super" ? <span className="rounded bg-[#ecfdf5] px-2 py-0.5 text-xs font-semibold text-[#166534]">{childCategories.length} linked</span> : null}
             {category.parentName ? <span className="rounded bg-[#f8f9ff] px-2 py-0.5 text-xs font-semibold text-[#45464d]">Under {category.parentName}</span> : null}
             {category.isDefault ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Default</span> : null}
             <span className={category.status === "Active"
@@ -178,6 +185,12 @@ function CategoryListItem({
             {category.mergedIntoCategoryId ? <span className="rounded bg-[#eef2ff] px-2 py-0.5 text-xs font-semibold text-[#4f46e5]">Merged into {category.mergedIntoCategoryName || "another category"}</span> : null}
           </div>
           <p className="break-words text-sm leading-5 text-[#45464d]">{category.description}</p>
+          {childCategories.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label={`Subcategories linked to ${category.name}`}>
+              {childCategories.slice(0, 4).map((child) => <span className="rounded bg-[#f8f9ff] px-2 py-1 text-xs font-semibold text-[#45464d]" key={child.id}>{child.name}</span>)}
+              {childCategories.length > 4 ? <span className="rounded bg-[#f8f9ff] px-2 py-1 text-xs font-semibold text-[#45464d]">+{childCategories.length - 4} more</span> : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -190,7 +203,7 @@ function CategoryListItem({
       </div>
 
       <div className="min-w-0">
-        <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">{category.activityLabel}</span>
+        <span className="mb-1 block text-xs font-bold uppercase text-[#45464d]">{category.level === "Super" ? `Rolled-up ${category.activityLabel}` : category.activityLabel}</span>
         <ResponsiveAmount className="font-semibold text-[#0b1c30]" maxSizeRem={1.25}>{category.monthlyAverage}</ResponsiveAmount>
         <span className="mt-1 block text-xs font-semibold text-[#45464d]">{category.transactionCount} {category.countLabel}</span>
       </div>
@@ -305,6 +318,7 @@ export function CategoriesPageContent({
   const pathname = usePathname();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("Debit Categories");
+  const [hierarchyView, setHierarchyView] = useState<HierarchyView>("Hierarchy");
   const [visibleCategories, setVisibleCategories] = useState(categories);
   const [isPending, setIsPending] = useState(false);
   const [viewedCategory, setViewedCategory] = useState<CategoryRecord | null>(null);
@@ -320,9 +334,12 @@ export function CategoriesPageContent({
     return visibleCategories.filter((category) => {
       const searchable = `${category.name} ${category.description} ${category.type} ${category.level} ${category.parentName} ${category.financialRole} ${category.activityLabel} ${category.monthlyAverage} ${category.countLabel} ${category.status} ${category.scopes.join(" ")}`.toLowerCase();
       const matchesStatus = status === "All statuses" || category.status === status;
-      return category.type === activeType && matchesStatus && (normalizedSearch === "" || searchable.includes(normalizedSearch));
+      const matchesHierarchyView = hierarchyView === "Hierarchy"
+        || (hierarchyView === "Super categories" && category.level === "Super")
+        || (hierarchyView === "Subcategories" && category.level === "Subcategory");
+      return category.type === activeType && matchesHierarchyView && matchesStatus && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
-  }, [activeType, search, status, visibleCategories]);
+  }, [activeType, hierarchyView, search, status, visibleCategories]);
   const hierarchicalCategories = useMemo(() => {
     const order = new Map(filteredCategories.map((category, index) => [category.id, index]));
     return [...filteredCategories].sort((first, second) => {
@@ -334,6 +351,10 @@ export function CategoriesPageContent({
     });
   }, [filteredCategories]);
   const hasCategoriesForActiveType = visibleCategories.some((category) => category.type === activeType);
+  const hasCategoriesForSelectedView = visibleCategories.some((category) => category.type === activeType
+    && (hierarchyView === "Hierarchy"
+      || (hierarchyView === "Super categories" && category.level === "Super")
+      || (hierarchyView === "Subcategories" && category.level === "Subcategory")));
   const hasActiveCategoryFilters = Boolean(search.trim() || status !== "All statuses");
 
   function applyFilters(nextSearch: string, nextStatus: string, nextDateFrom: string, nextDateTo: string) {
@@ -357,6 +378,7 @@ export function CategoriesPageContent({
       activeTab,
       dateFrom: safeDateFrom,
       dateTo: safeDateTo,
+      hierarchyView,
       search: nextSearch.trim(),
       status: normalizedStatus,
     }));
@@ -371,6 +393,9 @@ export function CategoriesPageContent({
       if (!saved || typeof saved !== "object") return;
       if (typeof saved.activeTab === "string" && tabs.includes(saved.activeTab)) {
         queueMicrotask(() => setActiveTab(`${categoryTypeLabel(categoryTypeFromTab(saved.activeTab))} Categories`));
+      }
+      if (typeof saved.hierarchyView === "string" && hierarchyViews.includes(saved.hierarchyView as HierarchyView)) {
+        queueMicrotask(() => setHierarchyView(saved.hierarchyView as HierarchyView));
       }
       if (searchParams.has("q") || searchParams.has("categoryStatus") || searchParams.has("dateFrom") || searchParams.has("dateTo")) return;
       applyFilters(
@@ -456,8 +481,33 @@ export function CategoriesPageContent({
       />
       <SegmentedTabs activeTab={activeTab} onTabChange={(tab) => {
         setActiveTab(tab);
-        window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({ activeTab: tab, dateFrom, dateTo, search, status }));
+        window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({ activeTab: tab, dateFrom, dateTo, hierarchyView, search, status }));
       }} tabs={tabs} />
+
+      <section className="mb-5 flex flex-col gap-3 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-[#0b1c30]">Category view</h2>
+          <p className="mt-1 text-xs leading-5 text-[#45464d]">Super categories show totals rolled up from every linked subcategory in the selected date range.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-1 rounded-lg bg-[#f1f1f4] p-1 sm:grid-cols-3" role="group" aria-label="Category hierarchy view">
+          {hierarchyViews.map((view) => (
+            <button
+              aria-pressed={hierarchyView === view}
+              className={hierarchyView === view
+                ? "min-h-10 rounded-md bg-white px-3 text-sm font-bold text-[#0058be] shadow-sm"
+                : "min-h-10 rounded-md px-3 text-sm font-semibold text-[#45464d] transition hover:bg-white/70"}
+              key={view}
+              onClick={() => {
+                setHierarchyView(view);
+                window.localStorage.setItem("finance-pro:filters:categories", JSON.stringify({ activeTab, dateFrom, dateTo, hierarchyView: view, search, status }));
+              }}
+              type="button"
+            >
+              {view}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {isPending ? <p className="mb-4 text-sm font-medium text-[#45464d]">Updating categories…</p> : null}
 
@@ -465,11 +515,17 @@ export function CategoriesPageContent({
         <section className="rounded-lg border border-dashed border-[#c6c6cd] bg-white p-6 text-center sm:p-10">
           <Icon className="mx-auto size-8 text-[#76777d]" name="category" />
           <h2 className="mt-3 text-lg font-semibold text-[#0b1c30]">
-            {hasCategoriesForActiveType && hasActiveCategoryFilters ? "No matching categories" : `No ${String(categoryTypeLabel(activeType)).toLowerCase()} categories yet`}
+            {hasCategoriesForSelectedView && hasActiveCategoryFilters
+              ? "No matching categories"
+              : hasCategoriesForActiveType
+                ? `No ${hierarchyView.toLowerCase()} in this category type`
+                : `No ${String(categoryTypeLabel(activeType)).toLowerCase()} categories yet`}
           </h2>
           <p className="mt-1 text-sm text-[#45464d]">
-            {hasCategoriesForActiveType && hasActiveCategoryFilters
+            {hasCategoriesForSelectedView && hasActiveCategoryFilters
               ? "Change or reset the category filters to see results."
+              : hasCategoriesForActiveType
+                ? "Switch the category view or create a category at this hierarchy level."
               : "Create categories that match how you manage your finances."}
           </p>
           {!hasCategoriesForActiveType ? <Link className="mt-5 inline-flex min-h-11 items-center justify-center rounded-md bg-[#0b1c30] px-4 text-sm font-semibold text-white" href="/categories/add">Add Category</Link> : null}
@@ -484,7 +540,7 @@ export function CategoriesPageContent({
         ))}
       </section> : null}
       <DetailModal
-        actions={viewedCategory ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/categories/${viewedCategory.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link>{isTransactionCategoryType(viewedCategory.type) ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions?category=${encodeURIComponent(viewedCategory.name)}`}><Icon className="size-4" name="receipt" />Transactions</Link> : null}</> : null}
+        actions={viewedCategory ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/categories/${viewedCategory.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link>{viewedCategory.level === "Subcategory" && isTransactionCategoryType(viewedCategory.type) ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href={`/transactions?category=${encodeURIComponent(viewedCategory.name)}`}><Icon className="size-4" name="receipt" />Transactions</Link> : null}</> : null}
         icon={viewedCategory?.icon}
         iconClassName={viewedCategory ? `${viewedCategory.bg} ${viewedCategory.tone}` : undefined}
         isOpen={viewedCategory !== null}
@@ -506,9 +562,15 @@ export function CategoriesPageContent({
             <DetailModalField label="Merged into" value={viewedCategory.mergedIntoCategoryName || "Not merged"} />
           </DetailModalSection>
           <DetailModalSection title="Activity">
-            <DetailModalField label={viewedCategory.activityLabel} value={viewedCategory.monthlyAverage} />
+            <DetailModalField label={viewedCategory.level === "Super" ? `Rolled-up ${viewedCategory.activityLabel}` : viewedCategory.activityLabel} value={viewedCategory.monthlyAverage} />
             <DetailModalField label={viewedCategory.countLabel} value={viewedCategory.transactionCount} />
           </DetailModalSection>
+          {viewedCategory.level === "Super" ? <DetailModalSection title="Linked subcategories">
+            <DetailModalField
+              label="Subcategories"
+              value={visibleCategories.filter((category) => category.parentId === viewedCategory.id && !category.mergedIntoCategoryId).map((category) => category.name).join(", ") || "No linked subcategories"}
+            />
+          </DetailModalSection> : null}
           <DetailModalSection title="Description">
             <DetailModalField label="Notes" value={viewedCategory.description || "No description"} />
           </DetailModalSection>

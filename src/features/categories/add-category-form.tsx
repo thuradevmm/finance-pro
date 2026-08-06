@@ -36,6 +36,11 @@ export function AddCategoryForm({ categories, category }: { categories: Category
   const [selectedType, setSelectedType] = useState<CategoryType>(category?.type ?? "Expense");
   const [level, setLevel] = useState<CategoryLevel>(category?.level ?? "Subcategory");
   const [parentId, setParentId] = useState(category?.parentId ?? "");
+  const [selectedChildCategoryIds, setSelectedChildCategoryIds] = useState<string[]>(
+    category?.level === "Super"
+      ? categories.filter((item) => item.parentId === category.id && !item.mergedIntoCategoryId).map((item) => item.id)
+      : [],
+  );
   const [financialRole, setFinancialRole] = useState<CategoryFinancialRole>(category?.financialRole ?? "other");
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
@@ -49,8 +54,15 @@ export function AddCategoryForm({ categories, category }: { categories: Category
   const parentOptions = categories.filter((item) => item.id !== category?.id
     && item.level === "Super"
     && item.type === selectedType
-    && item.status === "Active");
+    && !item.mergedIntoCategoryId
+    && (item.status === "Active" || item.id === category?.parentId));
   const selectedParent = parentOptions.find((item) => item.id === parentId);
+  const childCategoryOptions = categories.filter((item) => item.id !== category?.id
+    && item.level === "Subcategory"
+    && item.type === selectedType
+    && !item.mergedIntoCategoryId
+    && (item.status === "Active" || item.parentId === category?.id));
+  const selectedChildCategories = childCategoryOptions.filter((item) => selectedChildCategoryIds.includes(item.id));
   const selectedRoleLabel = financialRoleOptions.find((option) => option.value === financialRole)?.label ?? "Other";
   const monthlyAverage = category && category.type === selectedType ? category.monthlyAverage : formatMmkPreview(0);
   const transactionCount = category && category.type === selectedType ? category.transactionCount : 0;
@@ -64,6 +76,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
     if (hasErrors) return;
 
     const input: CategoryFormData = {
+      childCategoryIds: level === "Super" ? selectedChildCategoryIds : [],
       description: description.trim(),
       financialRole: level === "Super" ? financialRole || "other" : "",
       isActive: status === "Active",
@@ -94,6 +107,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
       setSelectedType("Expense");
       setLevel("Subcategory");
       setParentId("");
+      setSelectedChildCategoryIds([]);
       setFinancialRole("other");
       setShowErrors(false);
       showSuccess("Category saved successfully.");
@@ -126,6 +140,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                   onClick={() => {
                     setSelectedType(type);
                     setParentId("");
+                    setSelectedChildCategoryIds([]);
                   }}
                   type="button"
                 >
@@ -160,6 +175,7 @@ export function AddCategoryForm({ categories, category }: { categories: Category
                   onClick={() => {
                     setLevel(option);
                     if (option === "Super") setParentId("");
+                    else setSelectedChildCategoryIds([]);
                   }}
                   type="button"
                 >
@@ -190,6 +206,58 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               <span className="mt-1 block text-sm font-semibold text-[#0b1c30]">{level === "Super" ? "Rolls up its subcategories" : selectedParent ? `Grouped under ${selectedParent.name}` : "Selectable and currently ungrouped"}</span>
             </div>
           </div>
+          {level === "Super" ? (
+            <div className="mt-5 rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-[#0b1c30]">Link subcategories</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#45464d]">Select several existing {categoryTypeLabel(selectedType).toLowerCase()} subcategories. A subcategory already linked elsewhere will move to this super category.</p>
+                </div>
+                <span className="w-fit rounded-full bg-[#e0f2fe] px-3 py-1 text-xs font-bold text-[#075985]">{selectedChildCategoryIds.length} selected</span>
+              </div>
+              {childCategoryOptions.length > 0 ? (
+                <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {childCategoryOptions.map((item) => {
+                    const isChecked = selectedChildCategoryIds.includes(item.id);
+                    const willMove = Boolean(item.parentId && item.parentId !== category?.id);
+                    return (
+                      <label
+                        className={isChecked
+                          ? "flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-[#93c5fd] bg-white px-3 py-2.5 shadow-sm"
+                          : "flex min-h-12 cursor-pointer items-start gap-3 rounded-lg border border-[#d4d4d8] bg-white px-3 py-2.5 transition hover:border-[#93c5fd]"}
+                        key={item.id}
+                      >
+                        <input
+                          checked={isChecked}
+                          className="mt-0.5 size-4 shrink-0 accent-[#0058be]"
+                          onChange={(event) => setSelectedChildCategoryIds((current) => event.target.checked
+                            ? [...current, item.id]
+                            : current.filter((id) => id !== item.id))}
+                          type="checkbox"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-sm font-semibold text-[#0b1c30]">{item.name}</span>
+                          <span className="mt-0.5 block text-xs font-medium text-[#45464d]">
+                            {willMove ? `Currently under ${item.parentName}; it will move here.` : item.status === "Hidden" ? "Hidden subcategory currently linked here." : item.parentName ? `Currently under ${item.parentName}.` : "Currently ungrouped."}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-md border border-dashed border-[#c6c6cd] bg-white px-4 py-5 text-center text-sm font-medium text-[#45464d]">
+                  No matching subcategories exist yet. Save this super category, then create subcategories under it.
+                </div>
+              )}
+              {childCategoryOptions.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="min-h-9 rounded-md px-3 text-xs font-bold text-[#0058be] hover:bg-[#eff4ff]" onClick={() => setSelectedChildCategoryIds(childCategoryOptions.map((item) => item.id))} type="button">Select all</button>
+                  <button className="min-h-9 rounded-md px-3 text-xs font-bold text-[#45464d] hover:bg-white" onClick={() => setSelectedChildCategoryIds([])} type="button">Clear selection</button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </FormCard>
 
         <FormCard title="Category Details">
@@ -297,7 +365,12 @@ export function AddCategoryForm({ categories, category }: { categories: Category
               </span>
             </div>
             <p className="mb-4 text-sm text-[#45464d]">{description || "Category description preview"}</p>
-            <p className="mb-4 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">{level === "Super" ? `Purpose: ${selectedRoleLabel}` : selectedParent ? `Super category: ${selectedParent.name}` : "Ungrouped subcategory"}</p>
+            <p className="mb-4 rounded-md bg-[#f8f9ff] px-3 py-2 text-xs font-semibold text-[#45464d]">{level === "Super" ? `Purpose: ${selectedRoleLabel} · ${selectedChildCategories.length} linked subcategories` : selectedParent ? `Super category: ${selectedParent.name}` : "Ungrouped subcategory"}</p>
+            {level === "Super" && selectedChildCategories.length > 0 ? (
+              <div className="mb-4 flex flex-wrap gap-1.5">
+                {selectedChildCategories.map((item) => <span className="rounded bg-[#e0f2fe] px-2 py-1 text-xs font-semibold text-[#075985]" key={item.id}>{item.name}</span>)}
+              </div>
+            ) : null}
             <div className="mb-4 flex flex-wrap gap-1.5">
               {selectedScopes.map((scope) => (
                 <span className="rounded bg-[#f8f9ff] px-2 py-1 text-xs font-semibold text-[#45464d]" key={scope}>
