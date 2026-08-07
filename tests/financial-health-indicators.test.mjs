@@ -36,6 +36,7 @@ test("health indicators turn ledger activity and category purposes into qualitat
 
   const signals = buildFinancialHealthSignals({ categories, dateFrom: "2026-01-01", dateTo: "2026-12-31", savingsGoals, transactions });
   assert.deepEqual(signals.map((signal) => signal.signal), ["Winning", "Healthy", "Building", "Winning"]);
+  assert.ok(signals.every((signal) => signal.score == null || (signal.score >= 0 && signal.score <= 100)));
 });
 
 test("missing purpose mappings request setup instead of presenting misleading ratios", () => {
@@ -48,6 +49,27 @@ test("missing purpose mappings request setup instead of presenting misleading ra
   });
   assert.equal(signals.find((signal) => signal.label === "Essential expense load")?.signal, "Setup needed");
   assert.equal(signals.find((signal) => signal.label === "Emergency readiness")?.signal, "Setup needed");
+});
+
+test("amount-type scoped source transfers do not count savings when the goal bucket is excluded", () => {
+  const signals = buildFinancialHealthSignals({
+    categories: [],
+    dateFrom: "2026-08-01",
+    dateTo: "2026-08-31",
+    savingsGoals: [],
+    transactions: [
+      transaction({ amountBaseValue: 2_000, type: "Income" }),
+      transaction({
+        amountBaseValue: 500,
+        ledgerMetadata: { savings_action: "deposit", transfer_direction: "debit" },
+        relatedEntityId: "filtered-goal",
+        relatedEntityType: "savings_goal",
+        transferAccountId: "goal-account",
+        type: "Transfer",
+      }),
+    ],
+  });
+  assert.equal(signals.find((signal) => signal.label === "Saving momentum")?.signal, "Warning");
 });
 
 test("a configured emergency reserve is not mislabeled as needing setup", () => {
@@ -87,5 +109,6 @@ test("health indicators use an accessible segmented semicircle and directional n
   assert.match(indicatorSource, /needleAngle/);
   assert.match(indicatorSource, /<line/);
   assert.match(indicatorSource, /<circle/);
-  assert.match(indicatorSource, /aria-label=\{`\$\{signal\} indicator`\}/);
+  assert.match(indicatorSource, /score \$\{score\} out of 100/);
+  assert.match(indicatorSource, /-18 - .* \* 144/);
 });

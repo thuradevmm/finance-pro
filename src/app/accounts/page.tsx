@@ -19,7 +19,7 @@ import { SelectInput, TextInput } from "@/components/ui/form-controls";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
 import { AccountRecordActions } from "@/features/accounts/account-record-actions";
-import { creditUtilizationPercent, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
+import { creditUtilizationPercent, formatAccountIdentifier, formatBillingDay, formatCreditUtilization, maskCardNumber, summarizeCreditCardLookup } from "@/lib/accounts/card-display";
 import { getAccountOptionLabel, getAccounts, getAccountSummaries, summarizeAccountPosition, type AccountRecord } from "@/lib/accounts/supabase";
 import { formatCurrencyAmount, formatMmk } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
@@ -1383,7 +1383,7 @@ export default function AccountsPage() {
                   <DetailModalField label="Account type" value={viewedAccount.type} />
                   <DetailModalField label="Card type" value={viewedAccount.cardType || "Not set"} />
                   <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
-                  <DetailModalField label="Card number" value={<span className="font-mono">{maskCardNumber(viewedAccount.cardNumber)}</span>} />
+                  <DetailModalField label="Card number" value={<span className="font-mono">{formatAccountIdentifier(viewedAccount.cardNumber)}</span>} />
                   <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
                   <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
                 </DetailModalSection>
@@ -1402,11 +1402,11 @@ export default function AccountsPage() {
                 <DetailModalSection title="Account information">
                   <DetailModalField label="Institution" value={viewedAccount.institution || "Not set"} />
                   <DetailModalField label="Category" value={viewedAccount.category || "Uncategorized"} />
-                  <DetailModalField label="Bank book / account number" value={viewedAccount.bankBookAccountNumber || "Not set"} />
-                  <DetailModalField label="Mobile banking number" value={viewedAccount.mobileBankingAccountNumber || "Not set"} />
+                  <DetailModalField label="Bank book / account number" value={formatAccountIdentifier(viewedAccount.bankBookAccountNumber)} />
+                  <DetailModalField label="Mobile banking number" value={formatAccountIdentifier(viewedAccount.mobileBankingAccountNumber)} />
                   <DetailModalField label="Currency" value={viewedAccount.currency} />
                   <DetailModalField label={`Rate to ${viewedAccount.baseCurrency}`} value={viewedAccount.currency === viewedAccount.baseCurrency ? "Base currency" : viewedAccount.exchangeRateToBase == null ? "Rate not configured" : `1 ${viewedAccount.currency} = ${formatCurrencyAmount(viewedAccount.exchangeRateToBase, viewedAccount.baseCurrency)}`} />
-                  <DetailModalField label="Phone number" value={viewedAccount.phoneNumber || "Not set"} />
+                  <DetailModalField label="Phone number" value={formatAccountIdentifier(viewedAccount.phoneNumber)} />
                   <DetailModalField label="Status" value={viewedAccount.status} />
                   <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
                   <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
@@ -1446,7 +1446,7 @@ export default function AccountsPage() {
                   <DetailModalSection title="Linked card information">
                     <DetailModalField label="Card type" value={viewedAccount.cardType || "Not set"} />
                     <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
-                    <DetailModalField label="Card number" value={<span className="font-mono">{maskCardNumber(viewedAccount.cardNumber)}</span>} />
+                    <DetailModalField label="Card number" value={<span className="font-mono">{formatAccountIdentifier(viewedAccount.cardNumber)}</span>} />
                     <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
                     <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
                   </DetailModalSection>

@@ -230,12 +230,24 @@ function amountTypePayload(amountTypes: { type: string }[], existingMetadata: Re
     const type = item.type.trim();
     const existing = existingByType.get(amountTypeKey(type));
     const preservedAmounts = Object.fromEntries(
-      amountValueKeys
+      [...amountValueKeys, "managed_by", "savings_goal_id"]
         .filter((key) => existing?.[key] != null)
         .map((key) => [key, existing?.[key]]),
     );
     return { ...preservedAmounts, type };
   });
+}
+
+function includeManagedSavingsAmountTypes(amountTypes: { type: string }[], existingMetadata: Record<string, unknown>) {
+  const names = new Map(activeAmountTypeEntries(amountTypes).map((item) => [item.key, item.type]));
+  for (const item of Array.isArray(existingMetadata.amount_types) ? existingMetadata.amount_types : []) {
+    const record = metadataRecord(item);
+    const type = String(record.type ?? "").trim();
+    if (type && typeof record.savings_goal_id === "string" && record.savings_goal_id) {
+      names.set(amountTypeKey(type), type);
+    }
+  }
+  return Array.from(names.values(), (type) => ({ type }));
 }
 
 function accountPayload(input: AccountFormData, options: { existingMetadata?: Record<string, unknown>; includeInitialBalance?: boolean } = {}) {
@@ -623,7 +635,11 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   const preservesExistingCategory = existingMetadata.category_id === input.categoryId;
   const category = await validateAccountCategory(supabase, user.id, input.categoryId, input.status === "Archived" || preservesExistingCategory);
   if (category.error) return { error: category.error };
-  const validatedInput = { ...input, category: category.name };
+  const validatedInput = {
+    ...input,
+    amountTypes: includeManagedSavingsAmountTypes(input.amountTypes, existingMetadata),
+    category: category.name,
+  };
 
   if (validatedInput.status === "Archived" && existingAccount.is_active !== false) {
     const archiveError = await accountArchiveError(supabase, user.id, accountId);

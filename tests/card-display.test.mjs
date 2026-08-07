@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   calculateCreditCardPosition,
   creditUtilizationPercent,
+  formatAccountIdentifier,
   formatBillingDay,
   formatCreditUtilization,
   maskCardNumber,
@@ -18,6 +19,13 @@ test("card numbers expose only the last four characters", () => {
   assert.equal(maskCardNumber("4111-1111-1111-1234"), "•••• •••• •••• 1234");
   assert.equal(maskCardNumber("1234"), "1234");
   assert.equal(maskCardNumber(""), "Not set");
+});
+
+test("account identifiers are grouped without masking or changing digits", () => {
+  assert.equal(formatAccountIdentifier("1234567890123456"), "1234 5678 9012 3456");
+  assert.equal(formatAccountIdentifier("1234567890"), "123 456 789 0");
+  assert.equal(formatAccountIdentifier("AB12345678"), "AB1234 5678");
+  assert.equal(formatAccountIdentifier(""), "Not set");
 });
 
 test("credit utilization is based on outstanding debt, not available credit", () => {

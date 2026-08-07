@@ -5,12 +5,14 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { reconciliationSeverity, type FinancialReconciliation } from "@/lib/reconciliation";
 
 type FinancialPositionReconciliationProps = {
+  amountTypeOptions: string[];
   baseCurrency: string;
   dateFrom: string;
   dateTo: string;
   defaultDateFrom: string;
   defaultDateTo: string;
   reconciliation: FinancialReconciliation;
+  selectedAmountTypes: string[];
 };
 
 type FinancialTableRow = {
@@ -26,12 +28,14 @@ function positionDateLabel(dateValue: string) {
 }
 
 export function FinancialPositionReconciliation({
+  amountTypeOptions,
   baseCurrency,
   dateFrom,
   dateTo,
   defaultDateFrom,
   defaultDateTo,
   reconciliation,
+  selectedAmountTypes,
 }: FinancialPositionReconciliationProps) {
   const formatAmount = (value: number) => formatCurrencyAmount(value, baseCurrency);
   const severity = reconciliationSeverity(reconciliation.difference);
@@ -52,7 +56,8 @@ export function FinancialPositionReconciliation({
   const rows: FinancialTableRow[] = [
     { amount: reconciliation.income, explanation: "Finalized operating Credits in the selected period", group: "Period activity", label: "Money credited" },
     { amount: -reconciliation.expenses, explanation: "Finalized operating Debits in the selected period", group: "Period activity", label: "Money debited / spent" },
-    { amount: reconciliation.net, explanation: "Credits − Debits", group: "Period activity", label: "Net activity", subtotal: true },
+    { amount: reconciliation.scopeTransfers, explanation: "Inbound − outbound transfers across the selected amount-type boundary", group: "Period activity", label: "Net scoped transfers" },
+    { amount: reconciliation.net, explanation: "Credits − Debits + net scoped transfers", group: "Period activity", label: "Net activity", subtotal: true },
     { amount: reconciliation.cashAndCardCredit, explanation: "Cash accounts + card overpayment credits", group: "Current position", label: "Cash and card credits" },
     { amount: reconciliation.lendingReceivables, explanation: "Money other people owe you", group: "Current position", label: "Money owed to you" },
     { amount: reconciliation.totalAssets, explanation: "Cash and card credits + money owed to you", group: "Current position", label: "Total assets", subtotal: true },
@@ -61,7 +66,7 @@ export function FinancialPositionReconciliation({
     { amount: -reconciliation.totalLiabilities, explanation: "Credit-card balances + other debt", group: "Current position", label: "Total liabilities", subtotal: true },
     { amount: reconciliation.netWorth, explanation: "Total assets − total liabilities", group: "Current position", label: "Closing net worth", subtotal: true },
     { amount: reconciliation.openingPositionAndAdjustments, explanation: `Net worth immediately before ${positionDateLabel(dateFrom)}`, group: "Reconciliation", label: "Opening net worth" },
-    { amount: reconciliation.net, explanation: "Credits − Debits during this period", group: "Reconciliation", label: "Plus net activity" },
+    { amount: reconciliation.net, explanation: "Credits − Debits + scoped transfers during this period", group: "Reconciliation", label: "Plus net activity" },
     { amount: reconciliation.reconciledClosingNetWorth, explanation: "Opening net worth + net activity", group: "Reconciliation", label: "Expected closing net worth", subtotal: true },
     { amount: reconciliation.netWorth, explanation: `Assets − liabilities as of ${positionLabel}`, group: "Reconciliation", label: "Actual closing net worth", subtotal: true },
   ];
@@ -83,12 +88,14 @@ export function FinancialPositionReconciliation({
         </div>
         <div className="mt-5 rounded-lg border border-[#bfdbfe]/80 bg-white/90 p-4">
           <FinancialPositionDateFilter
+            amountTypeOptions={amountTypeOptions}
             dateFrom={dateFrom}
             dateTo={dateTo}
             defaultDateFrom={defaultDateFrom}
             defaultDateTo={defaultDateTo}
+            selectedAmountTypes={selectedAmountTypes}
           />
-          <p className="mt-2 text-xs font-medium text-[#45464d]">Selected period: {periodLabel}</p>
+          <p className="mt-2 text-xs font-medium text-[#45464d]">Selected period: {periodLabel} · Amount types: {selectedAmountTypes.join(", ") || "All"}</p>
         </div>
       </div>
 
@@ -156,7 +163,7 @@ export function FinancialPositionReconciliation({
           <details className="mt-3 border-t border-current/15 pt-3 text-xs leading-5 text-[#45464d]">
             <summary className="cursor-pointer font-bold text-[#0058be]">How reconciliation is calculated</summary>
             <p className="mt-2">
-              Expected closing net worth = opening net worth + finalized Credits − finalized Debits. Difference = actual closing net worth − expected closing net worth. Pending entries affect working account availability but are excluded from finalized activity until cleared.
+              Expected closing net worth = opening net worth + finalized Credits − finalized Debits + net transfers crossing the selected amount-type boundary. Difference = actual closing net worth − expected closing net worth. Pending entries affect working account availability but are excluded from finalized activity until cleared.
             </p>
           </details>
         </div>

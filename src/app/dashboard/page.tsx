@@ -2,10 +2,19 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { FinancialPositionReconciliation } from "@/features/dashboard/financial-position-reconciliation";
 import { FinancialHealthIndicators } from "@/features/dashboard/financial-health-indicators";
-import { getAccounts, summarizeAccountPosition } from "@/lib/accounts/supabase";
+import { getAccounts } from "@/lib/accounts/supabase";
 import { getDebts } from "@/lib/debts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { buildFinancialHealthSignals } from "@/lib/dashboard/health-indicators";
+import {
+  dashboardAmountTypeOptions,
+  dashboardScopeTransferNet,
+  filterDebtsForDashboardAmountTypes,
+  filterSavingsGoalsForDashboardAmountTypes,
+  sanitizeDashboardAmountTypes,
+  summarizeAccountPositionForAmountTypes,
+  transactionMatchesDashboardAmountTypes,
+} from "@/lib/dashboard/amount-type-filter";
 import { normalizeReconciliationDateRange, reconcileFinancialPosition, summarizeNetWorth } from "@/lib/reconciliation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -20,12 +29,16 @@ export default async function DashboardPage({
   searchParams: Promise<{
     dateFrom?: string | string[];
     dateTo?: string | string[];
+    amountType?: string | string[];
   }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const defaultDateRange = getDefaultTransactionDateRange();
   const requestedDateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
   const requestedDateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
+  const requestedAmountTypes = Array.isArray(resolvedSearchParams.amountType)
+    ? resolvedSearchParams.amountType
+    : resolvedSearchParams.amountType ? [resolvedSearchParams.amountType] : [];
   const dateRange = normalizeReconciliationDateRange({
     dateFrom: requestedDateFrom,
     dateTo: requestedDateTo,
@@ -47,17 +60,30 @@ export default async function DashboardPage({
       getDebts(supabase, user.id, categories, { asOfDate: dateRange.dateTo }),
       getDebts(supabase, user.id, categories, { asOfDate: openingDateValue }),
       getTransactions(supabase, user.id, accounts, categories),
-      getSavingsGoals(supabase, user.id, accounts, categories),
+      getSavingsGoals(supabase, user.id, accounts, categories, { asOfDate: dateRange.dateTo }),
     ])
     : [[], [], [], []];
-  const periodTransactions = filterTransactionsByDateRange(transactions, dateRange.dateFrom, dateRange.dateTo);
+  const amountTypeOptions = dashboardAmountTypeOptions(accounts);
+  const selectedAmountTypes = sanitizeDashboardAmountTypes(requestedAmountTypes, amountTypeOptions);
+  const hasExplicitAmountTypeFilter = requestedAmountTypes.some((requested) => (
+    amountTypeOptions.some((option) => option.toLowerCase() === requested.trim().toLowerCase())
+  ));
+  const creditCardAccountIds = new Set(accounts.filter((account) => account.type === "Credit Card").map((account) => account.id));
+  const datedTransactions = filterTransactionsByDateRange(transactions, dateRange.dateFrom, dateRange.dateTo);
+  const periodTransactions = hasExplicitAmountTypeFilter
+    ? datedTransactions.filter((transaction) => transactionMatchesDashboardAmountTypes(transaction, selectedAmountTypes, creditCardAccountIds))
+    : datedTransactions;
+  const filteredDebts = filterDebtsForDashboardAmountTypes(debts, selectedAmountTypes, !hasExplicitAmountTypeFilter);
+  const filteredOpeningDebts = filterDebtsForDashboardAmountTypes(openingDebts, selectedAmountTypes, !hasExplicitAmountTypeFilter);
+  const filteredSavingsGoals = filterSavingsGoalsForDashboardAmountTypes(savingsGoals, selectedAmountTypes);
   const reconciliation = reconcileFinancialPosition(
-    summarizeAccountPosition(accounts),
-    debts,
+    summarizeAccountPositionForAmountTypes(accounts, selectedAmountTypes),
+    filteredDebts,
     getTransactionSummaryValues(periodTransactions),
-    summarizeNetWorth(summarizeAccountPosition(openingAccounts), openingDebts).netWorth,
+    summarizeNetWorth(summarizeAccountPositionForAmountTypes(openingAccounts, selectedAmountTypes), filteredOpeningDebts).netWorth,
+    dashboardScopeTransferNet(periodTransactions),
   );
-  const healthSignals = buildFinancialHealthSignals({ categories, dateFrom: dateRange.dateFrom, dateTo: dateRange.dateTo, savingsGoals, transactions: periodTransactions });
+  const healthSignals = buildFinancialHealthSignals({ categories, dateFrom: dateRange.dateFrom, dateTo: dateRange.dateTo, savingsGoals: filteredSavingsGoals, transactions: periodTransactions });
 
   return (
     <AppShell
@@ -74,12 +100,14 @@ export default async function DashboardPage({
       />
       <FinancialHealthIndicators signals={healthSignals} />
       <FinancialPositionReconciliation
+        amountTypeOptions={amountTypeOptions}
         baseCurrency={accounts[0]?.baseCurrency ?? "MMK"}
         dateFrom={dateRange.dateFrom}
         dateTo={dateRange.dateTo}
         defaultDateFrom={defaultDateRange.dateFrom}
         defaultDateTo={defaultDateRange.dateTo}
         reconciliation={reconciliation}
+        selectedAmountTypes={selectedAmountTypes}
       />
     </AppShell>
   );

@@ -206,7 +206,7 @@ export async function getSavingsGoals(
   userId: string,
   accounts: AccountRecord[],
   categories: CategoryRecord[],
-  options: { limit?: number } = {},
+  options: { asOfDate?: string; limit?: number } = {},
 ) {
   let goalsQuery = supabase
     .from("savings_goals")
@@ -216,19 +216,26 @@ export async function getSavingsGoals(
     .order("created_at", { ascending: false });
 
   if (options.limit) goalsQuery = goalsQuery.limit(options.limit);
+  if (options.asOfDate) goalsQuery = goalsQuery.lte("created_at", `${options.asOfDate}T23:59:59.999Z`);
+
+  let transactionsQuery = supabase
+    .from("transactions")
+    .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata")
+    .eq("user_id", userId)
+    .eq("related_entity_type", "savings_goal")
+    .is("deleted_at", null);
+  if (options.asOfDate) transactionsQuery = transactionsQuery.lte("transaction_date", options.asOfDate);
+
+  let entriesQuery = supabase
+    .from("savings_goal_entries")
+    .select("savings_goal_id,transaction_id,amount,type")
+    .eq("user_id", userId);
+  if (options.asOfDate) entriesQuery = entriesQuery.lte("entry_date", options.asOfDate);
 
   const [goalsResult, entriesResult, transactionsResult, currencySettings] = await Promise.all([
     goalsQuery,
-    supabase
-      .from("savings_goal_entries")
-      .select("savings_goal_id,transaction_id,amount,type")
-      .eq("user_id", userId),
-    supabase
-      .from("transactions")
-      .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata")
-      .eq("user_id", userId)
-      .eq("related_entity_type", "savings_goal")
-      .is("deleted_at", null),
+    entriesQuery,
+    transactionsQuery,
     getCurrencySettings(supabase, userId),
   ]);
 
@@ -243,9 +250,14 @@ export async function getSavingsGoals(
     const metadata = metadataRecord(goal.metadata);
     return [goal.id, goal.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "")];
   }));
+  const datedTransactions = transactionsResult.data as LinkedTransactionRow[];
+  const datedTransactionIds = new Set(datedTransactions.map((transaction) => transaction.id));
+  const datedEntries = (entriesResult.data as SavingsGoalEntryInput[]).filter((entry) => {
+    return !options.asOfDate || !entry.transaction_id || datedTransactionIds.has(entry.transaction_id);
+  });
   const linkedAmounts = calculateLinkedSavingsAmounts(
-    entriesResult.data as SavingsGoalEntryInput[],
-    (transactionsResult.data as LinkedTransactionRow[]).map((transaction) => ({
+    datedEntries,
+    datedTransactions.map((transaction) => ({
       ...transaction,
       amount: convertToBaseCurrency(
         Math.abs(Number(transaction.amount) || 0),

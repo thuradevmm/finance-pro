@@ -23,6 +23,7 @@ export type FinancialReconciliation = NetWorthSummary & LedgerSummary & {
   hasIndependentOpeningPosition: boolean;
   openingPositionAndAdjustments: number;
   reconciledClosingNetWorth: number;
+  scopeTransfers: number;
 };
 
 export type ReconciliationDateRange = {
@@ -95,11 +96,13 @@ export function reconcileFinancialPosition(
   debts: ReconciliationDebtInput[],
   transactions: Pick<LedgerSummary, "expenses" | "income">,
   openingNetWorth?: number,
+  scopeTransfers = 0,
 ): FinancialReconciliation {
   const netWorth = summarizeNetWorth(accountPosition, debts);
   const income = roundCurrencyValue(transactions.income);
   const expenses = roundCurrencyValue(transactions.expenses);
-  const net = roundCurrencyValue(income - expenses);
+  const normalizedScopeTransfers = roundCurrencyValue(scopeTransfers);
+  const net = roundCurrencyValue(income - expenses + normalizedScopeTransfers);
   const hasIndependentOpeningPosition = Number.isFinite(openingNetWorth);
   // The optional opening position is calculated independently as of the day
   // before the selected range. The fallback preserves legacy callers that do
@@ -119,6 +122,7 @@ export function reconcileFinancialPosition(
     net,
     openingPositionAndAdjustments,
     reconciledClosingNetWorth,
+    scopeTransfers: normalizedScopeTransfers,
   };
 }
 

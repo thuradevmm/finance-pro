@@ -83,11 +83,12 @@ function searchParamValue(value: string | string[] | undefined) {
 export default async function AddTransactionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ asset?: string | string[]; subscription?: string | string[] }>;
+  searchParams: Promise<{ asset?: string | string[]; savingsGoal?: string | string[]; subscription?: string | string[] }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const requestedSubscriptionId = searchParamValue(resolvedSearchParams.subscription);
   const requestedAssetId = searchParamValue(resolvedSearchParams.asset);
+  const requestedSavingsGoalId = searchParamValue(resolvedSearchParams.savingsGoal);
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   const allAccounts = user ? await getAccounts(supabase, user.id) : [];
@@ -105,6 +106,9 @@ export default async function AddTransactionPage({
     : [[], [], [], [], [], { baseCurrency: "MMK", rates: [] }];
   const requestedSubscription = requestedSubscriptionId ? subscriptions.find((subscription) => subscription.id === requestedSubscriptionId) : undefined;
   const requestedAsset = !requestedSubscription && requestedAssetId ? assets.find((asset) => asset.id === requestedAssetId) : undefined;
+  const requestedSavingsGoal = !requestedSubscription && !requestedAsset && requestedSavingsGoalId
+    ? savingsGoals.find((goal) => goal.id === requestedSavingsGoalId)
+    : undefined;
   const initialValues: TransactionFormInitialValues | undefined = requestedSubscription
     ? {
       accountId: requestedSubscription.accountId,
@@ -123,12 +127,26 @@ export default async function AddTransactionPage({
         relatedEntityType: "asset",
         type: "Expense",
       }
-      : undefined;
+      : requestedSavingsGoal
+        ? {
+          accountId: accounts.find((account) => account.id !== requestedSavingsGoal.accountId && account.type !== "Credit Card")?.id
+            ?? requestedSavingsGoal.accountId,
+          date: new Date().toISOString().slice(0, 10),
+          note: `Savings transfer: ${requestedSavingsGoal.name}`,
+          relatedEntityId: requestedSavingsGoal.id,
+          relatedEntityType: "savings_goal",
+          transferAccountAmountType: requestedSavingsGoal.accountAmountType,
+          transferAccountId: requestedSavingsGoal.accountId,
+          type: "Transfer",
+        }
+        : undefined;
   const pageDescription = requestedSubscription
     ? `Record the actual amount paid for ${requestedSubscription.name}; the exchange rate will be calculated automatically.`
     : requestedAsset
       ? `Record the amount paid for ${requestedAsset.name}; the asset value will update automatically.`
-      : "Record a new financial activity.";
+      : requestedSavingsGoal
+        ? `Move capital into ${requestedSavingsGoal.name}; its savings account and goal-owned amount type are selected automatically.`
+        : "Record a new financial activity.";
 
   return (
     <AppShell

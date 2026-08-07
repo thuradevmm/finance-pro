@@ -396,6 +396,18 @@ function metadataRecord(metadata: unknown) {
     : {};
 }
 
+function managedSavingsGoalIdForAmountType(metadata: unknown, amountType: string) {
+  const accountMetadata = metadataRecord(metadata);
+  if (!Array.isArray(accountMetadata.amount_types)) return "";
+  const normalizedAmountType = amountType.trim().toLowerCase();
+  for (const item of accountMetadata.amount_types) {
+    const amountTypeMetadata = metadataRecord(item);
+    if (String(amountTypeMetadata.type ?? "").trim().toLowerCase() !== normalizedAmountType) continue;
+    return typeof amountTypeMetadata.savings_goal_id === "string" ? amountTypeMetadata.savings_goal_id : "";
+  }
+  return "";
+}
+
 function metadataArray(value: unknown) {
   return Array.isArray(value) ? value : [];
 }
@@ -516,6 +528,24 @@ async function validateAndResolveTransactionReferences(
   }
   if (input.type === "Transfer" && accountRows.length === 2 && accountRows.every(isCreditCardAccount)) {
     return { error: "Direct transfers between two credit cards are not supported because they require two separate liability allocations. Use a bank or wallet settlement account instead.", input };
+  }
+
+  const accountById = new Map(accountRows.map((account) => [account.id, account]));
+  const managedSavingsGoalIds = new Set([
+    managedSavingsGoalIdForAmountType(accountById.get(input.accountId)?.metadata, input.accountAmountType),
+    input.type === "Transfer"
+      ? managedSavingsGoalIdForAmountType(accountById.get(input.transferAccountId)?.metadata, input.transferAccountAmountType)
+      : "",
+  ].filter(Boolean));
+  if (managedSavingsGoalIds.size > 1) {
+    return { error: "Move capital between savings goals with two separate linked transfers so both goal histories remain complete.", input };
+  }
+  const managedSavingsGoalId = Array.from(managedSavingsGoalIds)[0] ?? "";
+  if (managedSavingsGoalId && (input.relatedEntityType !== "savings_goal" || input.relatedEntityId !== managedSavingsGoalId)) {
+    return { error: "This amount type belongs to a savings goal. Link the transaction to that goal to keep its capital and progress reconciled.", input };
+  }
+  if (managedSavingsGoalId && input.type !== "Transfer" && !preservesExistingRelated) {
+    return { error: "Savings capital must move between amount types with a linked Transfer transaction.", input };
   }
 
   if (input.type !== "Transfer") {

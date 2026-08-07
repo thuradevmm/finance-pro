@@ -1,3 +1,29 @@
+export function formatAccountIdentifier(value: string) {
+  const compactValue = value.replace(/\s+/g, "").trim();
+  if (!compactValue) return "Not set";
+
+  const digitCount = (compactValue.match(/\d/g) ?? []).length;
+  if (digitCount === 0) return compactValue;
+
+  const groupSize = digitCount >= 12 || digitCount % 4 === 0 ? 4 : 3;
+  let digitsInGroup = 0;
+  let formatted = "";
+  for (const character of compactValue) {
+    if (/\d/.test(character)) {
+      if (digitsInGroup === groupSize) {
+        formatted += " ";
+        digitsInGroup = 0;
+      }
+      formatted += character;
+      digitsInGroup += 1;
+    } else {
+      formatted += character;
+      digitsInGroup = 0;
+    }
+  }
+  return formatted.trim();
+}
+
 export function maskCardNumber(value: string) {
   const compactValue = value.replace(/\D+/g, "");
   if (!compactValue) return "Not set";

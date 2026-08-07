@@ -61,11 +61,9 @@ export function AddSavingsGoalForm({
   const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals", "Savings Goal"), [categories]);
   const [selectedStyleId, setSelectedStyleId] = useState(goal?.categoryId ?? goalStyleCategories[0]?.id ?? "");
   const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
-  const [accountAmountType, setAccountAmountType] = useState(goal?.accountAmountType ?? accountOptions[0]?.balanceBreakdowns[0]?.type ?? "General");
   const [goalType, setGoalType] = useState<SavingsGoalType>(goal?.goalType ?? "Target");
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.targetAmountValue) : "");
-  const [savedAmount, setSavedAmount] = useState(goal ? String(goal.storedSavedAmountValue) : "");
   const [targetDate, setTargetDate] = useState(goal?.targetDateValue ?? defaultTargetDate());
   const [monthlyContribution, setMonthlyContribution] = useState(goal ? String(goal.monthlyContributionValue) : "");
   const [contributionType, setContributionType] = useState<SavingsContributionType>(goal?.contributionType ?? "Fixed");
@@ -75,31 +73,25 @@ export function AddSavingsGoalForm({
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const nameHasError = showErrors && name.trim() === "";
-  const savedIsInvalid = savedAmount.trim() !== "" && (!Number.isFinite(parseAmount(savedAmount)) || parseAmount(savedAmount) < 0);
   const contributionIsInvalid = contributionType === "Fixed"
     ? monthlyContribution.trim() !== "" && (!Number.isFinite(parseAmount(monthlyContribution)) || parseAmount(monthlyContribution) < 0)
     : contributionPercentage.trim() === "" || !Number.isFinite(Number(contributionPercentage)) || Number(contributionPercentage) <= 0 || Number(contributionPercentage) > 100;
   const targetHasError = showErrors && goalType === "Target" && (targetAmount.trim() === "" || !Number.isFinite(parseAmount(targetAmount)) || parseAmount(targetAmount) <= 0);
-  const savedHasError = showErrors && savedIsInvalid;
   const contributionHasError = showErrors && contributionIsInvalid;
   const dateHasError = showErrors && goalType === "Target" && !isValidCalendarDate(targetDate);
   const target = parseAmount(targetAmount);
-  const storedSaved = Number.isFinite(parseAmount(savedAmount)) ? parseAmount(savedAmount) : 0;
-  const linkedSaved = goal?.linkedSavedAmountValue ?? 0;
-  const saved = Math.max(0, storedSaved + linkedSaved);
+  const saved = goal?.savedAmountValue ?? 0;
   const progressPercent = target > 0 ? Math.min(100, Math.round((saved / target) * 100)) : 0;
   const effectiveStyleId = selectedStyleId || goalStyleCategories[0]?.id || "";
   const effectiveAccountId = accountId || accountOptions[0]?.id || "";
   const selectedStyle = goalStyleCategories.find((category) => category.id === effectiveStyleId) ?? goalStyleCategories[0] ?? fallbackStyle;
   const selectedAccount = accountOptions.find((account) => account.id === effectiveAccountId);
-  const amountTypeOptions = selectedAccount?.balanceBreakdowns.map((item) => item.type) ?? ["General"];
-  const effectiveAccountAmountType = amountTypeOptions.includes(accountAmountType) ? accountAmountType : amountTypeOptions[0] ?? "General";
+  const effectiveAccountAmountType = name.trim() || goal?.accountAmountType || "Goal name";
   const selectedAccountName = selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : "";
 
   async function handleSaveGoal(addAnother = false) {
     const hasErrors = name.trim() === ""
       || (goalType === "Target" && (targetAmount.trim() === "" || !Number.isFinite(target) || target <= 0))
-      || savedIsInvalid
       || contributionIsInvalid
       || (goalType === "Target" && !isValidCalendarDate(targetDate));
     setShowErrors(hasErrors);
@@ -116,7 +108,7 @@ export function AddSavingsGoalForm({
       monthlyContribution: monthlyContribution.trim() === "" ? 0 : Number(monthlyContribution),
       name,
       goalType,
-      savedAmount: savedAmount.trim() === "" ? 0 : Number(savedAmount),
+      savedAmount: 0,
       targetAmount: goalType === "Target" ? Number(targetAmount) : 0,
       targetDate: goalType === "Target" ? targetDate : "",
     };
@@ -134,7 +126,6 @@ export function AddSavingsGoalForm({
       setIsSaving(false);
       setName("");
       setTargetAmount("");
-      setSavedAmount("");
       setMonthlyContribution("");
       setContributionPercentage("");
       setDescription("");
@@ -179,13 +170,14 @@ export function AddSavingsGoalForm({
               onChange={(accountName) => {
                 const nextAccount = findAccountByOptionLabel(accountOptions, accountName);
                 setAccountId(nextAccount?.id ?? "");
-                setAccountAmountType(nextAccount?.balanceBreakdowns[0]?.type ?? "General");
               }}
               options={accountOptions.length > 0 ? getAccountOptionLabels(accountOptions) : ["No accounts available"]}
               value={selectedAccountName || "No accounts available"}
             />
-            <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={amountTypeOptions} value={effectiveAccountAmountType} />
             <p className="text-sm font-semibold text-[#45464d] md:col-span-2">{selectedAccount ? getAccountOptionDescription(selectedAccount) : "Create an account before linking a savings goal."}</p>
+            <div className="rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm font-medium leading-6 text-[#45464d] md:col-span-2">
+              Finance Pro will create an account amount type named <strong className="text-[#0b1c30]">{effectiveAccountAmountType}</strong>. Fund it with a linked Transfer transaction so capital moves from an existing amount type into this goal.
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -200,10 +192,10 @@ export function AddSavingsGoalForm({
               />
               {targetHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Target amount is required.</p> : null}
             </div> : null}
-            <div>
-              <TextInput error={savedHasError} label="Already Saved (Manual)" onChange={setSavedAmount} placeholder="0" type="amount" value={savedAmount} />
-              {savedHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Already saved amount cannot be negative.</p> : null}
-              {goal && linkedSaved !== 0 ? <p className="mt-1 text-xs font-semibold text-[#45464d]">Linked activity {linkedSaved > 0 ? "adds" : "subtracts"} {formatMmkPreview(Math.abs(linkedSaved))}; it is preserved separately when you edit.</p> : null}
+            <div className="rounded-lg border border-[#c6c6cd]/60 bg-[#f8f9ff] p-4">
+              <p className="text-xs font-bold uppercase text-[#45464d]">Saved through transactions</p>
+              <ResponsiveAmount className="mt-2 font-semibold text-[#0b1c30]" maxSizeRem={1.125}>{formatMmkPreview(saved)}</ResponsiveAmount>
+              <p className="mt-2 text-xs font-medium leading-5 text-[#45464d]">Manual opening savings are disabled; every contribution remains reconcilable to a capital transfer.</p>
             </div>
           </div>
 

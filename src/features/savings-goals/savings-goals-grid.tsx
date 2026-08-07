@@ -80,6 +80,10 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
             onDelete={onDelete}
             onView={onView}
           />
+          <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(goal.id)}`}>
+            <Icon className="size-4" name="sync" />
+            Transfer capital
+          </Link>
         </div>
       </div>
     </article>
@@ -146,7 +150,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
         </section>
       )}
       <DetailModal
-        actions={viewedGoal ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/savings-goals/${viewedGoal.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning"><Icon className="size-4" name="timeline" />Future plan</Link></> : null}
+        actions={viewedGoal ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/savings-goals/${viewedGoal.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(viewedGoal.id)}`}><Icon className="size-4" name="sync" />Transfer capital</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning"><Icon className="size-4" name="timeline" />Future plan</Link></> : null}
         icon={viewedGoal?.icon}
         iconClassName={viewedGoal ? `${viewedGoal.bg} ${viewedGoal.tone}` : undefined}
         isOpen={viewedGoal !== null}

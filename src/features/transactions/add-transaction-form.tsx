@@ -73,6 +73,8 @@ export type TransactionFormInitialValues = {
   relatedEntityId?: string;
   relatedEntityType?: TransactionRelatedEntityType;
   type?: TransactionType;
+  transferAccountAmountType?: string;
+  transferAccountId?: string;
 };
 
 function FieldLabel({ children, htmlFor }: { children: string; htmlFor: string }) {
@@ -224,8 +226,12 @@ export function AddTransactionForm({
   const initialAccount = accounts.find((account) => account.id === initialAccountId) ?? accounts[0];
   const [accountId, setAccountId] = useState(initialAccountId);
   const [accountAmountType, setAccountAmountType] = useState(initialTransferFromAmountType ?? accountAmountTypeOptionsFor(initialAccount)[0] ?? "Operation");
-  const [transferToAccountId, setTransferToAccountId] = useState(initialTransferToAccountId ?? accounts.find((account) => account.id !== accountId)?.id ?? accounts[0]?.id ?? "");
-  const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? accountAmountTypeOptionsFor(accounts.find((account) => account.id !== accountId) ?? accounts[0])[0] ?? "Operation");
+  const initialDestinationAccountId = initialTransferToAccountId ?? initialValues?.transferAccountId;
+  const initialDestinationAccount = accounts.find((account) => account.id === initialDestinationAccountId)
+    ?? accounts.find((account) => account.id !== accountId)
+    ?? accounts[0];
+  const [transferToAccountId, setTransferToAccountId] = useState(initialDestinationAccount?.id ?? "");
+  const [transferAccountAmountType, setTransferAccountAmountType] = useState(initialTransferToAmountType ?? initialValues?.transferAccountAmountType ?? accountAmountTypeOptionsFor(initialDestinationAccount)[0] ?? "Operation");
   const transactionCategories = useMemo(() => getCategoriesForScope(categories, "Transactions", selectedType === "Income" ? "Income" : "Expense"), [categories, selectedType]);
   const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? transactionCategories[0]?.id ?? "");
   const [status, setStatus] = useState(transaction?.status ?? "cleared");
@@ -467,6 +473,11 @@ export function AddTransactionForm({
     }
     setRelatedOptionValue(`${nextOption.type}:${nextOption.value}`);
     setSelectedImpactType(nextOption.type);
+    if (nextOption.type === "savings_goal" && selectedType !== "Transfer") {
+      setSelectedType("Transfer");
+      setCategoryId("");
+      setFuturePlanningAmountId("");
+    }
     if (nextOption.accountId && nextOption.type !== "savings_goal" && !nextOption.creditCardDebt) {
       const linkedAccount = accounts.find((account) => account.id === nextOption.accountId);
       if (linkedAccount) {
@@ -475,16 +486,21 @@ export function AddTransactionForm({
       }
     }
     if (nextOption.type === "savings_goal" && nextOption.categoryId) {
-      if (selectedType === "Transfer" && nextOption.accountId) {
+      if (nextOption.accountId) {
         const goalAccount = accounts.find((account) => account.id === nextOption.accountId);
         if (goalAccount) {
           setTransferToAccountId(goalAccount.id);
           setTransferAccountAmountType(nextOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
+          if (accountId === goalAccount.id && effectiveAccountAmountType === nextOption.accountAmountType) {
+            const otherType = accountAmountTypeOptionsFor(goalAccount).find((type) => type !== nextOption.accountAmountType);
+            const otherAccount = accounts.find((account) => account.id !== goalAccount.id && account.type !== "Credit Card");
+            if (otherType) setAccountAmountType(otherType);
+            else if (otherAccount) {
+              setAccountId(otherAccount.id);
+              setAccountAmountType(accountAmountTypeOptionsFor(otherAccount)[0] ?? "General");
+            }
+          }
         }
-      } else if (nextOption.accountId) {
-        const goalAccount = accounts.find((account) => account.id === nextOption.accountId);
-        setAccountId(nextOption.accountId);
-        setAccountAmountType(nextOption.accountAmountType ?? accountAmountTypeOptionsFor(goalAccount)[0] ?? "General");
       }
       const matchingPlan = planningOptions.find((option) => option.direction === "saving"
         && option.categoryId === nextOption.categoryId

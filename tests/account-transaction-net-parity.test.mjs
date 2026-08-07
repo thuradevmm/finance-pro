@@ -7,7 +7,7 @@ const accountDataPath = new URL("../src/lib/accounts/supabase.ts", import.meta.u
 const dashboardPagePath = new URL("../src/app/dashboard/page.tsx", import.meta.url);
 const transactionContentPath = new URL("../src/features/transactions/transactions-page-content.tsx", import.meta.url);
 
-test("Account Lookup and Dashboard share one position helper while Transactions has no summary override", async () => {
+test("Account Lookup and Dashboard use canonical position helpers while Transactions has no summary override", async () => {
   const [accountPage, accountData, dashboardPage, transactionContent] = await Promise.all([
     readFile(accountPagePath, "utf8"),
     readFile(accountDataPath, "utf8"),
@@ -17,7 +17,7 @@ test("Account Lookup and Dashboard share one position helper while Transactions 
 
   assert.match(accountData, /export function summarizeAccountPosition/);
   assert.match(accountPage, /const position = summarizeAccountPosition\(accounts\)/);
-  assert.match(dashboardPage, /summarizeAccountPosition\(accounts\)/);
+  assert.match(dashboardPage, /summarizeAccountPositionForAmountTypes\(accounts, selectedAmountTypes\)/);
   assert.doesNotMatch(accountPage, /Financial Position & Reconciliation/);
   assert.doesNotMatch(transactionContent, /getTransactionSummaries|SummaryCards/);
   assert.doesNotMatch(transactionContent, /accountPositionNet|showsCompleteLedger/);

@@ -65,7 +65,21 @@ test("historical income and expense reconcile through explicit opening and legac
     netWorth: 8_800,
     openingPositionAndAdjustments: 1_800,
     reconciledClosingNetWorth: 8_800,
+    scopeTransfers: 0,
     totalAssets: 11_300,
     totalLiabilities: 2_500,
   });
+});
+
+test("amount-type boundary transfers are included in scoped reconciliation", () => {
+  const result = reconcileFinancialPosition(
+    { cardCredit: 0, cardLiability: 0, cashBalance: 1_300, net: 1_300 },
+    [],
+    { expenses: 0, income: 0 },
+    1_000,
+    300,
+  );
+  assert.equal(result.scopeTransfers, 300);
+  assert.equal(result.net, 300);
+  assert.equal(result.difference, 0);
 });

@@ -6,49 +6,42 @@ const signalStyle: Record<FinancialHealthSignal["signal"], {
   badge: string;
   card: string;
   icon: IconName;
-  needleAngle: number;
 }> = {
   Building: {
     accent: "text-[#0058be]",
     badge: "border-[#bfdbfe] bg-[#eff6ff] text-[#0058be]",
     card: "border-[#bfdbfe]",
     icon: "timeline",
-    needleAngle: -108,
   },
   Healthy: {
     accent: "text-[#15803d]",
     badge: "border-[#bbf7d0] bg-[#ecfdf5] text-[#166534]",
     card: "border-[#bbf7d0]",
     icon: "check",
-    needleAngle: -146,
   },
   "Setup needed": {
     accent: "text-[#6b7280]",
     badge: "border-[#d4d4d8] bg-[#f1f1f4] text-[#45464d]",
     card: "border-[#d4d4d8]",
     icon: "settings",
-    needleAngle: -90,
   },
   Warning: {
     accent: "text-[#dc2626]",
     badge: "border-[#fecaca] bg-[#fff1f0] text-[#991b1b]",
     card: "border-[#fecaca]",
     icon: "trendingDown",
-    needleAngle: -18,
   },
   Watch: {
     accent: "text-[#d97706]",
     badge: "border-[#fde68a] bg-[#fffbeb] text-[#92400e]",
     card: "border-[#fde68a]",
     icon: "eye",
-    needleAngle: -62,
   },
   Winning: {
     accent: "text-[#15803d]",
     badge: "border-[#86efac] bg-[#dcfce7] text-[#166534]",
     card: "border-[#86efac]",
     icon: "trendingUp",
-    needleAngle: -166,
   },
 };
 
@@ -59,10 +52,12 @@ const gaugeSegments = [
   { color: "#ff2d2d", path: "M155.7 49.8 A75 75 0 0 1 175 100" },
 ];
 
-function HealthDial({ signal }: { signal: FinancialHealthSignal["signal"] }) {
-  const style = signalStyle[signal];
+function HealthDial({ score, signal }: Pick<FinancialHealthSignal, "score" | "signal">) {
   const isSetupNeeded = signal === "Setup needed";
-  const angle = style.needleAngle * (Math.PI / 180);
+  // The arc runs from healthy green on the left to warning red on the right.
+  // A higher normalized health score therefore rotates the needle left.
+  const needleAngle = score == null ? -90 : -18 - (Math.min(Math.max(score, 0), 100) / 100) * 144;
+  const angle = needleAngle * (Math.PI / 180);
   const needleEnd = {
     x: 100 + Math.cos(angle) * 61,
     y: 100 + Math.sin(angle) * 61,
@@ -71,12 +66,12 @@ function HealthDial({ signal }: { signal: FinancialHealthSignal["signal"] }) {
   return (
     <div className="h-[6.75rem] w-44 shrink-0" data-signal={signal}>
       <svg
-        aria-label={`${signal} indicator`}
+        aria-label={`${signal} indicator${score == null ? "" : `, score ${score} out of 100`}`}
         className={`h-full w-full overflow-visible drop-shadow-[0_4px_4px_rgba(15,23,42,0.16)] ${isSetupNeeded ? "opacity-45 grayscale" : ""}`}
         role="img"
         viewBox="0 0 200 120"
       >
-        <title>{signal} indicator</title>
+        <title>{signal} indicator{score == null ? "" : `, score ${score} out of 100`}</title>
         <g aria-hidden="true" fill="none" strokeLinecap="butt">
           {gaugeSegments.map((segment) => (
             <path d={segment.path} key={`outline-${segment.color}`} stroke="#64748b" strokeOpacity="0.18" strokeWidth="30" />
@@ -108,7 +103,7 @@ export function FinancialHealthIndicators({ signals }: { signals: FinancialHealt
       <div className="mb-3">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#0058be]">At-a-glance signals</p>
         <h2 className="mt-1 text-xl font-semibold text-[#0b1c30]" id="financial-health-title">Financial health indicators</h2>
-        <p className="mt-1 text-sm leading-6 text-[#45464d]">Qualitative signals use the selected date range and your super-category purposes. They guide attention without exposing another wall of numbers.</p>
+        <p className="mt-1 text-sm leading-6 text-[#45464d]">Qualitative signals use the selected date range, amount types, and super-category purposes. Their needles are normalized from 0–100 health scores.</p>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
         {signals.map((item) => {
@@ -116,7 +111,7 @@ export function FinancialHealthIndicators({ signals }: { signals: FinancialHealt
           return (
             <article className={`rounded-xl border bg-white p-4 shadow-[0_4px_18px_rgba(15,23,42,0.04)] ${style.card}`} key={item.label}>
               <div className="flex items-center gap-4 sm:items-start md:flex-col md:items-center">
-                <HealthDial signal={item.signal} />
+                <HealthDial score={item.score} signal={item.signal} />
                 <div className="min-w-0 flex-1 md:text-center">
                   <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${style.badge}`}>
                     <Icon className="size-3.5" name={style.icon} />

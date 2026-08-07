@@ -17,7 +17,7 @@ import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 type ActionResult = { error?: string };
 
 function revalidateSavingsPaths() {
-  for (const path of ["/savings-goals", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
+  for (const path of ["/savings-goals", "/accounts", "/transactions", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
 }
 
 function storedAccountStatus(account: { is_active: boolean; metadata: unknown }) {
@@ -38,12 +38,12 @@ function validateGoalInput(input: SavingsGoalFormData) {
   if (input.goalType !== "Target" && input.goalType !== "Fund") return "Choose a valid savings type.";
   if (input.goalType === "Target" && (!Number.isFinite(input.targetAmount) || input.targetAmount <= 0)) return "Target amount must be greater than zero.";
   if (input.goalType === "Fund" && (!Number.isFinite(input.targetAmount) || input.targetAmount < 0)) return "Fund target amount cannot be negative.";
-  if (!Number.isFinite(input.savedAmount) || input.savedAmount < 0) return "Already saved amount cannot be negative.";
+  if (input.savedAmount !== 0) return "Savings capital must be moved with a linked Transfer transaction.";
   if (input.contributionType === "Fixed" && (!Number.isFinite(input.monthlyContribution) || input.monthlyContribution < 0)) return "Monthly contribution cannot be negative.";
   if (input.contributionType === "Percentage" && (!Number.isFinite(input.contributionPercentage) || input.contributionPercentage <= 0 || input.contributionPercentage > 100)) return "Surplus percentage must be greater than zero and no more than 100%.";
   if (input.goalType === "Target" && !isValidCalendarDate(input.targetDate)) return "Enter a valid target date.";
   if (input.goalType === "Fund" && input.targetDate) return "Open-ended funds do not use a target date.";
-  if (!input.accountAmountType.trim() || input.accountAmountType.trim().length > 80) return "Choose a valid account amount type.";
+  if (input.name.trim().length > 80) return "Savings goal names cannot exceed 80 characters because the name is also used as its account amount type.";
   return "";
 }
 
@@ -71,12 +71,15 @@ async function validateGoalLinks(
   const accountMetadata = accountResult.data.metadata && typeof accountResult.data.metadata === "object" && !Array.isArray(accountResult.data.metadata)
     ? accountResult.data.metadata as Record<string, unknown>
     : {};
-  const amountTypes = Array.isArray(accountMetadata.amount_types)
-    ? accountMetadata.amount_types.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).type === "string" ? [String((item as Record<string, unknown>).type)] : [])
-    : [accountMetadata.operation_amount == null ? "" : "Operation", accountMetadata.saving_amount == null ? "" : "Saving"].filter(Boolean);
-  if (amountTypes.length > 0 && !amountTypes.some((type) => type.trim().toLowerCase() === input.accountAmountType.trim().toLowerCase())) {
-    return "Choose an amount type that belongs to the selected savings account.";
-  }
+  const conflictingAmountType = Array.isArray(accountMetadata.amount_types)
+    ? accountMetadata.amount_types.some((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const amountType = item as Record<string, unknown>;
+      return String(amountType.type ?? "").trim().toLowerCase() === input.name.trim().toLowerCase()
+        && !amountType.savings_goal_id;
+    })
+    : false;
+  if (conflictingAmountType) return "This account already has an amount type with the same name. Choose a different savings goal name.";
   if (!categoryResult.data
     || (categoryResult.data.is_active === false && categoryResult.data.id !== allowedExistingCategoryId)
     || !categoryRowSupports(categoryResult.data, "Savings Goals", "Savings Goal")) return "Select an active savings goal category.";
@@ -88,7 +91,7 @@ function goalPayload(input: SavingsGoalFormData, linkedSavedAmount = 0) {
   const status = input.goalType === "Target" && totalSavedAmount >= input.targetAmount ? "completed" : "active";
   return {
     account_id: input.accountId || null,
-    account_amount_type: input.accountAmountType.trim(),
+    account_amount_type: input.name.trim(),
     category_id: input.categoryId || null,
     contribution_percentage: input.contributionType === "Percentage" ? input.contributionPercentage : null,
     contribution_type: input.contributionType.toLowerCase(),
@@ -96,7 +99,7 @@ function goalPayload(input: SavingsGoalFormData, linkedSavedAmount = 0) {
     description: input.description.trim() || null,
     metadata: {
       account_id: input.accountId || null,
-      account_amount_type: input.accountAmountType.trim(),
+      account_amount_type: input.name.trim(),
       category_id: input.categoryId || null,
       contribution_percentage: input.contributionType === "Percentage" ? input.contributionPercentage : null,
       contribution_basis: input.contributionType === "Percentage" ? "surplus" : null,
@@ -163,7 +166,7 @@ export async function createSavingsGoal(input: SavingsGoalFormData): Promise<Act
   if (linkError) return { error: linkError };
 
   const { error } = await supabase.from("savings_goals").insert({ ...goalPayload(input), user_id: user.id });
-  if (error) return { error: error.message };
+  if (error) return { error: error.message.includes("savings_goal_amount_type") ? "Unable to create the goal-owned account amount type. Choose a unique goal name and try again." : error.message };
 
   revalidateSavingsPaths();
   return {};
@@ -176,13 +179,24 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
   if (validationError) return { error: validationError };
   const { data: existingGoal, error: existingError } = await supabase
     .from("savings_goals")
-    .select("id,category_id")
+    .select("id,account_id,category_id")
     .eq("id", goalId)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .maybeSingle();
   if (existingError) return { error: existingError.message };
   if (!existingGoal) return { error: "Savings goal not found." };
+  if (existingGoal.account_id && existingGoal.account_id !== input.accountId) {
+    const [transactionsResult, entriesResult] = await Promise.all([
+      supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null).limit(1),
+      supabase.from("savings_goal_entries").select("id").eq("user_id", user.id).eq("savings_goal_id", goalId).limit(1),
+    ]);
+    const historyError = transactionsResult.error ?? entriesResult.error;
+    if (historyError) return { error: historyError.message };
+    if ((transactionsResult.data?.length ?? 0) > 0 || (entriesResult.data?.length ?? 0) > 0) {
+      return { error: "The savings account cannot be changed after capital transfers exist. Create a new goal or reverse the linked transfers first." };
+    }
+  }
   const linkError = await validateGoalLinks(supabase, user.id, input, existingGoal.category_id ?? "");
   if (linkError) return { error: linkError };
   const linkedAmount = await linkedSavingsAmount(supabase, user.id, goalId, input.accountId);
@@ -195,7 +209,7 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
     .eq("user_id", user.id)
     .select("id")
     .maybeSingle();
-  if (error) return { error: error.message };
+  if (error) return { error: error.message.includes("savings_goal_amount_type") ? "Unable to synchronize the goal-owned account amount type. Choose a unique goal name and try again." : error.message };
   if (!data) return { error: "Savings goal not found." };
 
   revalidateSavingsPaths();

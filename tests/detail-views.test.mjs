@@ -25,6 +25,8 @@ test("account details include complete card and account information safely", asy
   assert.match(accounts, /Rate to/);
   assert.match(accounts, /Refunds/);
   assert.match(accounts, /Saved · hidden for security/);
+  assert.match(accounts, /Card number" value=\{<span className="font-mono">\{formatAccountIdentifier\(viewedAccount\.cardNumber\)\}/);
+  assert.doesNotMatch(accounts, /Card number" value=\{<span className="font-mono">\{maskCardNumber\(viewedAccount\.cardNumber\)\}/);
   assert.doesNotMatch(accounts, /value=\{viewedAccount\.cardSecurityCode\}/);
 });
 

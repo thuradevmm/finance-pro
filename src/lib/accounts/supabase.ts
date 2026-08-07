@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { IconName } from "@/components/ui/icon";
 import { accountAmountTypeValues, reconcileAccountAmountTypeDeltas } from "@/lib/accounts/amount-types";
-import { calculateCreditCardPosition, maskCardNumber } from "@/lib/accounts/card-display";
+import { calculateCreditCardPosition, formatAccountIdentifier, maskCardNumber } from "@/lib/accounts/card-display";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { formatCurrencyAmount } from "@/lib/currency";
 import { convertToBaseCurrency, exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
@@ -303,7 +303,11 @@ function mapAccount(
 
   return {
     ...appearance,
-    accountNumber: [accountIdentifier, phoneNumber, cardNumber ? maskCardNumber(cardNumber) : ""].filter(Boolean).join(" / "),
+    accountNumber: [
+      accountIdentifier ? formatAccountIdentifier(accountIdentifier) : "",
+      phoneNumber ? formatAccountIdentifier(phoneNumber) : "",
+      cardNumber ? maskCardNumber(cardNumber) : "",
+    ].filter(Boolean).join(" / "),
     amountTypeValues,
     availableBalance: formatCurrencyAmount(availableBalanceValue, row.currency_code),
     availableBalanceBaseValue,
