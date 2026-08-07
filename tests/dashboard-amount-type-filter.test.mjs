@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -8,6 +9,8 @@ import {
   summarizeAccountPositionForAmountTypes,
   transactionMatchesDashboardAmountTypes,
 } from "../src/lib/dashboard/amount-type-filter.ts";
+
+const filterSource = readFileSync(new URL("../src/features/dashboard/financial-position-date-filter.tsx", import.meta.url), "utf8");
 
 const account = (overrides) => ({
   balanceBreakdowns: [],
@@ -51,4 +54,13 @@ test("transaction matching uses the posted endpoint and scoped transfer net brid
   assert.deepEqual(selected, [credit]);
   assert.equal(dashboardScopeTransferNet(selected), 300);
   assert.equal(dashboardScopeTransferNet([debit, credit]), 0);
+});
+
+test("dashboard amount types use a compact overlay instead of an expanding chip field", () => {
+  assert.match(filterSource, /aria-haspopup="dialog"/);
+  assert.match(filterSource, /absolute left-0 top-\[calc\(100%\+0\.5rem\)\]/);
+  assert.match(filterSource, /max-h-64 overflow-y-auto/);
+  assert.match(filterSource, /Select all/);
+  assert.match(filterSource, /selectedCount}\/\{options\.length/);
+  assert.doesNotMatch(filterSource, /flex min-h-12 flex-wrap items-center gap-2/);
 });
