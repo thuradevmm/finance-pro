@@ -1389,7 +1389,7 @@ export default function AccountsPage() {
                   <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
                   <DetailModalField label="Card number" value={<span className="font-mono">{formatAccountIdentifier(viewedAccount.cardNumber)}</span>} />
                   <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
-                  <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
+                  <DetailModalField label="Security code" value={<span className="font-mono">{viewedAccount.cardSecurityCode || "Not set"}</span>} />
                 </DetailModalSection>
                 <DetailModalSection title="Credit position">
                   <DetailModalField label="Credit limit" value={viewedAccount.creditLimit} />
@@ -1446,13 +1446,13 @@ export default function AccountsPage() {
                   <DetailModalField label="Last updated" value={viewedAccount.lastUpdated} />
                   <DetailModalField label="Notes" value={viewedAccount.notes || "No notes"} />
                 </DetailModalSection>
-                {viewedAccount.cardType || viewedAccount.cardNumber || viewedAccount.cardExpiryCode ? (
+                {viewedAccount.cardType || viewedAccount.cardNumber || viewedAccount.cardExpiryCode || viewedAccount.cardSecurityCode ? (
                   <DetailModalSection title="Linked card information">
                     <DetailModalField label="Card type" value={viewedAccount.cardType || "Not set"} />
                     <DetailModalField label="Network" value={creditCardNetwork(viewedAccount)} />
                     <DetailModalField label="Card number" value={<span className="font-mono">{formatAccountIdentifier(viewedAccount.cardNumber)}</span>} />
                     <DetailModalField label="Expiry" value={viewedAccount.cardExpiryCode || "Not set"} />
-                    <DetailModalField label="Security code" value={viewedAccount.cardSecurityCode ? "Saved · hidden for security" : "Not set"} />
+                    <DetailModalField label="Security code" value={<span className="font-mono">{viewedAccount.cardSecurityCode || "Not set"}</span>} />
                   </DetailModalSection>
                 ) : null}
                 <DetailModalSection title="Amount type totals">

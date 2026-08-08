@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { appFontVariables } from "@/lib/app-fonts";
 import { InteractionLoadingProvider } from "@/components/app/interaction-loading-provider";
 import { SidebarStateProvider } from "@/components/app/sidebar-state-provider";
+import { WorkspaceShell } from "@/components/app/workspace-shell";
 import { SessionTimeoutProvider } from "@/components/auth/session-timeout-provider";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { sidebarCollapsedCookieName } from "@/lib/sidebar-state";
@@ -35,7 +36,9 @@ export default async function RootLayout({
         <SessionTimeoutProvider>
           <SidebarStateProvider initialCollapsed={initialSidebarCollapsed}>
             <InteractionLoadingProvider>
-              <ToastProvider>{children}</ToastProvider>
+              <ToastProvider>
+                <WorkspaceShell>{children}</WorkspaceShell>
+              </ToastProvider>
             </InteractionLoadingProvider>
           </SidebarStateProvider>
         </SessionTimeoutProvider>

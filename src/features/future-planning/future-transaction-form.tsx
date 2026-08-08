@@ -330,7 +330,6 @@ export function FutureTransactionForm({
 
     beginLoading();
     router.push("/future-planning");
-    router.refresh();
   }
 
   return (

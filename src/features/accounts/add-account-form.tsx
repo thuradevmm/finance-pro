@@ -384,7 +384,6 @@ export function AddAccountForm({
     showSuccess(account ? "Account updated successfully." : "Account saved successfully.");
     beginLoading();
     router.push(returnTo);
-    router.refresh();
   }
 
   return (

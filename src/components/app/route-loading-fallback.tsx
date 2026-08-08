@@ -31,5 +31,11 @@ export function RouteLoadingFallback() {
   const pathname = usePathname();
   const isSidebarCollapsed = useOptionalSidebarState()?.isSidebarCollapsed ?? false;
 
-  return isInteractionLoading ? null : <FinancialPageSkeleton routeKind={routeKindFromPath(pathname)} sidebarCollapsed={isSidebarCollapsed} />;
+  return isInteractionLoading ? null : (
+    <FinancialPageSkeleton
+      contentOnly={!pathname.startsWith("/login") && !pathname.startsWith("/register") && !pathname.startsWith("/forgot-password") && !pathname.startsWith("/update-password")}
+      routeKind={routeKindFromPath(pathname)}
+      sidebarCollapsed={isSidebarCollapsed}
+    />
+  );
 }

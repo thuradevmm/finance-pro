@@ -47,3 +47,16 @@ test("notification icons open reminder-backed notifications and mutations revali
   }
   assert.match(source("src/app/future-planning/settings-actions.ts"), /revalidatePath\("\/notifications"\)/);
 });
+
+test("sidebar account controls share stable alignment and an unclipped profile menu", () => {
+  const sidebar = source("src/components/app/app-sidebar.tsx");
+  const profileMenu = source("src/components/app/profile-menu.tsx");
+
+  assert.match(sidebar, /isCompact \? "size-11 justify-center p-0"/);
+  assert.match(sidebar, /min-h-0 flex-1 flex-col gap-4 overflow-y-auto/);
+  assert.match(sidebar, /mt-4 flex shrink-0 flex-col gap-2/);
+  assert.match(profileMenu, /compact \? "relative w-11" : "relative w-full"/);
+  assert.match(profileMenu, /grid-cols-\[1\.25rem_minmax\(0,1fr\)\]/);
+  assert.match(profileMenu, /left-\[calc\(100%\+0\.5rem\)\]/);
+  assert.match(profileMenu, /bottom-\[calc\(200%\+1rem\)\]/);
+});

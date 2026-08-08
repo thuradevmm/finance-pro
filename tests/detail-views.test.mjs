@@ -14,7 +14,7 @@ test("record actions support a consistent view-details control", async () => {
   assert.match(actions, /name="eye"/);
 });
 
-test("account details include complete card and account information safely", async () => {
+test("account details include complete visible card and account information", async () => {
   const accounts = await source("src/app/accounts/page.tsx");
 
   assert.match(accounts, /Card identification/);
@@ -24,10 +24,10 @@ test("account details include complete card and account information safely", asy
   assert.match(accounts, /Mobile banking number/);
   assert.match(accounts, /Rate to/);
   assert.match(accounts, /Refunds/);
-  assert.match(accounts, /Saved · hidden for security/);
   assert.match(accounts, /Card number" value=\{<span className="font-mono">\{formatAccountIdentifier\(viewedAccount\.cardNumber\)\}/);
   assert.doesNotMatch(accounts, /Card number" value=\{<span className="font-mono">\{maskCardNumber\(viewedAccount\.cardNumber\)\}/);
-  assert.doesNotMatch(accounts, /value=\{viewedAccount\.cardSecurityCode\}/);
+  assert.match(accounts, /Security code" value=\{<span className="font-mono">\{viewedAccount\.cardSecurityCode \|\| "Not set"\}/);
+  assert.doesNotMatch(accounts, /Saved · hidden for security/);
 });
 
 test("primary finance modules expose complete read-only detail modals", async () => {

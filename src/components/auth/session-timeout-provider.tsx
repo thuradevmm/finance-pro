@@ -41,7 +41,6 @@ export function SessionTimeoutProvider({ children }: { children: ReactNode }) {
       await createClient().auth.signOut({ scope: "local" });
     } finally {
       router.replace("/login?error=session_expired");
-      router.refresh();
     }
   }, [clearTimer, router]);
 

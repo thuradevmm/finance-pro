@@ -88,7 +88,6 @@ export function AddAssetForm({ asset, categories }: { asset?: AssetRecordWithVal
     showSuccess(asset ? "Asset updated successfully." : "Asset saved successfully.");
     beginLoading();
     router.push("/assets");
-    router.refresh();
   }
 
   return (

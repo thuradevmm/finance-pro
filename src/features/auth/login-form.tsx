@@ -56,7 +56,6 @@ export function LoginForm({ initialFormError }: { initialFormError?: string }) {
     setIsSubmitting(false);
     beginLoading();
     router.replace(destination);
-    router.refresh();
   }
 
   return (

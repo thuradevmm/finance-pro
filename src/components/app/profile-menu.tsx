@@ -50,7 +50,6 @@ export function ProfileMenu({ active = false, compact = false, onNavigate, place
     onNavigate?.();
     beginLoading();
     router.replace("/login");
-    router.refresh();
   }
 
   useEffect(() => {
@@ -91,7 +90,7 @@ export function ProfileMenu({ active = false, compact = false, onNavigate, place
 
   return (
     <div
-      className="relative"
+      className={compact ? "relative w-11" : "relative w-full"}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           setIsOpen(false);
@@ -116,25 +115,28 @@ export function ProfileMenu({ active = false, compact = false, onNavigate, place
         <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">{initials}</span>
         {compact ? null : (
           <>
-            <span>Profile</span>
-            <Icon className="size-4 text-[#76777d]" name="chevronDown" />
+            <span className="min-w-0 flex-1 text-left">Profile</span>
+            <Icon className={`size-4 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""} ${active ? "text-white/80" : "text-[#76777d]"}`} name="chevronDown" />
           </>
         )}
       </button>
 
       {isOpen ? (
         <div
-          className={`absolute z-30 max-h-[calc(100dvh-4.5rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)] sm:w-72 ${placement === "above" ? "bottom-12 left-0" : "right-0 top-12"}`}
+          className={`absolute z-30 overflow-y-auto rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)] ${placement === "above" ? compact ? "bottom-0 left-[calc(100%+0.5rem)] max-h-[calc(100dvh-2rem)] w-[min(18rem,calc(100vw-6rem))]" : "bottom-[calc(200%+1rem)] left-0 max-h-[calc(100dvh-8rem)] w-full" : "right-0 top-[calc(100%+0.5rem)] max-h-[calc(100dvh-2rem)] w-[min(18rem,calc(100vw-2rem))]"}`}
           id={menuId}
           role="menu"
         >
-          <div className="border-b border-[#c6c6cd]/40 px-4 py-3">
-            <p className="break-words text-sm font-semibold text-[#0b1c30] [overflow-wrap:anywhere]">{fullName}</p>
-            <p className="mt-1 break-all text-xs font-medium leading-5 text-[#45464d]">{email}</p>
+          <div className="flex min-w-0 items-center gap-3 border-b border-[#c6c6cd]/40 px-4 py-3">
+            <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-[#e0f2fe] text-sm font-bold text-[#0369a1]">{initials}</span>
+            <div className="min-w-0 flex-1">
+              <p className="break-words text-sm font-semibold leading-5 text-[#0b1c30] [overflow-wrap:anywhere]">{fullName}</p>
+              <p className="mt-0.5 break-all text-xs font-medium leading-5 text-[#45464d]">{email}</p>
+            </div>
           </div>
           {menuItems.map((item) => (
             <Link
-              className="flex min-h-11 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
+              className="grid min-h-11 w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
               href={item.href}
               key={item.label}
               onClick={() => {
@@ -143,20 +145,20 @@ export function ProfileMenu({ active = false, compact = false, onNavigate, place
               }}
               role="menuitem"
             >
-              <Icon className="size-4" name={item.icon} />
-              <span>{item.label}</span>
+              <span className="grid size-5 place-items-center"><Icon className="size-4" name={item.icon} /></span>
+              <span className="min-w-0 text-left">{item.label}</span>
             </Link>
           ))}
-          <div className="mt-1 border-t border-[#c6c6cd]/40 pt-1">
+          <div className="border-t border-[#c6c6cd]/40 pt-1">
             <button
-              className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
+              className="grid min-h-11 w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-3 px-4 text-left text-sm font-semibold text-[#991b1b] transition hover:bg-[#fff1f0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30 disabled:cursor-wait disabled:opacity-70"
               disabled={isLoggingOut}
               onClick={handleLogout}
               role="menuitem"
               type="button"
             >
-              {isLoggingOut ? <LoadingSpinner /> : <Icon className="size-4" name="logout" />}
-              <span>{isLoggingOut ? "Logging Out…" : "Log Out"}</span>
+              <span className="grid size-5 place-items-center">{isLoggingOut ? <LoadingSpinner /> : <Icon className="size-4" name="logout" />}</span>
+              <span className="min-w-0">{isLoggingOut ? "Logging Out…" : "Log Out"}</span>
             </button>
           </div>
         </div>

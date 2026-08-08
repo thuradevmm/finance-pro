@@ -686,7 +686,6 @@ export function AddTransactionForm({
     else showSuccess(transaction ? "Transaction updated successfully." : "Transaction saved successfully.");
     beginLoading();
     router.push("/transactions");
-    router.refresh();
   }
 
   return (

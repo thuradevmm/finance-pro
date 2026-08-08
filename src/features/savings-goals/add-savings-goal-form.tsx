@@ -146,7 +146,6 @@ export function AddSavingsGoalForm({
     showSuccess(goal ? "Savings goal updated successfully." : "Savings goal saved successfully.");
     beginLoading();
     router.push("/savings-goals");
-    router.refresh();
   }
 
   return (

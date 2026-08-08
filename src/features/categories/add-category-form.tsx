@@ -111,7 +111,6 @@ export function AddCategoryForm({ categories, category }: { categories: Category
     showSuccess(category ? "Category updated successfully." : "Category saved successfully.");
     beginLoading();
     router.push("/categories");
-    router.refresh();
   }
 
   return (

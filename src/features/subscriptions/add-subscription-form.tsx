@@ -121,7 +121,6 @@ export function AddSubscriptionForm({ accounts, categories, currencySettings, su
     showSuccess(subscription ? "Subscription updated successfully." : "Subscription saved successfully.");
     beginLoading();
     router.push("/subscriptions");
-    router.refresh();
   }
 
   return (

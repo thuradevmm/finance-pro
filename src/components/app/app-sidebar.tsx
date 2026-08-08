@@ -32,11 +32,11 @@ export function AppSidebar({
       className={
         isMobile
           ? "fixed inset-y-0 left-0 z-50 w-[min(19rem,calc(100vw-1rem))] border-r border-[#c6c6cd]/70 bg-white shadow-xl"
-          : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 lg:block`
+          : `${collapsed ? "w-20" : "w-64"} hidden shrink-0 overflow-visible border-r border-[#c6c6cd]/70 bg-white shadow-sm transition-[width] duration-200 lg:block`
       }
       id={isMobile ? "mobile-navigation-panel" : undefined}
     >
-      <div className={`${isMobile ? "pl-[max(1.25rem,env(safe-area-inset-left))] pr-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-dvh flex-col overscroll-contain overflow-y-auto pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]`}>
+      <div className={`${isMobile ? "pl-[max(1.25rem,env(safe-area-inset-left))] pr-5" : isCompact ? "px-3" : "px-6"} sticky top-0 flex h-dvh min-h-0 flex-col overflow-visible pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]`}>
         <div className={isCompact ? "mb-6 flex flex-col items-center gap-3" : "mb-8 flex justify-between gap-3"}>
           <div className={isCompact ? "min-w-0 text-center" : "min-w-0"}>
             <p className="break-words text-xl font-semibold text-[#0b1c30]">{isCompact ? "FP" : "FinancePro"}</p>
@@ -65,7 +65,7 @@ export function AppSidebar({
           ) : null}
         </div>
 
-        <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-4">
+        <nav aria-label="Main navigation" className="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-1">
           {groups.map((group, groupIndex) => (
             <div
               className={groupIndex === 0 ? "flex flex-col gap-1" : "flex flex-col gap-1 border-t border-[#c6c6cd]/40 pt-4"}
@@ -95,13 +95,13 @@ export function AppSidebar({
             </div>
           ))}
         </nav>
-        <div className={`${isCompact ? "items-center" : ""} mt-4 flex flex-col gap-2 border-t border-[#c6c6cd]/40 pt-4`}>
+        <div className={`${isCompact ? "items-center" : ""} mt-4 flex shrink-0 flex-col gap-2 border-t border-[#c6c6cd]/40 pt-4`}>
           <Link
             aria-current={activeLabel === "Notifications" ? "page" : undefined}
             aria-label="Notifications"
             className={activeLabel === "Notifications"
-              ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex min-h-11 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm`
-              : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex min-h-11 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]`}
+              ? `${isCompact ? "size-11 justify-center p-0" : "min-h-11 w-full gap-3 px-3"} flex items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25`
+              : `${isCompact ? "size-11 justify-center p-0" : "min-h-11 w-full gap-3 px-3"} flex items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25`}
             href="/notifications"
             onClick={onClose}
             title="Notifications"

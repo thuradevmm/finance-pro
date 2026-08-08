@@ -223,7 +223,6 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
     showSuccess(`${recordLabel} ${debt ? "updated" : "saved"} successfully.`);
     beginLoading();
     router.push("/debts");
-    router.refresh();
   }
 
   return (

@@ -463,14 +463,25 @@ function RouteBodySkeleton({ kind }: { kind: FinancialSkeletonRouteKind }) {
 }
 
 export function FinancialPageSkeleton({
+  contentOnly = false,
   routeKind = "table",
   sidebarCollapsed = false,
 }: {
+  contentOnly?: boolean;
   routeKind?: FinancialSkeletonRouteKind;
   sidebarCollapsed?: boolean;
 }) {
   if (routeKind === "auth") return <AuthSkeleton />;
   if (routeKind === "status") return <StatusSkeleton />;
+  if (contentOnly) {
+    return (
+      <div aria-label="Loading page content" className="min-w-0" role="status">
+        <NavigationProgress />
+        <HeaderSkeleton action={!["coming-soon", "dashboard", "detail", "notifications"].includes(routeKind)} />
+        <RouteBodySkeleton kind={routeKind} />
+      </div>
+    );
+  }
   return (
     <div className="min-h-dvh bg-[#f8f9ff] text-[#0b1c30]" role="status" aria-label="Loading financial workspace">
       <NavigationProgress />
