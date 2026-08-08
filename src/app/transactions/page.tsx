@@ -4,7 +4,8 @@ import { AppShell } from "@/components/app/app-shell";
 import { PageHeader } from "@/components/app/page-header";
 import { Icon } from "@/components/ui/icon";
 import { TransactionsPageContent } from "@/features/transactions/transactions-page-content";
-import { getAccounts } from "@/lib/accounts/supabase";
+import { getAccountCategoryOptions, getAccountsForCategory } from "@/lib/accounts/selection";
+import { getAccountOptionLabel, getAccounts } from "@/lib/accounts/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -42,6 +43,12 @@ export default async function TransactionsPage({
   const categories = user ? await getCategories({ limit: 200 }) : [];
   const transactions = user ? await getTransactions(supabase, user.id, accounts, categories) : [];
   const transactionFilterOptions = getTransactionFilterOptions(transactions, accounts, categories);
+  const accountOptionsByCategory = Object.fromEntries(
+    getAccountCategoryOptions(accounts).map((category) => [
+      category,
+      getAccountsForCategory(accounts, category).map((account) => getAccountOptionLabel(account, accounts)),
+    ]),
+  );
   const defaultDateRange = getDefaultTransactionDateRange();
   const exportDateQuery = new URLSearchParams({
     dataset: "transactions",
@@ -93,6 +100,7 @@ export default async function TransactionsPage({
       />
 
       <TransactionsPageContent
+        accountOptionsByCategory={accountOptionsByCategory}
         filterOptions={transactionFilterOptions}
         defaultDateFrom={defaultDateRange.dateFrom}
         defaultDateTo={defaultDateRange.dateTo}

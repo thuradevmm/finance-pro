@@ -209,7 +209,7 @@ function ManualPlanningSettings({
             accentClassName="border-[#bbf7d0] bg-[#fbfffc]"
             categories={eligibleCategories.filter((category) => category.type === "Income")}
             columns={columns}
-            description="Income targets and incoming amounts."
+            description="Credit targets and incoming amounts."
             direction="income"
             isAddingCategoryId={isAddingCategoryId}
             label="Credit"

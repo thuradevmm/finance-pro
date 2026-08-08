@@ -39,7 +39,7 @@ export default async function DebtsPage() {
             href="/debts/add"
           >
             <Icon className="size-4" name="plus" />
-            Add Borrowing / Lending
+            Add Borrowing or Lending
           </Link>
         }
         description="Manage borrowing, credit-card liabilities, money lent to others, and repayment progress."

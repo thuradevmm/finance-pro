@@ -11,14 +11,17 @@ import { createClient } from "@/lib/supabase/client";
 import { getUserSafely } from "@/lib/supabase/auth";
 
 type ProfileMenuProps = {
+  active?: boolean;
   compact?: boolean;
+  onNavigate?: () => void;
+  placement?: "above" | "below";
 };
 
 const menuItems = [
   { label: "Profile", href: "/profile", icon: "account" as const },
 ];
 
-export function ProfileMenu({ compact = false }: ProfileMenuProps) {
+export function ProfileMenu({ active = false, compact = false, onNavigate, placement = "below" }: ProfileMenuProps) {
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const [isOpen, setIsOpen] = useState(false);
@@ -44,6 +47,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
       return;
     }
     setIsOpen(false);
+    onNavigate?.();
     beginLoading();
     router.replace("/login");
     router.refresh();
@@ -103,8 +107,8 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
         aria-label={compact ? "Open profile menu" : undefined}
         className={
           compact
-            ? "grid size-11 place-items-center rounded-md bg-[#eff6ff] text-sm font-bold text-[#0369a1] transition hover:bg-[#dce9ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
-            : "flex min-h-11 items-center gap-2 rounded-full border border-[#c6c6cd]/70 bg-white py-1 pl-1 pr-3 text-sm font-semibold text-[#0b1c30] transition hover:bg-[#eff4ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25"
+            ? `grid size-11 place-items-center rounded-md text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 ${active ? "bg-[#2170e4] text-white" : "bg-[#eff6ff] text-[#0369a1] hover:bg-[#dce9ff]"}`
+            : `flex min-h-11 w-full items-center gap-2 rounded-md border py-1 pl-1 pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 ${active ? "border-[#2170e4] bg-[#2170e4] text-white" : "border-[#c6c6cd]/70 bg-white text-[#0b1c30] hover:bg-[#eff4ff]"}`
         }
         onClick={() => setIsOpen((current) => !current)}
         type="button"
@@ -120,7 +124,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
 
       {isOpen ? (
         <div
-          className="absolute right-0 top-12 z-30 max-h-[calc(100dvh-4.5rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)] sm:w-72"
+          className={`absolute z-30 max-h-[calc(100dvh-4.5rem)] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#c6c6cd]/70 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.16)] sm:w-72 ${placement === "above" ? "bottom-12 left-0" : "right-0 top-12"}`}
           id={menuId}
           role="menu"
         >
@@ -133,7 +137,10 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
               className="flex min-h-11 items-center gap-3 px-4 text-sm font-semibold text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2170e4]/30"
               href={item.href}
               key={item.label}
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                setIsOpen(false);
+                onNavigate?.();
+              }}
               role="menuitem"
             >
               <Icon className="size-4" name={item.icon} />

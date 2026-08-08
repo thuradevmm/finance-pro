@@ -6,6 +6,7 @@ import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financia
 import { getAssets } from "@/lib/assets/supabase";
 import { getCategories } from "@/lib/categories/supabase";
 import { getCurrencySettings } from "@/lib/currency-settings";
+import { localDateInputValue } from "@/lib/date-format";
 import { getDebts } from "@/lib/debts/supabase";
 import { getFuturePlanningTransactionOptions } from "@/lib/future-planning/supabase";
 import { getSavingsGoals } from "@/lib/savings-goals/supabase";
@@ -113,7 +114,7 @@ export default async function AddTransactionPage({
     ? {
       accountId: requestedSubscription.accountId,
       amount: String(requestedSubscription.amountValue),
-      date: new Date().toISOString().slice(0, 10),
+      date: localDateInputValue(),
       note: `Subscription payment: ${requestedSubscription.name}`,
       relatedEntityId: requestedSubscription.id,
       relatedEntityType: "subscription",
@@ -121,7 +122,7 @@ export default async function AddTransactionPage({
     }
     : requestedAsset
       ? {
-        date: requestedAsset.purchaseDateValue || new Date().toISOString().slice(0, 10),
+        date: requestedAsset.purchaseDateValue || localDateInputValue(),
         note: `Asset purchase: ${requestedAsset.name}`,
         relatedEntityId: requestedAsset.id,
         relatedEntityType: "asset",
@@ -131,7 +132,7 @@ export default async function AddTransactionPage({
         ? {
           accountId: accounts.find((account) => account.id !== requestedSavingsGoal.accountId && account.type !== "Credit Card")?.id
             ?? requestedSavingsGoal.accountId,
-          date: new Date().toISOString().slice(0, 10),
+          date: localDateInputValue(),
           note: `Savings transfer: ${requestedSavingsGoal.name}`,
           relatedEntityId: requestedSavingsGoal.id,
           relatedEntityType: "savings_goal",

@@ -485,8 +485,8 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
             <DetailModalField label="Category / type" value={viewedDebt.type} />
             <DetailModalField label={viewedDebt.nature === "Lending" ? "Borrower" : "Lender"} value={viewedDebt.lender || "Not set"} />
             <DetailModalField label="Status" value={viewedDebt.status} />
-            <DetailModalField label="Start date" value={formatDisplayDate(viewedDebt.startDate, "Not set")} />
-            <DetailModalField label="Expected payoff" value={formatDisplayDate(viewedDebt.payoffDate, "Not set")} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Lending date" : "Borrowing date"} value={formatDisplayDate(viewedDebt.startDate, "Not set")} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Expected full return" : "Expected payoff"} value={formatDisplayDate(viewedDebt.payoffDate, "Not set")} />
             <DetailModalField label="Settled date" value={formatDisplayDate(viewedDebt.settledAtValue, "Not settled")} />
             <DetailModalField label="Created" value={formatDisplayDate(viewedDebt.createdAtValue, "Not set")} />
           </DetailModalSection>
@@ -496,14 +496,14 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
             <DetailModalField label="Remaining balance" value={viewedDebt.remainingBalance} />
             <DetailModalField label="Progress" value={`${viewedDebt.progressPercent}%`} />
             <DetailModalField label={viewedDebt.nature === "Lending" ? "Return due" : "Payment due"} value={viewedDebt.monthlyPayment} />
-            <DetailModalField label="Next due date" value={viewedDebt.nextPaymentDate || "Not scheduled"} />
+            <DetailModalField label={viewedDebt.nature === "Lending" ? "Next return date" : "Next payment date"} value={viewedDebt.nextPaymentDate || "Not scheduled"} />
           </DetailModalSection>
           <DetailModalSection title="Repayment terms">
             <DetailModalField label="Frequency" value={viewedDebt.repaymentFrequency} />
             <DetailModalField label="Duration" value={`${viewedDebt.durationMonths} month${viewedDebt.durationMonths === 1 ? "" : "s"}`} />
             <DetailModalField label="Interest rate" value={viewedDebt.interestRate} />
-            <DetailModalField label="Payment account" value={accounts.find((account) => account.id === viewedDebt.paymentAccountId)?.name || "Not set"} />
-            <DetailModalField label="Account amount type" value={viewedDebt.accountAmountType || "Not set"} />
+            <DetailModalField label={viewedDebt.isCreditCardDebt ? "Credit card account" : viewedDebt.nature === "Lending" ? "Funding / return account" : "Receiving / payment account"} value={accounts.find((account) => account.id === viewedDebt.paymentAccountId)?.name || "Not set"} />
+            <DetailModalField label={viewedDebt.isCreditCardDebt ? "Card amount type" : viewedDebt.nature === "Lending" ? "Funding amount type" : "Receiving amount type"} value={viewedDebt.accountAmountType || "Not set"} />
             <DetailModalField label="Linked payment records" value={viewedDebt.repaymentActivity.length} />
             {viewedDebt.isCreditCardDebt ? <DetailModalField label="Linked card account" value={accounts.find((account) => account.id === viewedDebt.creditCardAccountId)?.name || "Not set"} /> : null}
             {viewedDebt.isCreditCardDebt ? <DetailModalField label="Card management" value={viewedDebt.usesManualCreditCardTerms ? "Manual terms" : "Automatic from account activity"} /> : null}

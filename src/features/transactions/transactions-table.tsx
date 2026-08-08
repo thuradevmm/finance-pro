@@ -65,7 +65,7 @@ function getAttachmentLabel(attachment?: Transaction["attachment"]) {
 
 function getImpactLabel(transaction: Transaction) {
   if (transaction.linkedSavingsGoalId) return "Linked savings goal";
-  if (transaction.linkedDebtId) return "Linked borrowing / lending";
+  if (transaction.linkedDebtId) return "Linked Borrowing & Lending record";
   if (transaction.linkedSubscriptionId) return "Linked subscription";
   if (transaction.linkedAssetId) return "Linked asset";
   return "No linked record";

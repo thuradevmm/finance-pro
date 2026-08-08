@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { ProfileMenu } from "@/components/app/profile-menu";
 import { Icon, type IconName } from "@/components/ui/icon";
 
 type MobileHeaderAction = {
@@ -52,9 +51,6 @@ export function MobileHeader({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Link aria-label="Notifications" className="grid size-11 shrink-0 place-items-center rounded-md border border-[#c6c6cd]/70 text-[#45464d] hover:bg-[#eff4ff] hover:text-[#2170e4]" href="/notifications" title="Notifications">
-            <Icon name="bell" />
-          </Link>
           {action?.href ? (
             <Link aria-label={action.label} className={actionClassName} href={action.href} title={action.title ?? action.label}>
               <Icon name={action.icon} />
@@ -64,7 +60,6 @@ export function MobileHeader({
               <Icon name={action.icon} />
             </button>
           ) : null}
-          <ProfileMenu compact />
         </div>
       </div>
       <p className="mt-3 break-words text-xs font-semibold uppercase leading-5 text-[#45464d]">{subtitle}</p>

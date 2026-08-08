@@ -11,7 +11,7 @@ const purposeLabels: Record<Exclude<CategoryFinancialRole, "">, string> = {
   discretionary: "Discretionary",
   emergency_reserve: "Emergency reserve",
   essential: "Essential living",
-  income: "Income source",
+  income: "Credit source",
   other: "General / no indicator",
   savings: "Savings & capital",
 };

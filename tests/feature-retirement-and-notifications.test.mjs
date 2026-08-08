@@ -34,8 +34,9 @@ test("legacy budget data migrates into category-backed planning without dropping
 });
 
 test("notification icons open reminder-backed notifications and mutations revalidate them", () => {
-  assert.match(source("src/components/app/app-top-bar.tsx"), /aria-label="Notifications"[\s\S]*href="\/notifications"/);
-  assert.match(source("src/components/app/mobile-header.tsx"), /aria-label="Notifications"[\s\S]*href="\/notifications"/);
+  assert.equal(existsSync(join(projectRoot, "src/components/app/app-top-bar.tsx")), false);
+  assert.match(source("src/components/app/app-sidebar.tsx"), /aria-label="Notifications"[\s\S]*href="\/notifications"/);
+  assert.doesNotMatch(source("src/components/app/mobile-header.tsx"), /aria-label="Notifications"/);
   const notifications = source("src/lib/notifications/supabase.ts");
   for (const sourceName of ["Subscriptions", "Borrowing & Lending", "Future Planning", "Savings Goals", "Assets"]) {
     assert.match(notifications, new RegExp(`source: "${sourceName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));

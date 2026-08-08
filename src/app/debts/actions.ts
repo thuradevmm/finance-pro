@@ -432,7 +432,7 @@ async function validateDebtCategory(
   if (!input.categoryId) {
     return allowUncategorized
       ? { input }
-      : { error: "Select an active borrowing / lending category." };
+      : { error: "Select an active Borrowing & Lending category." };
   }
   let { data, error } = await supabase
     .from("categories")
@@ -451,9 +451,9 @@ async function validateDebtCategory(
       .maybeSingle());
   }
   if (error) return { error: error.message };
-  if (!data) return { error: "The selected borrowing / lending category does not exist." };
+  if (!data) return { error: "The selected Borrowing & Lending category does not exist." };
   const category = data as DebtCategoryRow;
-  if (category.id !== allowedExistingCategoryId && category.is_active === false) return { error: "Select an active borrowing / lending category." };
+  if (category.id !== allowedExistingCategoryId && category.is_active === false) return { error: "Select an active Borrowing & Lending category." };
   const metadata = metadataRecord(category.metadata);
   const categoryType = String(category.category_type ?? metadata.category_type ?? category.type ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   const scopes = Array.isArray(metadata.scopes) ? metadata.scopes.map((scope) => String(scope).toLowerCase()) : [];
@@ -616,7 +616,7 @@ async function updateDebtPayload(
     delete debtPayload[column];
   }
 
-  return { data: null, error: { message: "The borrowing / lending record could not be updated because the database schema is not aligned with this form." } };
+  return { data: null, error: { message: "The Borrowing & Lending record could not be updated because the database schema is not aligned with this form." } };
 }
 
 async function archiveDebtPayload(
@@ -634,7 +634,7 @@ async function archiveDebtPayload(
     delete archivePayload[column];
   }
 
-  return { data: null, error: { message: "The borrowing / lending record could not be deleted because the database schema is not aligned with this form." } };
+  return { data: null, error: { message: "The Borrowing & Lending record could not be deleted because the database schema is not aligned with this form." } };
 }
 
 export async function updateDebt(debtId: string, input: DebtFormData): Promise<ActionResult> {
@@ -644,9 +644,9 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   try {
     existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Unable to load the borrowing / lending record." };
+    return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
   }
-  if (!existingDebt) return { error: "Borrowing / lending record not found." };
+  if (!existingDebt) return { error: "Borrowing & Lending record not found." };
   const existingMetadata = metadataRecord(existingDebt.metadata);
   if (isCreditCardDebtRow(existingDebt)
     && existingMetadata.auto_credit_card_terms === true
@@ -669,7 +669,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
     try {
       ledgerTotals = await getDebtLedgerTotals(supabase, debtId, user.id, existingDebt);
     } catch (error) {
-      return { error: error instanceof Error ? error.message : "Unable to load linked borrowing / lending transactions." };
+      return { error: error instanceof Error ? error.message : "Unable to load linked Borrowing & Lending transactions." };
     }
   }
   if (input.repaidAmount + 0.005 < ledgerTotals.repayments) {
@@ -710,7 +710,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
     ),
   );
   if (error) return { error: error.message };
-  if (!data) return { error: "Borrowing / lending record not found." };
+  if (!data) return { error: "Borrowing & Lending record not found." };
   const originationError = await syncDebtOriginationTransaction(
     supabase,
     user.id,
@@ -732,9 +732,9 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
   try {
     existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Unable to load the borrowing / lending record." };
+    return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
   }
-  if (!existingDebt) return { error: "Borrowing / lending record not found." };
+  if (!existingDebt) return { error: "Borrowing & Lending record not found." };
   const [transactionsResult, paymentsResult] = await Promise.all([
     supabase
       .from("transactions")
@@ -771,7 +771,7 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
   }
   const { data, error } = await archiveDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };
-  if (!data) return { error: "Borrowing / lending record not found." };
+  if (!data) return { error: "Borrowing & Lending record not found." };
   revalidateDebtViews();
   return {};
 }

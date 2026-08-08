@@ -260,6 +260,12 @@ function applyImpact(ledger: DebtTransactionLedger, impact: string, transaction:
   }
 }
 
+function standardDebtTransaction(transaction: DebtLedgerTransactionInput) {
+  const metadata = metadataRecord(transaction.metadata);
+  const baseAmount = numericValue(metadata.debt_base_amount, Number.NaN);
+  return Number.isFinite(baseAmount) ? { ...transaction, amount: baseAmount } : transaction;
+}
+
 /**
  * Builds every debt's linked ledger in one pass. A card-funded payment may
  * intentionally have two targets: repayment of the primary standard debt and
@@ -291,7 +297,11 @@ export function buildDebtTransactionLedgers(
         const impact = isCreditCardDebtInput(debt)
           ? creditCardImpact(transaction, debt.id, creditCardAccountIdForDebt(debt))
           : standardDebtImpact(transaction, debt);
-        applyImpact(ledgerFor(debt.id), impact, transaction);
+        applyImpact(
+          ledgerFor(debt.id),
+          impact,
+          isCreditCardDebtInput(debt) ? transaction : standardDebtTransaction(transaction),
+        );
       }
     }
 

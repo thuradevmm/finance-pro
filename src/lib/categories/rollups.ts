@@ -97,7 +97,7 @@ export type PageCategoryType = "Account" | "Asset" | "Debt" | "Savings Goal" | "
 export const pageCategoryRollupLabels: Record<PageCategoryType, { activity: string; count: string }> = {
   Account: { activity: "Current Balance", count: "Accounts" },
   Asset: { activity: "Purchase Value", count: "Assets" },
-  Debt: { activity: "Total Debt", count: "Debts" },
+  Debt: { activity: "Outstanding Balance", count: "Borrowing & Lending Records" },
   "Savings Goal": { activity: "Tracked Capital", count: "Goals & Funds" },
   Subscription: { activity: "Monthly Cost", count: "Ongoing Subscriptions" },
 };

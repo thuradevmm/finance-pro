@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { AppSidebar } from "@/components/app/app-sidebar";
-import { AppTopBar } from "@/components/app/app-top-bar";
 import { MobileHeader } from "@/components/app/mobile-header";
 import { useSidebarState } from "@/components/app/sidebar-state-provider";
 import type { IconName } from "@/components/ui/icon";
@@ -121,8 +120,6 @@ export function AppShell({
             onOpenNavigation={() => setIsMobileNavigationOpen(true)}
             subtitle={mobileSubtitle}
           />
-          <AppTopBar />
-
           <main className="mx-auto min-w-0 w-full max-w-[1440px] flex-1 pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-6 sm:pl-[max(1.25rem,env(safe-area-inset-left))] sm:pr-[max(1.25rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))] lg:py-8 lg:pl-[max(2rem,env(safe-area-inset-left))] lg:pr-[max(2rem,env(safe-area-inset-right))]">{children}</main>
         </div>
       </div>

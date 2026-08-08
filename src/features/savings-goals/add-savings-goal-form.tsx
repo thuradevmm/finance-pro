@@ -15,6 +15,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { formatMmkPreview } from "@/lib/currency";
 import { isValidCalendarDate } from "@/lib/date-validation";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
+import { getAccountCategoryForId, getAccountCategoryOptions, getAccountsForCategory } from "@/lib/accounts/selection";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import type { SavingsGoalFormData, SavingsGoalRecord } from "@/lib/savings-goals/supabase";
@@ -54,13 +55,20 @@ export function AddSavingsGoalForm({
   const { showError, showSuccess } = useToast();
   const router = useRouter();
   const beginLoading = useInteractionLoading();
-  const accountOptions = useMemo(
+  const eligibleAccountOptions = useMemo(
     () => accounts.filter((account) => account.status !== "Archived" && account.type !== "Credit Card"),
     [accounts],
   );
   const goalStyleCategories = useMemo(() => getCategoriesForScope(categories, "Savings Goals", "Savings Goal"), [categories]);
   const [selectedStyleId, setSelectedStyleId] = useState(goal?.categoryId ?? goalStyleCategories[0]?.id ?? "");
-  const [accountId, setAccountId] = useState(goal?.accountId ?? accountOptions[0]?.id ?? "");
+  const initialAccountId = goal?.accountId ?? eligibleAccountOptions[0]?.id ?? "";
+  const [accountCategory, setAccountCategory] = useState(getAccountCategoryForId(eligibleAccountOptions, initialAccountId));
+  const accountCategoryOptions = useMemo(() => getAccountCategoryOptions(eligibleAccountOptions), [eligibleAccountOptions]);
+  const accountOptions = useMemo(
+    () => getAccountsForCategory(eligibleAccountOptions, accountCategory),
+    [accountCategory, eligibleAccountOptions],
+  );
+  const [accountId, setAccountId] = useState(initialAccountId);
   const [goalType, setGoalType] = useState<SavingsGoalType>(goal?.goalType ?? "Target");
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.targetAmountValue) : "");
@@ -93,7 +101,8 @@ export function AddSavingsGoalForm({
     const hasErrors = name.trim() === ""
       || (goalType === "Target" && (targetAmount.trim() === "" || !Number.isFinite(target) || target <= 0))
       || contributionIsInvalid
-      || (goalType === "Target" && !isValidCalendarDate(targetDate));
+      || (goalType === "Target" && !isValidCalendarDate(targetDate))
+      || !selectedAccount;
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -165,6 +174,16 @@ export function AddSavingsGoalForm({
               <TextInput error={nameHasError} label="Goal Name" onChange={setName} placeholder="Emergency Fund" value={name} />
               {nameHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Goal name is required.</p> : null}
             </div>
+            <SelectInput
+              label="Account Category"
+              onChange={(category) => {
+                const nextAccount = getAccountsForCategory(eligibleAccountOptions, category)[0];
+                setAccountCategory(category);
+                setAccountId(nextAccount?.id ?? "");
+              }}
+              options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]}
+              value={accountCategory || "No account categories"}
+            />
             <SelectInput
               label="Savings Account"
               onChange={(accountName) => {

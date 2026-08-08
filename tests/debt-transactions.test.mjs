@@ -50,6 +50,30 @@ test("card charges, partial payments, transfer pairs, and dual debt links reconc
   assert.equal(ledgers.get("loan")?.repayments, 250);
 });
 
+test("multi-currency standard repayments use base value without changing the linked card impact", () => {
+  const cardDebt = { id: "card-debt", metadata: { credit_card_account_id: "card" }, payment_account_id: "card", type: "Credit Card" };
+  const loan = { id: "loan", type: "Personal Loan" };
+  const transaction = {
+    account_id: "card",
+    amount: 100,
+    id: "foreign-loan-payment",
+    metadata: {
+      credit_card_debt_id: "card-debt",
+      credit_card_debt_impact: "charge",
+      debt_base_amount: 210_000,
+    },
+    related_entity_id: "loan",
+    related_entity_type: "debt",
+    status: "cleared",
+    transaction_date: "2026-08-08",
+    type: "expense",
+  };
+  const ledgers = buildDebtTransactionLedgers([transaction], [cardDebt, loan]);
+
+  assert.equal(ledgers.get("loan")?.repayments, 210_000);
+  assert.equal(ledgers.get("card-debt")?.charges, 100);
+});
+
 test("unpaired transfers unrelated to the linked card do not change its debt", () => {
   const debt = { id: "card-debt", metadata: { credit_card_account_id: "card" }, type: "Credit Card" };
   const transaction = { id: "unrelated", account_id: "bank-a", transfer_account_id: "bank-b", amount: 100, related_entity_id: "card-debt", related_entity_type: "debt", status: "cleared", type: "transfer" };

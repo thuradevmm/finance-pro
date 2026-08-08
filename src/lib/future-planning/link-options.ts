@@ -51,7 +51,7 @@ export async function getFuturePlanLinkOptions(
         amount: positiveAmount(debt.monthlyPaymentValue) || positiveAmount(debt.remainingBalanceValue),
         categoryId: debt.categoryId,
         id: debt.id,
-        label: `Debt · ${debt.name}`,
+        label: `${debt.nature} · ${debt.name}`,
         transactionType: debt.nature === "Lending" ? "Income" : "Expense",
         type: "debt",
       }))

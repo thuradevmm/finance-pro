@@ -231,7 +231,7 @@ export async function saveFuturePlanningAmount(input: {
     .maybeSingle();
   if (columnError) return { error: columnError.message };
   if (!column) return { error: "Planning category not found." };
-  if (input.amountType === "Percentage" && column.direction === "income") return { error: "Income plans must use a defined amount so percentage plans have a stable base." };
+  if (input.amountType === "Percentage" && column.direction === "income") return { error: "Credit plans must use a defined amount so percentage plans have a stable base." };
 
   const { data, error } = await supabase
     .from("future_planning_amounts")

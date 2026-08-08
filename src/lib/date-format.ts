@@ -9,6 +9,11 @@ export function formatDisplayDate(value: string | Date, fallback = "Not set") {
   return `${day}-${month}-${year}`;
 }
 
+export function localDateInputValue(value = new Date()) {
+  if (Number.isNaN(value.getTime())) return "";
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
 export function combineDateWithTimestampTime(dateValue: string, timestampValue?: string | null) {
   if (!dateValue) return "";
   if (!timestampValue) return `${dateValue}T00:00:00`;

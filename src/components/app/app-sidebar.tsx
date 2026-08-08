@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { ProfileMenu } from "@/components/app/profile-menu";
 import { Icon } from "@/components/ui/icon";
 import { navGroups, type NavItem } from "@/lib/app-navigation";
 
@@ -94,6 +95,22 @@ export function AppSidebar({
             </div>
           ))}
         </nav>
+        <div className={`${isCompact ? "items-center" : ""} mt-4 flex flex-col gap-2 border-t border-[#c6c6cd]/40 pt-4`}>
+          <Link
+            aria-current={activeLabel === "Notifications" ? "page" : undefined}
+            aria-label="Notifications"
+            className={activeLabel === "Notifications"
+              ? `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex min-h-11 items-center rounded-md bg-[#2170e4] text-sm font-semibold text-white shadow-sm`
+              : `${isCompact ? "justify-center px-0" : "gap-3 px-3"} flex min-h-11 items-center rounded-md text-sm font-medium text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]`}
+            href="/notifications"
+            onClick={onClose}
+            title="Notifications"
+          >
+            <Icon className="size-5 shrink-0" name="bell" />
+            {!isCompact ? <span>Notifications</span> : null}
+          </Link>
+          <ProfileMenu active={activeLabel === "Profile"} compact={isCompact} onNavigate={onClose} placement="above" />
+        </div>
       </div>
     </aside>
   );

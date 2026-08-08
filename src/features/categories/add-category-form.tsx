@@ -99,7 +99,6 @@ export function AddCategoryForm({ categories, category }: { categories: Category
       setIsSaving(false);
       setName("");
       setDescription("");
-      setSelectedType("Expense");
       setLevel("Subcategory");
       setParentId("");
       setSelectedChildCategoryIds([]);

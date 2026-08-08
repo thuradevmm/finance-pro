@@ -4,6 +4,7 @@ import type { IconName } from "@/components/ui/icon";
 import { accountAmountTypeValues, reconcileAccountAmountTypeDeltas } from "@/lib/accounts/amount-types";
 import { calculateCreditCardPosition, formatAccountIdentifier, maskCardNumber } from "@/lib/accounts/card-display";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
+import { sortAccountsByCategory } from "@/lib/accounts/selection";
 import { formatCurrencyAmount } from "@/lib/currency";
 import { convertToBaseCurrency, exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
 import { getCurrencySettings } from "@/lib/currency-settings";
@@ -448,13 +449,13 @@ export async function getAccounts(
     activities.set(accountId, activity);
   }
   const categoryNames = new Map(categoryRows.map((category) => [category.id, category.name]));
-  return accountRows.map((account) => mapAccount(
+  return sortAccountsByCategory(accountRows.map((account) => mapAccount(
     account,
     activities.get(account.id),
     categoryNames,
     currencySettings,
     options.asOfDate,
-  ));
+  )));
 }
 
 export async function getAccount(supabase: SupabaseClient, userId: string, accountId: string) {

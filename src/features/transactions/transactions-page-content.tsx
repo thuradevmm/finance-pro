@@ -20,6 +20,7 @@ import { transactionTypeFromLabel, transactionTypeLabel, type TransactionDisplay
 type TransactionTab = "All" | TransactionDisplayType;
 
 type TransactionsPageContentProps = {
+  accountOptionsByCategory: Record<string, string[]>;
   defaultDateFrom: string;
   defaultDateTo: string;
   filterOptions: TransactionFilterOptions;
@@ -74,6 +75,7 @@ function getInitialFilters(
 }
 
 export function TransactionsPageContent({
+  accountOptionsByCategory,
   defaultDateFrom,
   defaultDateTo,
   filterOptions,
@@ -185,6 +187,7 @@ export function TransactionsPageContent({
     <>
       <SegmentedTabs activeTab={activeTab} onTabChange={handleTabChange} tabs={transactionTabs} />
       <TransactionsFilters
+        accountOptionsByCategory={accountOptionsByCategory}
         filterOptions={effectiveFilterOptions}
         filters={draftFilters}
         onFilterChange={updateDraftFilter}

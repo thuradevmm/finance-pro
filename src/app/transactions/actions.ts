@@ -600,7 +600,7 @@ async function validateAndResolveTransactionReferences(
   if (!relatedRecord) return { error: "The selected linked record does not exist.", input };
   const status = recordStatus(relatedRecord.metadata, relatedRecord.status);
   if (!preservesExistingRelated && input.relatedEntityType === "debt" && ["archived", "paid"].includes(status)) {
-    return { error: "Completed or archived borrowing / lending records cannot receive new payment or return activity.", input };
+    return { error: "Completed or archived Borrowing & Lending records cannot receive new payment or return activity.", input };
   }
   if (!preservesExistingRelated && input.relatedEntityType === "subscription" && ["cancelled", "canceled", "expired", "paused"].includes(status)) {
     return { error: "Paused or expired subscriptions cannot receive new payments.", input };
@@ -1253,16 +1253,36 @@ async function standardDebtRepayments(
   debt: DebtRow,
   ignoredTransactionIds: string[] = [],
 ): Promise<{ error?: string; repayments: DebtDatedRepayment[] }> {
-  const [transactionsResult, paymentsResult] = await Promise.all([
+  const [transactionsResult, paymentsResult, accountsResult, currencySettings] = await Promise.all([
     supabase.from("transactions").select("id,transaction_date,type,amount,account_id,transfer_account_id,category_id,status,title,description,note,related_entity_type,related_entity_id,metadata").eq("user_id", userId).eq("related_entity_type", "debt").eq("related_entity_id", debt.id).is("deleted_at", null),
     supabase.from("debt_payments").select("id,debt_id,transaction_id,amount,payment_date").eq("user_id", userId).eq("debt_id", debt.id),
+    supabase.from("accounts").select("id,currency_code").eq("user_id", userId).is("deleted_at", null),
+    getCurrencySettings(supabase, userId),
   ]);
-  const error = transactionsResult.error ?? paymentsResult.error;
+  const error = transactionsResult.error ?? paymentsResult.error ?? accountsResult.error;
   if (error) return { error: error.message, repayments: [] };
 
   const ignoredIds = new Set(ignoredTransactionIds);
+  const currencyByAccountId = new Map((accountsResult.data ?? []).map((account) => [account.id, account.currency_code]));
+  const transactions = (transactionsResult.data as TransactionRow[])
+    .filter((transaction) => !ignoredIds.has(transaction.id))
+    .map((transaction) => {
+      const baseAmount = convertToBaseCurrency(
+        Math.abs(Number(transaction.amount) || 0),
+        currencyByAccountId.get(transaction.account_id ?? ""),
+        currencySettings,
+        transaction.transaction_date ?? undefined,
+      );
+      return {
+        ...transaction,
+        metadata: {
+          ...metadataRecord(transaction.metadata),
+          ...(baseAmount == null ? {} : { debt_base_amount: baseAmount }),
+        },
+      };
+    });
   return { repayments: debtTransactionLedgerFor([
-    ...(transactionsResult.data as TransactionRow[]).filter((transaction) => !ignoredIds.has(transaction.id)),
+    ...transactions,
     ...standaloneDebtPaymentTransactions(paymentsResult.data ?? []),
   ], debt).repaymentActivity };
 }
@@ -1301,7 +1321,7 @@ async function accountingMetadataForInput(
     accounting_version: 1,
   };
   if (
-    classification !== "financing_payment"
+    !["financing_payment", "financing_receipt"].includes(classification)
     || input.relatedEntityType !== "debt"
     || !input.relatedEntityId
   ) {
@@ -1330,13 +1350,29 @@ async function accountingMetadataForInput(
   }
 
   const metadata = metadataRecord(debt.metadata);
+
+  const [paymentAccountResult, currencySettings] = await Promise.all([
+    supabase.from("accounts").select("currency_code").eq("id", input.accountId).eq("user_id", userId).is("deleted_at", null).maybeSingle(),
+    getCurrencySettings(supabase, userId, input.date),
+  ]);
+  if (paymentAccountResult.error) return { error: paymentAccountResult.error.message, metadata: baseMetadata };
+  const debtPaymentAmount = convertToBaseCurrency(
+    input.amount,
+    paymentAccountResult.data?.currency_code,
+    currencySettings,
+    input.date,
+  );
+  if (debtPaymentAmount == null) {
+    return { error: "Add an exchange rate for the payment account currency before recording this Borrowing & Lending activity.", metadata: baseMetadata };
+  }
+  baseMetadata.debt_base_amount = debtPaymentAmount;
   const nature = normalizeDebtNature(metadata.debt_nature, debt.name ?? "");
   if (nature !== "Borrowing") {
     return {
       metadata: {
         ...baseMetadata,
         debt_interest_amount: 0,
-        debt_principal_amount: roundCurrencyValue(input.amount),
+        debt_principal_amount: roundCurrencyValue(debtPaymentAmount),
       },
     };
   }
@@ -1352,7 +1388,7 @@ async function accountingMetadataForInput(
       metadata: {
         ...baseMetadata,
         debt_interest_amount: 0,
-        debt_principal_amount: roundCurrencyValue(input.amount),
+        debt_principal_amount: roundCurrencyValue(debtPaymentAmount),
       },
     };
   }
@@ -1386,16 +1422,16 @@ async function accountingMetadataForInput(
     ...summaryInput,
     repayments: [
       ...repaymentsResult.repayments,
-      { amountValue: input.amount, dateValue: input.date },
+      { amountValue: debtPaymentAmount, dateValue: input.date },
     ],
   });
   const principalAmount = roundCurrencyValue(
-    Math.min(Math.max(after.principalPaid - before.principalPaid, 0), input.amount),
+    Math.min(Math.max(after.principalPaid - before.principalPaid, 0), debtPaymentAmount),
   );
   const interestAmount = roundCurrencyValue(
     Math.min(
-      Math.max(after.isEarlyPayoff ? after.settlementInterestAmount : input.amount - principalAmount, 0),
-      input.amount,
+      Math.max(after.isEarlyPayoff ? after.settlementInterestAmount : debtPaymentAmount - principalAmount, 0),
+      debtPaymentAmount,
     ),
   );
 
@@ -1403,7 +1439,7 @@ async function accountingMetadataForInput(
     metadata: {
       ...baseMetadata,
       debt_interest_amount: interestAmount,
-      debt_principal_amount: roundCurrencyValue(input.amount - interestAmount),
+      debt_principal_amount: roundCurrencyValue(debtPaymentAmount - interestAmount),
     },
   };
 }

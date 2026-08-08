@@ -24,7 +24,7 @@ export default async function NotificationsPage() {
   const urgentCount = notifications.filter((notification) => notification.severity === "urgent").length;
 
   return (
-    <AppShell activeNavLabel="" mobileSubtitle="Notifications">
+    <AppShell activeNavLabel="Notifications" mobileSubtitle="Notifications">
       <PageHeader description="Reminders and control alerts from subscriptions, borrowing and lending, savings goals, future plans, and assets." title="Notifications" />
       <div className="mb-5 flex flex-wrap gap-2 text-xs font-bold uppercase">
         <span className="rounded-full bg-[#0b1c30] px-3 py-1.5 text-white">{notifications.length} active</span>

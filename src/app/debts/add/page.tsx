@@ -17,7 +17,7 @@ export default async function AddDebtPage() {
       activeNavLabel="Borrowing & Lending"
       mobileSearchLabel="Search borrowing and lending on mobile"
       mobileSearchPlaceholder="Search borrowing and lending..."
-      mobileSubtitle="Add Borrowing / Lending"
+      mobileSubtitle="Add Borrowing or Lending"
       topSearchLabel="Search borrowing and lending"
       topSearchPlaceholder="Search borrowing and lending..."
     >

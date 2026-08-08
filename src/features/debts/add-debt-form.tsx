@@ -16,10 +16,11 @@ import { useToast } from "@/components/ui/toast-provider";
 import { formatCurrencyAmount, formatMmkPreview, parseAmountInputValue } from "@/lib/currency";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
+import { accountCategoryLabel, getAccountCategoryForId, getAccountCategoryOptions, getAccountsForCategory } from "@/lib/accounts/selection";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
-import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
+import { buildEmiSchedule, formatDateInput, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
 import type { DebtNature, DebtRepaymentFrequency } from "@/lib/debts/nature";
 import { calculateDebtProgressPercent } from "@/lib/debts/progress";
 import type { DebtFormData, DebtInterestRatePeriod, DebtRecordWithValues } from "@/lib/debts/supabase";
@@ -48,7 +49,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const [repaidAmount, setRepaidAmount] = useState(debt ? String(debt.grossRepaidAmountValue) : "");
   const [interestRate, setInterestRate] = useState(debt ? String(debt.interestRateValue) : "");
   const [interestRatePeriod, setInterestRatePeriod] = useState<DebtInterestRatePeriod>(debt?.interestRatePeriod ?? "Yearly");
-  const [startDate, setStartDate] = useState(debt?.startDate ?? "2026-06-01");
+  const [startDate, setStartDate] = useState(debt?.startDate || formatDateInput(new Date()));
   const [durationMonths, setDurationMonths] = useState(debt?.durationMonths ? String(debt.durationMonths) : "12");
   const [repaymentFrequency, setRepaymentFrequency] = useState<DebtRepaymentFrequency>(debt?.repaymentFrequency ?? "Monthly");
   const [oneTimeRepaymentDate, setOneTimeRepaymentDate] = useState(
@@ -61,8 +62,8 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const selectedCategory = debtCategories.find((category) => category.id === selectedCategoryId)
     ?? (!debt ? debtCategories[0] : undefined);
   const debtCategoryOptions = debt && !selectedCategory
-    ? ["Uncategorized Borrowing / Lending", ...debtCategories.map((category) => category.name)]
-    : debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Borrowing / Lending"];
+    ? ["Uncategorized Borrowing & Lending", ...debtCategories.map((category) => category.name)]
+    : debtCategories.length > 0 ? debtCategories.map((category) => category.name) : ["Uncategorized Borrowing & Lending"];
   const availableAccounts = useMemo(() => accounts.filter((account) => (
     accountStatusContributesToCurrentTotals(account.status) || account.id === debt?.paymentAccountId
   )), [accounts, debt?.paymentAccountId]);
@@ -70,10 +71,20 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
   const effectiveNature: DebtNature = semanticIsCreditCard ? "Borrowing" : nature;
   const effectiveRepaymentFrequency: DebtRepaymentFrequency = semanticIsCreditCard ? "Monthly" : repaymentFrequency;
   const isOneTime = effectiveRepaymentFrequency === "One-time";
-  const paymentAccounts = semanticIsCreditCard
-    ? availableAccounts.filter((account) => account.type === "Credit Card")
-    : availableAccounts;
-  const [paymentAccountId, setPaymentAccountId] = useState(debt?.paymentAccountId ?? paymentAccounts[0]?.id ?? "");
+  const eligiblePaymentAccounts = useMemo(
+    () => semanticIsCreditCard
+      ? availableAccounts.filter((account) => account.type === "Credit Card")
+      : availableAccounts,
+    [availableAccounts, semanticIsCreditCard],
+  );
+  const initialPaymentAccountId = debt?.paymentAccountId ?? eligiblePaymentAccounts[0]?.id ?? "";
+  const [accountCategory, setAccountCategory] = useState(getAccountCategoryForId(eligiblePaymentAccounts, initialPaymentAccountId));
+  const accountCategoryOptions = useMemo(() => getAccountCategoryOptions(eligiblePaymentAccounts), [eligiblePaymentAccounts]);
+  const paymentAccounts = useMemo(
+    () => getAccountsForCategory(eligiblePaymentAccounts, accountCategory),
+    [accountCategory, eligiblePaymentAccounts],
+  );
+  const [paymentAccountId, setPaymentAccountId] = useState(initialPaymentAccountId);
   const selectedPaymentAccount = paymentAccounts.find((account) => account.id === paymentAccountId);
   const paymentAccountOptions = paymentAccounts.length > 0
     ? getAccountOptionLabels(paymentAccounts)
@@ -204,6 +215,7 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
       setTotalAmount("");
       setRepaidAmount("");
       setDurationMonths("12");
+      setStartDate(formatDateInput(new Date()));
       setNotes("");
       showSuccess(`${recordLabel} saved successfully.`);
       return;
@@ -288,19 +300,31 @@ export function AddDebtForm({ accounts, categories, debt }: { accounts: AccountR
               <span className="mt-1 block text-xs font-medium text-[#45464d]">Based on remaining balance and the {isOneTime ? `one-time ${effectiveNature === "Lending" ? "return" : "repayment"}` : `next ${effectiveNature === "Lending" ? "return" : "payment"}`} date.</span>
             </div>
             <div>
-              <SelectInput label="Borrowing / Lending Category" onChange={(name) => {
+              <SelectInput label="Borrowing & Lending Category" onChange={(name) => {
                 const nextCategory = debtCategories.find((category) => category.name === name);
                 setSelectedCategoryId(nextCategory?.id ?? "");
                 if (isCreditCardDebtType(nextCategory?.name) && accounts.find((account) => account.id === paymentAccountId)?.type !== "Credit Card") {
                   const nextAccount = availableAccounts.find((account) => account.type === "Credit Card");
+                  if (nextAccount) setAccountCategory(accountCategoryLabel(nextAccount));
                   setPaymentAccountId(nextAccount?.id ?? "");
                   setAccountAmountType(nextAccount ? "Credit Card" : "");
                 }
-              }} options={debtCategoryOptions} value={selectedCategory?.name ?? "Uncategorized Borrowing / Lending"} />
-              {categoryHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Borrowing / lending category is required.</p> : null}
+              }} options={debtCategoryOptions} value={selectedCategory?.name ?? "Uncategorized Borrowing & Lending"} />
+              {categoryHasError ? <p className="mt-1 text-xs font-medium text-[#ba1a1a]">Borrowing & Lending category is required.</p> : null}
             </div>
           </div>
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <SelectInput
+              label="Account Category"
+              onChange={(category) => {
+                const nextAccount = getAccountsForCategory(eligiblePaymentAccounts, category)[0];
+                setAccountCategory(category);
+                setPaymentAccountId(nextAccount?.id ?? "");
+                setAccountAmountType(accountAmountTypeOptionsFor(nextAccount)[0] ?? "");
+              }}
+              options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]}
+              value={accountCategory || "No account categories"}
+            />
             <div>
               <SelectInput label={semanticIsCreditCard ? "Credit Card Account" : effectiveNature === "Lending" ? "Funding / Return Account" : "Receiving / Payment Account"} onChange={(name) => {
                 const nextAccount = findAccountByOptionLabel(paymentAccounts, name);

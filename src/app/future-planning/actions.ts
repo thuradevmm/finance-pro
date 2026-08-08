@@ -200,7 +200,7 @@ async function validateOwnedReferences(
       if (input.type !== "Expense") return "Subscription payments must be planned as Debits.";
     } else if (input.relatedEntityType === "debt") {
       if (!preservesLinkedRecord && ["archived", "cancelled", "canceled", "completed", "paid"].includes(linkedStatus)) {
-        return "Completed or archived borrowing / lending records cannot receive a new plan.";
+        return "Completed or archived Borrowing & Lending records cannot receive a new plan.";
       }
       const nature = normalizeDebtNature(linkedMetadata.debt_nature, String(linkedResult.data.name ?? ""));
       const requiredType = nature === "Lending" ? "Income" : "Expense";

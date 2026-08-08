@@ -11,6 +11,7 @@ import { Icon } from "@/components/ui/icon";
 import { LoadingButton } from "@/components/ui/loading-state";
 import { ResponsiveAmount } from "@/components/ui/responsive-amount";
 import { useToast } from "@/components/ui/toast-provider";
+import { accountCategoryLabel, getAccountCategoryForId, getAccountCategoryOptions, getAccountsForCategory } from "@/lib/accounts/selection";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -85,6 +86,7 @@ export function FutureTransactionForm({
     [accounts, transaction?.accountId, type],
   );
   const initialAccount = planningAccounts.find((account) => account.id === transaction?.accountId) ?? planningAccounts[0];
+  const [accountCategory, setAccountCategory] = useState(getAccountCategoryForId(planningAccounts, initialAccount?.id ?? ""));
   const [accountId, setAccountId] = useState(initialAccount?.id ?? "");
   const [accountAmountType, setAccountAmountType] = useState(transaction?.accountAmountType ?? accountAmountTypeOptions(initialAccount)[0]);
   const initialCategories = categoriesForPlan(categories, transaction?.type ?? "Expense", transaction?.categoryId);
@@ -107,7 +109,12 @@ export function FutureTransactionForm({
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const selectedAccount = planningAccounts.find((account) => account.id === accountId) ?? planningAccounts[0];
+  const accountCategoryOptions = useMemo(() => getAccountCategoryOptions(planningAccounts), [planningAccounts]);
+  const accountOptions = useMemo(
+    () => getAccountsForCategory(planningAccounts, accountCategory),
+    [accountCategory, planningAccounts],
+  );
+  const selectedAccount = accountOptions.find((account) => account.id === accountId) ?? accountOptions[0];
   const amountTypeOptions = useMemo(
     () => accountAmountTypeOptions(
       selectedAccount,
@@ -181,15 +188,33 @@ export function FutureTransactionForm({
       setRelatedEntityType("none");
       setRelatedEntityAmountSnapshot(null);
     }
+    const nextPlanningAccounts = accounts.filter((account) => account.id === transaction?.accountId
+      || (account.status !== "Archived" && (nextType === "Expense" || account.type !== "Credit Card")));
+    if (!nextPlanningAccounts.some((account) => account.id === selectedAccount?.id)) {
+      const nextAccount = nextPlanningAccounts[0];
+      setAccountCategory(getAccountCategoryForId(nextPlanningAccounts, nextAccount?.id ?? ""));
+      setAccountId(nextAccount?.id ?? "");
+      setAccountAmountType(accountAmountTypeOptions(nextAccount)[0] ?? "General");
+    }
   }
 
   function handleAccountChange(label: string) {
-    const account = findAccountByOptionLabel(planningAccounts, label);
+    const account = findAccountByOptionLabel(accountOptions, label);
     if (!account) return;
     setAccountId(account.id);
     setAccountAmountType(accountAmountTypeOptions(
       account,
       account.id === transaction?.accountId ? transaction.accountAmountType : undefined,
+    )[0] ?? "General");
+  }
+
+  function handleAccountCategoryChange(category: string) {
+    const account = getAccountsForCategory(planningAccounts, category)[0];
+    setAccountCategory(category);
+    setAccountId(account?.id ?? "");
+    setAccountAmountType(accountAmountTypeOptions(
+      account,
+      account?.id === transaction?.accountId ? transaction.accountAmountType : undefined,
     )[0] ?? "General");
   }
 
@@ -221,6 +246,7 @@ export function FutureTransactionForm({
     if (option.accountId) {
       const linkedAccount = accounts.find((account) => account.id === option.accountId);
       if (linkedAccount) {
+        setAccountCategory(accountCategoryLabel(linkedAccount));
         setAccountId(linkedAccount.id);
         const linkedAmountTypes = accountAmountTypeOptions(linkedAccount);
         setAccountAmountType(option.accountAmountType && linkedAmountTypes.includes(option.accountAmountType)
@@ -429,8 +455,9 @@ export function FutureTransactionForm({
           </div>
           {planningAccounts.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <SelectInput label="Account" onChange={handleAccountChange} options={getAccountOptionLabels(planningAccounts)} value={selectedAccount ? getAccountOptionLabel(selectedAccount, planningAccounts) : ""} />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <SelectInput label="Account Category" onChange={handleAccountCategoryChange} options={accountCategoryOptions} value={accountCategory} />
+                <SelectInput label="Account" onChange={handleAccountChange} options={getAccountOptionLabels(accountOptions)} value={selectedAccount ? getAccountOptionLabel(selectedAccount, accountOptions) : ""} />
                 <SelectInput label="Account Amount Type" onChange={setAccountAmountType} options={amountTypeOptions} value={effectiveAmountType} />
               </div>
               <p className="mt-2 text-xs font-semibold text-[#76777d]">{selectedAccount ? getAccountOptionDescription(selectedAccount) : ""}</p>

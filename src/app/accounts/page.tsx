@@ -33,9 +33,10 @@ const statusStyles: Record<AccountStatus, string> = {
 };
 
 type AccountViewMode = "Card" | "List" | "Lookup";
-type AccountSortKey = "account" | "balance" | "status" | "type";
+type AccountSortKey = "account" | "balance" | "category" | "status" | "type";
 
 const accountSortOptions: { label: string; value: AccountSortKey }[] = [
+  { label: "Account Category", value: "category" },
   { label: "Account", value: "account" },
   { label: "Type", value: "type" },
   { label: "Status", value: "status" },
@@ -88,7 +89,7 @@ function AccountFilters({
     >
       <TextInput label="Search Accounts" name="q" onChange={(value) => setDraft((current) => ({ ...current, q: value }))} placeholder="Name, category, type, number..." value={draft.q} />
       <SelectInput label="View Mode" name="view" onChange={(value) => setDraft((current) => ({ ...current, view: value as AccountViewMode }))} options={["Lookup", "List", "Card"]} value={draft.view} />
-      <SelectInput label="Category" name="accountCategory" onChange={(value) => setDraft((current) => ({ ...current, accountCategory: value }))} options={categoryOptions} value={draft.accountCategory} />
+      <SelectInput label="Account Category" name="accountCategory" onChange={(value) => setDraft((current) => ({ ...current, accountCategory: value }))} options={categoryOptions} value={draft.accountCategory} />
       <SelectInput label="Type" name="accountType" onChange={(value) => setDraft((current) => ({ ...current, accountType: value }))} options={typeOptions} value={draft.accountType} />
       <SelectInput label="Status" name="accountStatus" onChange={(value) => setDraft((current) => ({ ...current, accountStatus: value }))} options={["All statuses", "Active", "Needs Review", "Archived"]} value={draft.accountStatus} />
       <div className="flex items-end gap-2">
@@ -884,12 +885,13 @@ function AccountsTable({
   onView: (account: AccountRecord) => void;
   returnTo: string;
 }) {
-  const [sortKey, setSortKey] = useState<AccountSortKey>("account");
+  const [sortKey, setSortKey] = useState<AccountSortKey>("category");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const sortedItems = useMemo(() => {
     function value(account: AccountRecord) {
       if (sortKey === "account") return `${account.name} ${account.institution}`.toLowerCase();
       if (sortKey === "balance") return account.balanceValue;
+      if (sortKey === "category") return `${account.category || "Uncategorized"} ${account.name}`.toLowerCase();
       return String(account[sortKey]).toLowerCase();
     }
     return [...items].sort((first, second) => compareSortValues(value(first), value(second), sortDirection));
@@ -955,6 +957,7 @@ function AccountsTable({
           <thead>
             <tr className="border-b border-[#c6c6cd]/50">
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("account")} sortDirection={sortKey === "account" ? sortDirection : undefined}>Account</SortHeader></th>
+              <th className="px-4 py-3"><SortHeader onSort={() => handleSort("category")} sortDirection={sortKey === "category" ? sortDirection : undefined}>Account Category</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("type")} sortDirection={sortKey === "type" ? sortDirection : undefined}>Type</SortHeader></th>
               <th className="px-4 py-3"><SortHeader onSort={() => handleSort("status")} sortDirection={sortKey === "status" ? sortDirection : undefined}>Status</SortHeader></th>
               <th className="px-4 py-3 text-right"><SortHeader align="right" onSort={() => handleSort("balance")} sortDirection={sortKey === "balance" ? sortDirection : undefined}>Balance / Credit</SortHeader></th>
@@ -977,6 +980,7 @@ function AccountsTable({
                     </div>
                   </div>
                 </td>
+                <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.category || "Uncategorized"}</td>
                 <td className="whitespace-nowrap px-4 py-4 font-medium text-[#45464d]">{account.type}</td>
                 <td className="px-4 py-4">
                   <StatusBadge status={account.status} />

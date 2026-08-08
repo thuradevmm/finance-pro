@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { SYSTEM_CURRENCY, formatCurrencyAmount, formatMmkPreview } from "@/lib/currency";
 import { exchangeRateFor, type CurrencySettings } from "@/lib/currency-conversion";
 import { isValidCalendarDate } from "@/lib/date-validation";
+import { getAccountCategoryForId, getAccountCategoryOptions, getAccountsForCategory } from "@/lib/accounts/selection";
 import { findAccountByOptionLabel, getAccountOptionDescription, getAccountOptionLabel, getAccountOptionLabels, type AccountRecord } from "@/lib/accounts/supabase";
 import { getCategoriesForScope } from "@/lib/categories/category-scopes";
 import type { CategoryRecord } from "@/lib/categories/supabase";
@@ -45,14 +46,21 @@ export function AddSubscriptionForm({ accounts, categories, currencySettings, su
   const router = useRouter();
   const beginLoading = useInteractionLoading();
   const subscriptionCategories = useMemo(() => getCategoriesForScope(categories, "Subscriptions", "Subscription"), [categories]);
-  const paymentAccounts = useMemo(() => accounts.filter((account) => account.status !== "Archived"), [accounts]);
+  const eligiblePaymentAccounts = useMemo(() => accounts.filter((account) => account.status !== "Archived"), [accounts]);
   const [serviceName, setServiceName] = useState(subscription?.name ?? "");
   const [billingCurrency, setBillingCurrency] = useState(subscription?.billingCurrency ?? SYSTEM_CURRENCY);
   const [billedAmount, setBilledAmount] = useState(subscription ? String(subscription.billedAmountValue) : "");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(subscription?.billingCycle ?? "Monthly");
   const [nextBillingDate, setNextBillingDate] = useState(subscription?.nextBillingDateValue ?? defaultNextBillingDate());
   const [categoryId, setCategoryId] = useState(subscription?.categoryId ?? subscriptionCategories[0]?.id ?? "");
-  const [paymentAccountId, setPaymentAccountId] = useState(subscription?.accountId ?? paymentAccounts[0]?.id ?? "");
+  const initialPaymentAccountId = subscription?.accountId ?? eligiblePaymentAccounts[0]?.id ?? "";
+  const [accountCategory, setAccountCategory] = useState(getAccountCategoryForId(eligiblePaymentAccounts, initialPaymentAccountId));
+  const accountCategoryOptions = useMemo(() => getAccountCategoryOptions(eligiblePaymentAccounts), [eligiblePaymentAccounts]);
+  const paymentAccounts = useMemo(
+    () => getAccountsForCategory(eligiblePaymentAccounts, accountCategory),
+    [accountCategory, eligiblePaymentAccounts],
+  );
+  const [paymentAccountId, setPaymentAccountId] = useState(initialPaymentAccountId);
   const [status, setStatus] = useState<SubscriptionStatus>(subscription?.status ?? "Active");
   const [reminderEnabled, setReminderEnabled] = useState(subscription?.reminderEnabled ?? true);
   const [reminderDaysBefore, setReminderDaysBefore] = useState(subscription?.reminderDaysBefore ?? 3);
@@ -77,7 +85,7 @@ export function AddSubscriptionForm({ accounts, categories, currencySettings, su
   const yearlyAmount = billingCycle === "Yearly" ? convertedAmount : billingCycle === "Weekly" ? convertedAmount * 52 : convertedAmount * 12;
 
   async function handleSaveSubscription(addAnother = false) {
-    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateIsInvalid || !isValidCalendarDate(nextBillingDate);
+    const hasErrors = serviceName.trim() === "" || billedAmount.trim() === "" || parsedBilledAmount <= 0 || exchangeRateIsInvalid || !isValidCalendarDate(nextBillingDate) || !selectedCategory || !selectedAccount;
     setShowErrors(hasErrors);
     setFormError("");
     if (hasErrors) return;
@@ -164,8 +172,18 @@ export function AddSubscriptionForm({ accounts, categories, currencySettings, su
             </div>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
             <SelectInput label="Subscription Category" onChange={(name) => setCategoryId(subscriptionCategories.find((category) => category.name === name)?.id ?? "")} options={subscriptionCategories.length > 0 ? subscriptionCategories.map((category) => category.name) : ["No subscription categories"]} value={selectedCategory?.name ?? "No subscription categories"} />
+            <SelectInput
+              label="Account Category"
+              onChange={(category) => {
+                const nextAccount = getAccountsForCategory(eligiblePaymentAccounts, category)[0];
+                setAccountCategory(category);
+                setPaymentAccountId(nextAccount?.id ?? "");
+              }}
+              options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]}
+              value={accountCategory || "No account categories"}
+            />
             <div>
               <SelectInput label="Payment Account" onChange={(name) => setPaymentAccountId(findAccountByOptionLabel(paymentAccounts, name)?.id ?? "")} options={paymentAccounts.length > 0 ? getAccountOptionLabels(paymentAccounts) : ["No accounts"]} value={selectedAccount ? getAccountOptionLabel(selectedAccount, paymentAccounts) : "No accounts"} />
               {selectedAccount ? <p className="mt-2 text-xs font-semibold text-[#76777d]">{getAccountOptionDescription(selectedAccount)}</p> : null}

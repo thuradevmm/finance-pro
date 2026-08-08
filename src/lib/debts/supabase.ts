@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { IconName } from "@/components/ui/icon";
 import { buildCreditCardDueBuckets, consolidateCreditCardDueBuckets } from "@/lib/accounts/credit-card-dates";
 import { formatMmk } from "@/lib/currency";
+import { convertToBaseCurrency } from "@/lib/currency-conversion";
+import { getCurrencySettings } from "@/lib/currency-settings";
 import { combineDateWithTimestampTime, dateTimeSortValue, formatDisplayDate } from "@/lib/date-format";
 import type { CategoryRecord } from "@/lib/categories/supabase";
 import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, normalizeDebtRepaymentDate, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
@@ -126,6 +128,11 @@ type LinkedTransactionRow = {
   transfer_account_id: string | null;
   type: string | null;
   related_entity_id: string | null;
+};
+
+type DebtAccountCurrencyRow = {
+  currency_code: string | null;
+  id: string;
 };
 
 const debtAppearances: Record<string, { bg: string; icon: IconName; tone: string }> = {
@@ -415,7 +422,7 @@ export async function getDebts(
   options: { asOfDate?: string; limit?: number } = {},
 ) {
   const asOfTimestamp = options.asOfDate ? `${options.asOfDate}T23:59:59.999Z` : "";
-  const [debtRows, transactionRows, debtPaymentRows] = await Promise.all([
+  const [debtRows, transactionRows, debtPaymentRows, accountRows, currencySettings] = await Promise.all([
     fetchSupabaseRows<DebtRow>(
       (from, to) => {
         const query = supabase
@@ -448,6 +455,13 @@ export async function getDebts(
         .range(from, to);
       return options.asOfDate ? query.lte("payment_date", options.asOfDate) : query;
     }),
+    fetchSupabaseRows<DebtAccountCurrencyRow>((from, to) => supabase
+      .from("accounts")
+      .select("id,currency_code")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .range(from, to)),
+    getCurrencySettings(supabase, userId, options.asOfDate),
   ]);
   const datedDebtRows = options.asOfDate
     ? debtRows.filter((row) => {
@@ -457,8 +471,24 @@ export async function getDebts(
     })
     : debtRows;
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const accountCurrencies = new Map(accountRows.map((account) => [account.id, account.currency_code]));
+  const baseCurrencyTransactionRows = transactionRows.map((transaction) => {
+    const baseAmount = convertToBaseCurrency(
+      Math.abs(Number(transaction.amount) || 0),
+      accountCurrencies.get(transaction.account_id ?? ""),
+      currencySettings,
+      transaction.transaction_date ?? undefined,
+    );
+    return {
+      ...transaction,
+      metadata: {
+        ...metadataRecord(transaction.metadata),
+        ...(baseAmount == null ? {} : { debt_base_amount: baseAmount }),
+      },
+    };
+  });
   const transactionLedgers = buildDebtTransactionLedgers([
-    ...transactionRows,
+    ...baseCurrencyTransactionRows,
     ...standaloneDebtPaymentTransactions(debtPaymentRows),
   ], datedDebtRows);
   return datedDebtRows
