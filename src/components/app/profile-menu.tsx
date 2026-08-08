@@ -107,7 +107,7 @@ export function ProfileMenu({ active = false, compact = false, onNavigate, place
         className={
           compact
             ? `grid size-11 place-items-center rounded-md text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 ${active ? "bg-[#2170e4] text-white" : "bg-[#eff6ff] text-[#0369a1] hover:bg-[#dce9ff]"}`
-            : `flex min-h-11 w-full items-center gap-2 rounded-md border py-1 pl-1 pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 ${active ? "border-[#2170e4] bg-[#2170e4] text-white" : "border-[#c6c6cd]/70 bg-white text-[#0b1c30] hover:bg-[#eff4ff]"}`
+            : `flex min-h-11 w-full items-center gap-2 rounded-md border py-1 pl-2 pr-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2170e4]/25 ${active ? "border-[#2170e4] bg-[#2170e4] text-white" : "border-[#c6c6cd]/70 bg-white text-[#0b1c30] hover:bg-[#eff4ff]"}`
         }
         onClick={() => setIsOpen((current) => !current)}
         type="button"
