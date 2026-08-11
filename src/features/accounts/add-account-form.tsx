@@ -225,9 +225,24 @@ export function AddAccountForm({
   const [currency, setCurrency] = useState(account?.currency ?? "MMK");
   const [status, setStatus] = useState<AccountStatus>(account?.status ?? "Active");
   const accountCategories = useMemo(() => getCategoriesForScope(categories, "Accounts"), [categories]);
+  const preservedHiddenCategory = useMemo(() => {
+    if (!account) return undefined;
+    return categories.find((category) => category.status === "Hidden"
+      && category.level !== "Super"
+      && category.type === "Account"
+      && category.scopes.includes("Accounts")
+      && (category.id === account.categoryId || (!account.categoryId && category.name === account.category)));
+  }, [account, categories]);
   const matchedCategories = accountCategories.filter((category) => categoryMatchesAccountType(category, selectedType));
-  const scopedCategories = matchedCategories.length > 0 ? matchedCategories : accountCategories;
-  const accountCategoryOptions = scopedCategories.map((category) => category.name);
+  const availableScopedCategories = matchedCategories.length > 0 ? matchedCategories : accountCategories;
+  const scopedCategories = preservedHiddenCategory
+    && !availableScopedCategories.some((category) => category.id === preservedHiddenCategory.id)
+    ? [preservedHiddenCategory, ...availableScopedCategories]
+    : availableScopedCategories;
+  const categoryOptionLabel = (category: (typeof scopedCategories)[number]) => category.status === "Hidden"
+    ? `${category.name} (Hidden)`
+    : category.name;
+  const accountCategoryOptions = scopedCategories.map(categoryOptionLabel);
   const initialCategory = scopedCategories.find((category) => category.id === account?.categoryId)
     ?? scopedCategories.find((category) => category.name === account?.category)
     ?? scopedCategories[0];
@@ -542,7 +557,7 @@ export function AddAccountForm({
           <FormCard title="Account Settings">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <SelectInput label="Status" onChange={(value) => setStatus(value as AccountStatus)} options={statuses} value={status} />
-              <SelectInput label="Account Category" onChange={(name) => setSelectedCategoryId(scopedCategories.find((category) => category.name === name)?.id ?? "")} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory?.name || "No account categories"} />
+              <SelectInput label="Account Category" onChange={(label) => setSelectedCategoryId(scopedCategories.find((category) => categoryOptionLabel(category) === label)?.id ?? "")} options={accountCategoryOptions.length > 0 ? accountCategoryOptions : ["No account categories"]} value={effectiveSelectedCategory ? categoryOptionLabel(effectiveSelectedCategory) : "No account categories"} />
             </div>
 
             <div className="mt-5">

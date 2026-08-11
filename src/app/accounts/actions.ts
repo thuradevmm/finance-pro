@@ -7,6 +7,7 @@ import { accountArchivalIntegrityError } from "@/lib/accounts/archive-integrity"
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { getAccounts, type AccountFormData } from "@/lib/accounts/supabase";
 import { accountTypeChangesLedgerMeaning } from "@/lib/accounts/type-integrity";
+import { storedRecordIsInactive } from "@/lib/records/lifecycle";
 import { createClient } from "@/lib/supabase/server";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
@@ -88,7 +89,6 @@ async function getAccountUsage(
     supabase.from("savings_goals").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
     supabase.from("subscriptions").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
     supabase.from("scenario_items").select("id").eq("user_id", userId).eq("account_id", accountId).limit(1),
-    supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
   ]);
   const usageError = results.find((result) => result.error)?.error;
 
@@ -107,7 +107,7 @@ async function activeAccountDependents(
   userId: string,
   accountId: string,
 ) {
-  const [transactionsResult, debtsResult, goalsResult, subscriptionsResult, settingsResult] = await Promise.all([
+  const [transactionsResult, debtsResult, goalsResult, subscriptionsResult] = await Promise.all([
     supabase
       .from("transactions")
       .select("id,status,metadata")
@@ -117,15 +117,14 @@ async function activeAccountDependents(
       .or(`account_id.eq.${accountId},transfer_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId}`),
     supabase
       .from("debts")
-      .select("id,status,metadata")
+      .select("*")
       .eq("user_id", userId)
       .is("deleted_at", null)
       .or(`account_id.eq.${accountId},payment_account_id.eq.${accountId},metadata->>credit_card_account_id.eq.${accountId},metadata->>auto_credit_card_account_id.eq.${accountId}`),
-    supabase.from("savings_goals").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
-    supabase.from("subscriptions").select("id,status,metadata").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
-    supabase.from("user_settings").select("user_id").eq("user_id", userId).eq("default_account_id", accountId).limit(1),
+    supabase.from("savings_goals").select("*").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
+    supabase.from("subscriptions").select("*").eq("user_id", userId).eq("account_id", accountId).is("deleted_at", null),
   ]);
-  const firstError = [transactionsResult, debtsResult, goalsResult, subscriptionsResult, settingsResult]
+  const firstError = [transactionsResult, debtsResult, goalsResult, subscriptionsResult]
     .find((result) => result.error)?.error;
   if (firstError) return { dependencies: [] as string[], error: firstError.message };
 
@@ -135,17 +134,18 @@ async function activeAccountDependents(
     return normalizedStatus(metadataRecord(transaction.metadata).future_status || "active") !== "paused";
   });
   if (hasScheduledTransaction) dependencies.push("scheduled transactions");
-  if ((debtsResult.data ?? []).some((debt) => !["archived", "cancelled", "canceled", "completed", "paid"].includes(normalizedStatus(debt.status || metadataRecord(debt.metadata).status)))) {
+  if ((debtsResult.data ?? []).some((debt) => !storedRecordIsInactive(debt)
+    && !["archived", "cancelled", "canceled", "completed", "paid"].includes(normalizedStatus(debt.status || metadataRecord(debt.metadata).status)))) {
     dependencies.push("active debts");
   }
-  if ((goalsResult.data ?? []).some((goal) => !["archived", "completed"].includes(normalizedStatus(goal.status || metadataRecord(goal.metadata).status)))) {
+  if ((goalsResult.data ?? []).some((goal) => !storedRecordIsInactive(goal)
+    && !["archived", "completed"].includes(normalizedStatus(goal.status || metadataRecord(goal.metadata).status)))) {
     dependencies.push("active savings goals");
   }
-  if ((subscriptionsResult.data ?? []).some((subscription) => ["active", "expiring"].includes(normalizedStatus(subscription.status || metadataRecord(subscription.metadata).status)))) {
+  if ((subscriptionsResult.data ?? []).some((subscription) => !storedRecordIsInactive(subscription)
+    && ["active", "expiring"].includes(normalizedStatus(subscription.status || metadataRecord(subscription.metadata).status)))) {
     dependencies.push("active subscriptions");
   }
-
-  if ((settingsResult.data?.length ?? 0) > 0) dependencies.push("the default account setting");
   return { dependencies, error: "" };
 }
 
@@ -153,6 +153,24 @@ function metadataRecord(metadata: unknown) {
   return metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? metadata as Record<string, unknown>
     : {};
+}
+
+function accountLifecycleMetadata(
+  metadata: Record<string, unknown>,
+  state: "active" | "archived",
+  changedAt: string,
+) {
+  const events = Array.isArray(metadata.lifecycle_events)
+    ? metadata.lifecycle_events.filter((event) => event && typeof event === "object" && !Array.isArray(event))
+    : [];
+  if (events.length === 0 && typeof metadata.archived_at === "string" && metadata.archived_at) {
+    events.push({ at: metadata.archived_at, state: "archived" });
+  }
+  const previous = metadataRecord(events.at(-1));
+  const lifecycleEvents = previous.state === state
+    ? events
+    : [...events, { at: changedAt, state }];
+  return { ...metadata, lifecycle_events: lifecycleEvents };
 }
 
 function metadataArray(value: unknown) {
@@ -659,9 +677,25 @@ export async function updateAccount(accountId: string, input: AccountFormData): 
   const catalogError = await syncAmountTypeCatalog(supabase, user.id, validatedInput.amountTypes);
   if (catalogError) return { error: catalogError };
   const amountTypeMigrations = amountTypeMigrationTargets(existingMetadata, validatedInput.amountTypes);
+  const isRestoring = existingAccount.is_active === false && validatedInput.status !== "Archived";
+  const isArchiving = existingAccount.is_active !== false && validatedInput.status === "Archived";
+  const lifecycleChangedAt = isRestoring || isArchiving ? new Date().toISOString() : "";
+  const lifecycleMetadata = isArchiving
+    ? {
+      ...accountLifecycleMetadata(existingMetadata, "archived", lifecycleChangedAt),
+      archived_at: lifecycleChangedAt,
+      retirement_reason: "no_longer_used",
+    }
+    : isRestoring
+      ? {
+        ...accountLifecycleMetadata(existingMetadata, "active", lifecycleChangedAt),
+        archived_at: null,
+        restored_at: lifecycleChangedAt,
+      }
+      : existingMetadata;
   const { data, error } = await supabase
     .from("accounts")
-    .update(accountPayload(validatedInput, { existingMetadata, includeInitialBalance: false }))
+    .update(accountPayload(validatedInput, { existingMetadata: lifecycleMetadata, includeInitialBalance: false }))
     .eq("id", accountId)
     .eq("user_id", user.id)
     .select("id")
@@ -701,7 +735,7 @@ export async function archiveAccount(accountId: string): Promise<ActionResult> {
     .update({
       is_active: false,
       metadata: {
-        ...metadata,
+        ...accountLifecycleMetadata(metadata, "archived", archivedAt),
         archived_at: archivedAt,
         retirement_reason: "no_longer_used",
         status: "Archived",
@@ -732,14 +766,15 @@ export async function restoreAccount(accountId: string): Promise<ActionResult> {
   if (targetError) return { error: targetError.message };
   if (!target) return { error: "Account not found." };
   const metadata = metadataRecord(target.metadata);
+  const restoredAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("accounts")
     .update({
       is_active: true,
       metadata: {
-        ...metadata,
+        ...accountLifecycleMetadata(metadata, "active", restoredAt),
         archived_at: null,
-        restored_at: new Date().toISOString(),
+        restored_at: restoredAt,
         status: "Active",
       },
     })

@@ -10,16 +10,22 @@ function source(path) {
   return readFileSync(join(projectRoot, path), "utf8");
 }
 
-test("linked module records with transaction history cannot be deleted", () => {
+test("linked module records retire without deleting their financial history", () => {
   const assets = source("src/app/assets/actions.ts");
+  const debts = source("src/app/debts/actions.ts");
   const savings = source("src/app/savings-goals/actions.ts");
   const subscriptions = source("src/app/subscriptions/actions.ts");
 
   assert.match(assets, /from\("transactions"\)[\s\S]*related_entity_type", "asset"/);
+  assert.match(assets, /export async function archiveAsset/);
   assert.match(assets, /Change its status to Archived so its transactions remain reconcilable/);
+  assert.match(debts, /export async function archiveDebt/);
+  assert.match(debts, /Deactivate it instead; account,/);
   assert.match(savings, /from\("transactions"\)[\s\S]*related_entity_type", "savings_goal"/);
-  assert.match(savings, /linked financial history and cannot be deleted/);
+  assert.match(savings, /export async function archiveSavingsGoal/);
+  assert.match(savings, /Deactivate it instead; its transfers and account balance will remain reconciled/);
   assert.match(subscriptions, /from\("subscription_payments"\)/);
+  assert.match(subscriptions, /export async function deactivateSubscription/);
   assert.match(subscriptions, /Change its status to Paused so its transactions remain reconcilable/);
 });
 

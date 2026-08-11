@@ -53,6 +53,8 @@ export type SavingsGoal = {
   contributionPercentage: number;
   contributionType: SavingsContributionType;
   goalType: SavingsGoalType;
+  hasFinancialHistory: boolean;
+  isArchived: boolean;
   status: SavingsGoalStatus;
   icon: IconName;
   tone: string;
@@ -73,6 +75,8 @@ export type DebtRecord = {
   nextPaymentDate: string;
   nextPaymentDateTimeValue?: string;
   progressPercent: number;
+  hasFinancialHistory: boolean;
+  isArchived: boolean;
   status: DebtStatus;
   icon: IconName;
   tone: string;
@@ -128,6 +132,8 @@ export type SubscriptionRecord = {
   reminderEnabled: boolean;
   reminderStatus: string;
   isPaidForCurrentPeriod: boolean;
+  hasFinancialHistory: boolean;
+  isArchived: boolean;
   icon: IconName;
   tone: string;
   bg: string;
@@ -161,6 +167,8 @@ export type AssetRecord = {
   currentValue: string;
   usageDuration: string;
   condition: "Excellent" | "Good" | "Fair" | "Needs Repair";
+  hasFinancialHistory: boolean;
+  isArchived: boolean;
   status: AssetStatus;
   note: string;
   icon: IconName;

@@ -29,8 +29,8 @@ test("category mutations mirror lifecycle data into metadata and retry legacy wr
   assert.match(actions, /isMissingDatabaseObject\(error, \["category_type", "category_level", "financial_role", "reporting_role", "archived_at"\]\)/);
   assert.match(actions, /schemaUpgradeRequiredMessage\("Category merge"\)/);
   assert.match(actions, /optionalFutureColumnsMissing/);
-  assert.match(actions, /eq\("category_id", categoryId\)\.eq\("is_active", true\)/);
-  assert.match(actions, /\.delete\(\)[\s\S]*\.eq\("category_id", categoryId\)[\s\S]*\.eq\("is_active", false\)/);
+  assert.match(actions, /from\("future_planning_columns"\)[^\n]+\.eq\("category_id", categoryId\)\.limit\(1\)/);
+  assert.doesNotMatch(actions, /from\("future_planning_columns"\)[\s\S]{0,220}\.delete\(\)/);
   assert.match(actions, /usage\.reasons\.join/);
   assert.match(actions, /schemaUpgradeRequiredMessage\("Super category child assignment"\)/);
 });

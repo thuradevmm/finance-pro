@@ -251,8 +251,8 @@ async function categoryIsUsed(
     supabase.from("savings_goals").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
     supabase.from("subscriptions").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
     supabase.from("scenario_items").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
-    supabase.from("future_planning_columns").select("id").eq("user_id", userId).eq("category_id", categoryId).eq("is_active", true).limit(1),
-    supabase.from("accounts").select("id").eq("user_id", userId).eq("metadata->>category_id", categoryId).is("deleted_at", null).limit(1),
+    supabase.from("future_planning_columns").select("id").eq("user_id", userId).eq("category_id", categoryId).limit(1),
+    supabase.from("accounts").select("id").eq("user_id", userId).eq("metadata->>category_id", categoryId).limit(1),
     supabase.from("categories").select("id").eq("user_id", userId).or(`parent_id.eq.${categoryId},merged_into_category_id.eq.${categoryId}`).limit(1),
     supabase.from("user_settings").select("user_id").eq("user_id", userId).or(`default_income_category_id.eq.${categoryId},default_expense_category_id.eq.${categoryId}`).limit(1),
   ]);
@@ -455,6 +455,27 @@ export async function mergeCategory(sourceCategoryId: string, targetCategoryId: 
     return { error: "Choose a different target category." };
   }
 
+  const { data: mergeRows, error: mergeRowsError } = await supabase
+    .from("categories")
+    .select("id,category_level,metadata")
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .in("id", [sourceCategoryId, targetCategoryId]);
+  if (mergeRowsError) {
+    return {
+      error: isMissingDatabaseObject(mergeRowsError, ["category_level"])
+        ? schemaUpgradeRequiredMessage("Category merge")
+        : mergeRowsError.message,
+    };
+  }
+  if ((mergeRows?.length ?? 0) !== 2) return { error: "Choose two categories that belong to your profile." };
+  const levelFor = (row: { category_level: string | null; metadata: unknown }) => String(
+    row.category_level ?? metadataRecord(row.metadata).category_level ?? "sub",
+  ).trim().toLowerCase();
+  if (levelFor(mergeRows[0]) !== levelFor(mergeRows[1])) {
+    return { error: "Merge super categories with super categories and subcategories with subcategories." };
+  }
+
   const { error } = await supabase.rpc("merge_categories", {
     p_source_category_id: sourceCategoryId,
     p_target_category_id: targetCategoryId,
@@ -484,19 +505,6 @@ export async function deleteCategory(categoryId: string): Promise<ActionResult> 
   const usage = await categoryIsUsed(supabase, user.id, categoryId);
   if (usage.error) return { error: usage.error };
   if (usage.used) return { error: `This category cannot be deleted because it is used by ${usage.reasons.join(", ")}.` };
-
-  // Removing a category from Future Planning archives its column so it can be
-  // restored without losing amounts. Once the category itself is explicitly
-  // deleted, those inactive planning records have no remaining meaning.
-  const { error: archivedPlanningError } = await supabase
-    .from("future_planning_columns")
-    .delete()
-    .eq("user_id", user.id)
-    .eq("category_id", categoryId)
-    .eq("is_active", false);
-  if (archivedPlanningError && !isMissingDatabaseObject(archivedPlanningError, ["future_planning_columns", "category_id"])) {
-    return { error: archivedPlanningError.message };
-  }
 
   const { data, error } = await supabase
     .from("categories")

@@ -9,6 +9,7 @@ import { transactionTypeLabel } from "@/lib/transactions/terminology";
 import { accountStatusContributesToCurrentTotals } from "@/lib/accounts/financial-status";
 import { categoryRowSupports } from "@/lib/categories/category-scopes";
 import { normalizeDebtNature } from "@/lib/debts/nature";
+import { storedRecordIsInactive } from "@/lib/records/lifecycle";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -139,6 +140,21 @@ async function authenticatedClient() {
   return { authError: error, supabase, user };
 }
 
+async function selectOwnedFutureLinkedRecord(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: "assets" | "debts" | "savings_goals" | "subscriptions",
+  relatedEntityId: string,
+  userId: string,
+) {
+  return supabase
+    .from(table)
+    .select("*")
+    .eq("id", relatedEntityId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+}
+
 async function validateOwnedReferences(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -178,13 +194,13 @@ async function validateOwnedReferences(
       && input.relatedEntityType === existing?.relatedEntityType;
     let linkedResult: { data: Record<string, unknown> | null; error: { message: string } | null };
     if (input.relatedEntityType === "asset") {
-      linkedResult = await supabase.from("assets").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+      linkedResult = await selectOwnedFutureLinkedRecord(supabase, "assets", input.relatedEntityId, userId);
     } else if (input.relatedEntityType === "debt") {
-      linkedResult = await supabase.from("debts").select("id,name,status,type,payment_account_id,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+      linkedResult = await selectOwnedFutureLinkedRecord(supabase, "debts", input.relatedEntityId, userId);
     } else if (input.relatedEntityType === "savings_goal") {
-      linkedResult = await supabase.from("savings_goals").select("id,status,account_id,account_amount_type,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+      linkedResult = await selectOwnedFutureLinkedRecord(supabase, "savings_goals", input.relatedEntityId, userId);
     } else {
-      linkedResult = await supabase.from("subscriptions").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+      linkedResult = await selectOwnedFutureLinkedRecord(supabase, "subscriptions", input.relatedEntityId, userId);
     }
     if (linkedResult.error) return linkedResult.error.message;
     if (!linkedResult.data && !preservesLinkedRecord) return "The linked record is no longer available.";
@@ -192,6 +208,9 @@ async function validateOwnedReferences(
 
     const linkedMetadata = metadataRecord(linkedResult.data.metadata);
     const linkedStatus = String(linkedResult.data.status ?? linkedMetadata.status ?? "active").trim().toLowerCase();
+    if (!preservesLinkedRecord && storedRecordIsInactive(linkedResult.data)) {
+      return "Deactivated linked records cannot receive a new plan. Restore the record first.";
+    }
     if (input.relatedEntityType === "asset") {
       if (!preservesLinkedRecord && linkedStatus !== "active") return "Only active assets can receive a new planned purchase.";
       if (input.type !== "Expense") return "Asset purchases must be planned as Debits.";

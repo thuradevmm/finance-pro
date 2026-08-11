@@ -140,7 +140,7 @@ metadata.
 
 | Module | Card / total | Authoritative source and formula |
 | --- | --- | --- |
-| Dashboard | Assets, liabilities, net worth | `summarizeNetWorth`; active/needs-review accounts and non-archived debts as of the selected end date |
+| Dashboard | Assets, liabilities, net worth | `summarizeNetWorth`; accounts active at the selected date plus every non-deleted debt position as of that date, including deactivated debts with an outstanding balance |
 | Dashboard | Reconciliation | Independent opening snapshot + finalized period activity compared with the ending snapshot |
 | Accounts | Amount-type totals | `buildAccountLedgerActivities` grouped by active amount type |
 | Accounts | Card limit/outstanding/available | `calculateCreditCardPosition` per card, then `summarizeCreditCardLookup` |
@@ -156,6 +156,35 @@ metadata.
 All readers exclude soft-deleted rows at the query boundary. Server actions
 revalidate every dependent route after create, update, clear, delete, and
 reverse operations so a navigation or refresh receives the updated values.
+
+## Safe record retirement
+
+Delete and deactivate are intentionally different operations. A record may be
+soft-deleted only when it has no financial or dependent history. Once a record
+has a transaction, payment/entry/history row, stored financial amount, or
+linked file, the parent record and all of that evidence are retained.
+
+| Feature | Safe user action | Accounting behavior |
+| --- | --- | --- |
+| Accounts | Archive / restore | Archive requires a zero reconciled position and no active dependents because archived accounts leave current account totals. Transactions remain unchanged, and dated reports use effective lifecycle history. |
+| Categories | Hide / restore or merge | Historical category references and Future Planning columns remain resolvable. A category used by an active or inactive planning column cannot be deleted. |
+| Assets | Archive / restore | Purchase transactions, recorded value, files, and history events remain unchanged; archived assets reject new purchase activity. |
+| Borrowing & Lending | Deactivate / restore | Origination, repayment, and return events remain unchanged. Outstanding borrowing remains a liability and outstanding lending remains a receivable in net worth; only new activity, reminders, and plans stop. |
+| Savings goals and funds | Deactivate / restore | Transfers, goal entries, the goal-owned amount type, and account cash remain unchanged; inactive goals leave new selectors and active-goal summaries. |
+| Subscriptions | Pause / restore | Payment history remains unchanged; paused subscriptions stop new payments, reminders, upcoming bills, and recurring projections. |
+| Future Planning columns | Remove / add again | Removal sets the column inactive. Re-adding the category restores the same column and retained monthly amounts. |
+
+The database independently rejects hard deletion or a `deleted_at` transition
+for used accounts, assets, debts, savings goals, and subscriptions. It also
+serializes new transaction, category, module, and legacy child-payment
+references against retirement so a concurrent write cannot attach to an
+inactive or foreign parent. Financial changes and scheduled-plan reactivation
+require the linked parent to be active; note-only corrections may retain an
+inactive historical reference. These guards inspect all linked transactions,
+including already soft-deleted transaction rows, and never alter transaction
+visibility. A migration recovers legacy tombstones only when they already have
+financial or dependent evidence, preserving stored savings capital exactly.
+Deactivation uses `is_active` and lifecycle metadata instead of `deleted_at`.
 
 ## Import, currency, cash advances, and exports
 

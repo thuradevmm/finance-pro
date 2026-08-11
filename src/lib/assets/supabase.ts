@@ -33,23 +33,27 @@ export type AssetRecordWithValues = AssetRecord & {
 };
 
 type AssetRow = {
+  archived_at?: string | null;
   category_id?: string | null;
   condition?: string | null;
   created_at?: string | null;
   current_value?: number | string | null;
   description?: string | null;
   id: string;
+  is_active?: boolean | null;
   metadata?: unknown;
   name: string;
   purchase_amount?: number | string | null;
   purchase_date?: string | null;
   start_using_date?: string | null;
   status?: string | null;
+  transaction_id?: string | null;
 };
 
 type LinkedTransactionRow = {
   account_id: string | null;
   amount: number | string | null;
+  deleted_at?: string | null;
   id: string;
   metadata: unknown;
   related_entity_id: string | null;
@@ -82,7 +86,12 @@ function normalizeStatus(value: unknown): AssetStatus {
   return "Active";
 }
 
-function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linkedPurchasesByAssetId: Map<string, number>): AssetRecordWithValues {
+function mapAsset(
+  row: AssetRow,
+  categories: Map<string, CategoryRecord>,
+  linkedPurchasesByAssetId: Map<string, number>,
+  assetsWithLinkedHistory: Set<string>,
+): AssetRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
   const category = categories.get(categoryId);
@@ -96,6 +105,11 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
   const currentValueValue = resolveAssetCurrentValue(row.current_value, metadata.current_value, purchaseAmountValue);
   const purchaseDateValue = row.purchase_date ?? (typeof metadata.purchase_date === "string" ? metadata.purchase_date : "");
   const startUsingDateValue = row.start_using_date ?? (typeof metadata.start_using_date === "string" ? metadata.start_using_date : purchaseDateValue);
+  const status = normalizeStatus(row.status ?? metadata.status);
+  const hasFinancialHistory = assetsWithLinkedHistory.has(row.id)
+    || Boolean(row.transaction_id)
+    || Math.abs(Number(row.purchase_amount ?? metadata.purchase_amount) || 0) > 0.005
+    || Math.abs(Number(row.current_value ?? metadata.current_value) || 0) > 0.005;
 
   return {
     bg: category?.bg ?? "bg-[#eff6ff]",
@@ -106,7 +120,9 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
     currentValue: formatMmk(currentValueValue),
     currentValueValue,
     icon: category?.icon ?? "box",
+    hasFinancialHistory,
     id: row.id,
+    isArchived: row.is_active === false || Boolean(row.archived_at) || status === "Archived",
     name: row.name,
     note: row.description ?? (typeof metadata.note === "string" ? metadata.note : ""),
     purchaseAmount: formatMmk(purchaseAmountValue),
@@ -118,7 +134,7 @@ function mapAsset(row: AssetRow, categories: Map<string, CategoryRecord>, linked
     startUsingDate: formatDisplayDate(startUsingDateValue, ""),
     startUsingDateTimeValue: combineDateWithTimestampTime(startUsingDateValue, row.created_at),
     startUsingDateValue,
-    status: normalizeStatus(row.status ?? metadata.status),
+    status,
     tone: category?.tone ?? "text-[#0058be]",
     usageDuration: "",
   };
@@ -128,20 +144,27 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
   let assetsQuery = supabase.from("assets").select("*").eq("user_id", userId).is("deleted_at", null).order("created_at", { ascending: false });
   if (options.limit) assetsQuery = assetsQuery.limit(options.limit);
 
-  const [assetsResult, transactionsResult, accountsResult, currencySettings] = await Promise.all([
+  const [assetsResult, transactionsResult, historyEventsResult, accountsResult, currencySettings] = await Promise.all([
     assetsQuery,
-    supabase.from("transactions").select("id,account_id,related_entity_id,type,amount,status,transaction_date,metadata").eq("user_id", userId).eq("related_entity_type", "asset").is("deleted_at", null),
+    supabase.from("transactions").select("id,account_id,related_entity_id,type,amount,status,transaction_date,metadata,deleted_at").eq("user_id", userId).eq("related_entity_type", "asset"),
+    supabase.from("asset_history_events").select("id,asset_id").eq("user_id", userId),
     supabase.from("accounts").select("id,currency_code").eq("user_id", userId).is("deleted_at", null),
     getCurrencySettings(supabase, userId),
   ]);
   if (assetsResult.error) throw new Error(assetsResult.error.message);
   if (transactionsResult.error) throw new Error(transactionsResult.error.message);
+  if (historyEventsResult.error) throw new Error(historyEventsResult.error.message);
   if (accountsResult.error) throw new Error(accountsResult.error.message);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const accountCurrencies = new Map((accountsResult.data as AssetAccountCurrencyRow[]).map((account) => [account.id, account.currency_code]));
   const linkedPurchasesByAssetId = new Map<string, number>();
+  const assetsWithLinkedHistory = new Set<string>(
+    (historyEventsResult.data ?? []).map((event) => event.asset_id),
+  );
   for (const transaction of transactionsResult.data as LinkedTransactionRow[]) {
     if (!transaction.related_entity_id) continue;
+    assetsWithLinkedHistory.add(transaction.related_entity_id);
+    if (transaction.deleted_at) continue;
     const contribution = linkedExpenseContributionDelta(transaction);
     const rate = exchangeRateFor(currencySettings, accountCurrencies.get(transaction.account_id ?? ""), transaction.transaction_date ?? undefined);
     linkedPurchasesByAssetId.set(
@@ -153,7 +176,7 @@ export async function getAssets(supabase: SupabaseClient, userId: string, catego
     );
   }
   return (assetsResult.data as AssetRow[])
-    .map((row) => mapAsset(row, categoriesById, linkedPurchasesByAssetId))
+    .map((row) => mapAsset(row, categoriesById, linkedPurchasesByAssetId, assetsWithLinkedHistory))
     .sort((first, second) => dateTimeSortValue(second.purchaseDateTimeValue) - dateTimeSortValue(first.purchaseDateTimeValue));
 }
 
@@ -164,11 +187,11 @@ export async function getAsset(supabase: SupabaseClient, userId: string, assetId
 
 export function getAssetSummaries(assets: AssetRecordWithValues[]): SummaryMetric[] {
   const currentValue = assets
-    .filter((asset) => asset.status === "Active")
+    .filter((asset) => !asset.isArchived && asset.status === "Active")
     .reduce((sum, asset) => sum + asset.currentValueValue, 0);
   return [
     { label: "Transaction-Backed Asset Value", value: formatMmk(currentValue), icon: "trendingUp", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
-    { label: "Active Assets", value: String(assets.filter((asset) => asset.status === "Active").length), icon: "dashboard", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Needs Attention", value: String(assets.filter((asset) => asset.status === "Active" && asset.condition === "Needs Repair").length), icon: "bell", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
+    { label: "Active Assets", value: String(assets.filter((asset) => !asset.isArchived && asset.status === "Active").length), icon: "dashboard", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
+    { label: "Needs Attention", value: String(assets.filter((asset) => !asset.isArchived && asset.status === "Active" && asset.condition === "Needs Repair").length), icon: "bell", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
   ];
 }

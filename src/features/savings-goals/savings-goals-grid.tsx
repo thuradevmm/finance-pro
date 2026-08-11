@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { deleteSavingsGoal } from "@/app/savings-goals/actions";
+import { archiveSavingsGoal, deleteSavingsGoal, restoreSavingsGoal } from "@/app/savings-goals/actions";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ProgressCircle } from "@/components/ui/progress-circle";
-import { RecordActions } from "@/components/ui/record-actions";
+import { RecordLifecycleActions } from "@/components/ui/record-lifecycle-actions";
 import { SearchField } from "@/components/ui/search-field";
 import { useToast } from "@/components/ui/toast-provider";
 import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
@@ -18,14 +18,22 @@ import { formatDisplayDate } from "@/lib/date-format";
 import type { SavingsGoalRecord } from "@/lib/savings-goals/supabase";
 import type { SavingsGoalStatus } from "@/types/finance";
 
-const statusStyles: Record<SavingsGoalStatus, string> = {
+const statusStyles: Record<SavingsGoalStatus | "Archived", string> = {
   Active: "bg-[#ecfdf5] text-[#166534]",
   "In Progress": "bg-[#ecfdf5] text-[#166534]",
   Behind: "bg-[#fffbeb] text-[#92400e]",
   Completed: "bg-[#eff6ff] text-[#0058be]",
+  Archived: "bg-[#f8f9ff] text-[#45464d]",
 };
 
-function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; onDelete: (id: string) => void | Promise<void>; onView: () => void }) {
+function SavingsGoalCard({ goal, onArchive, onDelete, onRestore, onView }: {
+  goal: SavingsGoalRecord;
+  onArchive: (id: string) => Promise<boolean>;
+  onDelete: (id: string) => void | Promise<void>;
+  onRestore: (id: string) => Promise<boolean>;
+  onView: () => void;
+}) {
+  const displayStatus = goal.isArchived ? "Archived" : goal.status;
   return (
     <article className="flex min-w-0 flex-col rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
       <div className="mb-5 flex min-w-0 flex-col gap-3 border-b border-[#c6c6cd]/40 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -38,7 +46,7 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
             <p className="mt-1 text-xs font-semibold text-[#45464d]">{goal.account}</p>
           </div>
         </div>
-        <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[goal.status]}`}>{goal.status}</span>
+        <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold uppercase ${statusStyles[displayStatus]}`}>{displayStatus}</span>
       </div>
 
       {goal.goalType === "Target" ? <ProgressCircle percent={goal.progressPercent} tone={goal.tone} /> : (
@@ -68,22 +76,30 @@ function SavingsGoalCard({ goal, onDelete, onView }: { goal: SavingsGoalRecord; 
           Future plan · {goal.categoryName} · {goal.contributionType === "Percentage" ? `${goal.contributionPercentage}% of surplus` : `${goal.monthlyContribution} / month`}
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning">
+          {!goal.isArchived ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning">
             <Icon className="size-4" name="timeline" />
             Open future plan
-          </Link>
-          <RecordActions
-            deleteDescription={`Deleting ${goal.name} will remove this savings goal from your list.`}
+          </Link> : <span className="text-xs font-semibold text-[#76777d]">History retained</span>}
+          <RecordLifecycleActions
+            deactivateDescription={`Deactivate ${goal.name} without deleting its transfers, saved balance, account amount type, or reporting history. It will stop appearing in new transaction and planning choices.`}
+            deactivateTitle="Deactivate savings goal"
+            deleteDescription={`Delete ${goal.name} only if it has no saved capital, transfers, or entry history.`}
             editHref={`/savings-goals/${goal.id}/edit`}
+            isInactive={goal.isArchived}
             itemId={goal.id}
             itemLabel={goal.name}
+            onDeactivate={onArchive}
             onDelete={onDelete}
+            onRestore={onRestore}
             onView={onView}
+            restoreDescription={`Restore ${goal.name} so it can receive new transfers and appear in Future Planning again. Existing history is unchanged.`}
+            showDelete={!goal.hasFinancialHistory}
+            showEdit={!goal.isArchived}
           />
-          <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(goal.id)}`}>
+          {!goal.isArchived ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(goal.id)}`}>
             <Icon className="size-4" name="sync" />
             Transfer capital
-          </Link>
+          </Link> : null}
         </div>
       </div>
     </article>
@@ -117,6 +133,32 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
     showSuccess("Savings goal deleted successfully.");
   }
 
+  async function handleArchive(goalId: string) {
+    setIsPending(true);
+    const result = await archiveSavingsGoal(goalId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleGoals((items) => items.map((item) => item.id === goalId ? { ...item, isArchived: true } : item));
+    showSuccess("Savings goal deactivated; transfers and account balances are unchanged.");
+    return true;
+  }
+
+  async function handleRestore(goalId: string) {
+    setIsPending(true);
+    const result = await restoreSavingsGoal(goalId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleGoals((items) => items.map((item) => item.id === goalId ? { ...item, isArchived: false } : item));
+    showSuccess("Savings goal restored for new activity.");
+    return true;
+  }
+
   return (
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
@@ -145,12 +187,12 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
       ) : (
         <section className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-3">
           {filteredGoals.map((goal) => (
-            <SavingsGoalCard goal={goal} key={goal.id} onDelete={handleDelete} onView={() => setViewedGoal(goal)} />
+            <SavingsGoalCard goal={goal} key={goal.id} onArchive={handleArchive} onDelete={handleDelete} onRestore={handleRestore} onView={() => setViewedGoal(goal)} />
           ))}
         </section>
       )}
       <DetailModal
-        actions={viewedGoal ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/savings-goals/${viewedGoal.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(viewedGoal.id)}`}><Icon className="size-4" name="sync" />Transfer capital</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning"><Icon className="size-4" name="timeline" />Future plan</Link></> : null}
+        actions={viewedGoal && !viewedGoal.isArchived ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/savings-goals/${viewedGoal.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#047857] hover:bg-[#ecfdf5]" href={`/transactions/add?savingsGoal=${encodeURIComponent(viewedGoal.id)}`}><Icon className="size-4" name="sync" />Transfer capital</Link><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/future-planning"><Icon className="size-4" name="timeline" />Future plan</Link></> : null}
         icon={viewedGoal?.icon}
         iconClassName={viewedGoal ? `${viewedGoal.bg} ${viewedGoal.tone}` : undefined}
         isOpen={viewedGoal !== null}
@@ -161,7 +203,7 @@ export function SavingsGoalsGrid({ goals }: { goals: SavingsGoalRecord[] }) {
         {viewedGoal ? <div className="space-y-5">
           <DetailModalSection title="Goal information">
             <DetailModalField label="Type" value={viewedGoal.goalType === "Fund" ? "Reusable fund / capital" : "Target goal"} />
-            <DetailModalField label="Status" value={viewedGoal.status} />
+            <DetailModalField label="Status" value={viewedGoal.isArchived ? "Archived" : viewedGoal.status} />
             {viewedGoal.goalType === "Target" ? <DetailModalField label="Progress" value={`${viewedGoal.progressPercent}%`} /> : null}
             <DetailModalField label="Category" value={viewedGoal.categoryName} />
             <DetailModalField label="Savings account" value={viewedGoal.account} />

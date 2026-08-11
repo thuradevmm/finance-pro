@@ -102,7 +102,7 @@ export async function getNotifications(
   }
 
   for (const goal of savingsGoals) {
-    if (goal.status === "Completed") continue;
+    if (goal.isArchived || goal.status === "Completed") continue;
     const days = dateDifference(goal.targetDateValue, today);
     const currentPlan = planning.amounts.find((amount) => amount.periodMonth.slice(0, 7) === currentMonth
       && planningColumnsById.get(amount.columnId)?.categoryId === goal.categoryId
@@ -152,7 +152,7 @@ export async function getNotifications(
     });
   }
 
-  for (const asset of assets.filter((item) => item.status === "Active" && item.condition === "Needs Repair")) {
+  for (const asset of assets.filter((item) => !item.isArchived && item.status === "Active" && item.condition === "Needs Repair")) {
     notifications.push({
       detail: `${asset.category} · current value ${asset.currentValue}`,
       dueDate: today,

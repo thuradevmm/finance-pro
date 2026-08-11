@@ -37,7 +37,8 @@ export function buildFinancialHealthSignals(input: {
   transactions: TransactionRecord[];
 }): FinancialHealthSignal[] {
   const categoriesById = new Map(input.categories.map((category) => [category.id, category]));
-  const goalAccountById = new Map(input.savingsGoals.map((goal) => [goal.id, goal.accountId]));
+  const activeSavingsGoals = input.savingsGoals.filter((goal) => !goal.isArchived);
+  const goalAccountById = new Map(activeSavingsGoals.map((goal) => [goal.id, goal.accountId]));
   let income = 0;
   let expenses = 0;
   let essentialExpenses = 0;
@@ -74,7 +75,7 @@ export function buildFinancialHealthSignals(input: {
   const netCashFlow = roundCurrencyValue(income - expenses);
   const essentialRatio = income > 0 ? essentialExpenses / income : null;
   const savingsRate = income > 0 ? netSavings / income : null;
-  const emergencyGoals = input.savingsGoals
+  const emergencyGoals = activeSavingsGoals
     .filter((goal) => roleForCategory(goal.categoryId, categoriesById) === "emergency_reserve");
   const emergencyBalance = emergencyGoals.reduce((total, goal) => total + goal.savedAmountValue, 0);
   const hasEssentialClassification = input.categories

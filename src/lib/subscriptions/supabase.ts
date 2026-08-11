@@ -41,10 +41,12 @@ export type SubscriptionRecordWithValues = SubscriptionRecord & {
 type SubscriptionRow = {
   account_id?: string | null;
   amount?: number | string | null;
+  archived_at?: string | null;
   billing_cycle?: string | null;
   category_id?: string | null;
   created_at?: string | null;
   id: string;
+  is_active?: boolean | null;
   metadata?: unknown;
   name: string;
   next_billing_date?: string | null;
@@ -66,6 +68,7 @@ type SubscriptionPaymentRow = {
 type SubscriptionTransactionPaymentRow = {
   amount: number | string | null;
   created_at: string | null;
+  deleted_at?: string | null;
   id: string;
   metadata: unknown;
   related_entity_id: string | null;
@@ -280,7 +283,13 @@ function effectiveNextBillingDate(nextBillingDate: string, cycle: BillingCycle, 
   return nextSubscriptionBillingDate(billingAnchorDate || nextBillingDate, fallbackBillingDueDate, cycle) || nextBillingDate;
 }
 
-function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountRecord>, categories: Map<string, CategoryRecord>, payments: SubscriptionPaymentFallback[] = []): SubscriptionRecordWithValues {
+function mapSubscription(
+  row: SubscriptionRow,
+  accounts: Map<string, AccountRecord>,
+  categories: Map<string, CategoryRecord>,
+  payments: SubscriptionPaymentFallback[] = [],
+  hasLinkedTransaction = false,
+): SubscriptionRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
@@ -326,6 +335,17 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     nextBillingDate: nextBillingDateValue,
     status,
   });
+  const hasFinancialHistory = hasLinkedTransaction
+    || payments.length > 0
+    || numericValue(metadata.paid_cycle_count) > 0
+    || [
+      "last_paid_billing_date",
+      "last_payment_amount",
+      "last_payment_billed_amount",
+      "last_payment_date",
+      "last_payment_transaction_id",
+      "last_subscription_reconciled_at",
+    ].some((key) => metadata[key] !== null && metadata[key] !== undefined && metadata[key] !== "");
 
   return {
     accountId,
@@ -340,7 +360,9 @@ function mapSubscription(row: SubscriptionRow, accounts: Map<string, AccountReco
     categoryId,
     createdAtValue: row.created_at ?? "",
     icon: category?.icon ?? "subscriptions",
+    hasFinancialHistory,
     id: row.id,
+    isArchived: row.is_active === false || Boolean(row.archived_at) || status === "Paused",
     isPaidForCurrentPeriod: payment.isPaidForCurrentPeriod,
     lastPaidAmount: lastPaidDateValue ? formatMmk(lastPaidAmountValue) : "-",
     lastPaidBilledAmount: lastPaidDateValue ? formatCurrencyAmount(lastPaymentBilledAmountValue, lastPaymentBillingCurrency) : "-",
@@ -377,6 +399,7 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
   const rows = data as SubscriptionRow[];
   const subscriptionIds = rows.map((row) => row.id);
   const paymentsBySubscription = new Map<string, SubscriptionPaymentFallback[]>();
+  const subscriptionsWithLinkedTransactions = new Set<string>();
 
   if (subscriptionIds.length > 0) {
     const [paymentsResult, transactionsResult] = await Promise.all([
@@ -387,18 +410,21 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
         .in("subscription_id", subscriptionIds),
       supabase
         .from("transactions")
-        .select("id,related_entity_id,type,amount,status,transaction_date,metadata,created_at")
+        .select("id,related_entity_id,type,amount,status,transaction_date,metadata,created_at,deleted_at")
         .eq("user_id", userId)
         .eq("related_entity_type", "subscription")
-        .in("related_entity_id", subscriptionIds)
-        .is("deleted_at", null),
+        .in("related_entity_id", subscriptionIds),
     ]);
 
     if (paymentsResult.error) throw new Error(paymentsResult.error.message);
     if (transactionsResult.error) throw new Error(transactionsResult.error.message);
 
     const paymentRows = paymentsResult.data as SubscriptionPaymentRow[];
-    const transactionRows = transactionsResult.data as SubscriptionTransactionPaymentRow[];
+    const allTransactionRows = transactionsResult.data as SubscriptionTransactionPaymentRow[];
+    for (const transaction of allTransactionRows) {
+      if (transaction.related_entity_id) subscriptionsWithLinkedTransactions.add(transaction.related_entity_id);
+    }
+    const transactionRows = allTransactionRows.filter((transaction) => !transaction.deleted_at);
     const transactionsById = new Map(transactionRows.map((transaction) => [transaction.id, transaction]));
     const reversedTransactionIds = new Set(
       transactionRows
@@ -429,7 +455,13 @@ export async function getSubscriptions(supabase: SupabaseClient, userId: string,
   }
 
   return rows
-    .map((row) => mapSubscription(row, new Map(accounts.map((a) => [a.id, a])), new Map(categories.map((c) => [c.id, c])), paymentsBySubscription.get(row.id) ?? []))
+    .map((row) => mapSubscription(
+      row,
+      new Map(accounts.map((a) => [a.id, a])),
+      new Map(categories.map((c) => [c.id, c])),
+      paymentsBySubscription.get(row.id) ?? [],
+      subscriptionsWithLinkedTransactions.has(row.id),
+    ))
     .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""));
 }
 
@@ -439,7 +471,7 @@ export async function getSubscription(supabase: SupabaseClient, userId: string, 
 }
 
 export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithValues[]): SummaryMetric[] {
-  const ongoing = subscriptions.filter((subscription) => isOngoingSubscriptionStatus(subscription.status));
+  const ongoing = subscriptions.filter((subscription) => !subscription.isArchived && isOngoingSubscriptionStatus(subscription.status));
   const yearly = ongoing.reduce((sum, subscription) => sum + annualizedSubscriptionCost(subscription.amountValue, subscription.billingCycle), 0);
   const monthly = yearly / 12;
   return [
@@ -452,7 +484,7 @@ export function getSubscriptionSummaries(subscriptions: SubscriptionRecordWithVa
 
 export function getUpcomingSubscriptionBillings(subscriptions: SubscriptionRecordWithValues[]): UpcomingSubscriptionBilling[] {
   return subscriptions
-    .filter((s) => isOngoingSubscriptionStatus(s.status) && s.nextBillingDateValue)
+    .filter((s) => !s.isArchived && isOngoingSubscriptionStatus(s.status) && s.nextBillingDateValue)
     .sort((first, second) => dateTimeSortValue(first.nextBillingDateTimeValue ?? "") - dateTimeSortValue(second.nextBillingDateTimeValue ?? ""))
     .slice(0, 8)
     .map((subscription, index) => {

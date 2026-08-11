@@ -11,6 +11,7 @@ import { getCurrencySettings } from "@/lib/currency-settings";
 import { formatDisplayDate } from "@/lib/date-format";
 import { creditCardOpeningBalancesByAccount } from "@/lib/debts/transactions";
 import { fetchSupabaseRows } from "@/lib/supabase/pagination";
+import { recordWasInactiveByDate } from "@/lib/records/lifecycle";
 import {
   buildAccountLedgerActivities,
   deriveCreditCardDebtMetadata,
@@ -296,7 +297,7 @@ function mapAccount(
     ]
     : balanceBreakdowns;
   const metadataStatus = metadata.status;
-  const status: AccountStatus = !row.is_active
+  const status: AccountStatus = recordWasInactiveByDate(row, asOfDate)
     ? "Archived"
     : metadataStatus === "Needs Review"
       ? "Needs Review"

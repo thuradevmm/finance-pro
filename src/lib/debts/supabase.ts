@@ -99,10 +99,12 @@ type DebtInstallment = {
 };
 
 type DebtRow = {
+  archived_at?: string | null;
   category_id?: string | null;
   created_at?: string | null;
   description?: string | null;
   id: string;
+  is_active?: boolean | null;
   interest_rate?: number | string | null;
   lender?: string | null;
   metadata?: unknown;
@@ -120,6 +122,7 @@ type DebtRow = {
 type LinkedTransactionRow = {
   account_id: string | null;
   amount: number | string | null;
+  deleted_at?: string | null;
   id: string;
   metadata: unknown;
   related_entity_type: string | null;
@@ -248,6 +251,7 @@ function mapDebt(
   categories: Map<string, CategoryRecord>,
   transactionLedger?: DebtTransactionLedger,
   referenceDate = formatDateInput(new Date()),
+  hasLinkedHistory = false,
 ): DebtRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
@@ -373,11 +377,15 @@ function mapDebt(
     creditCardUsedAmountValue,
     durationMonths,
     grossRepaidAmountValue,
+    hasFinancialHistory: hasLinkedHistory
+      || Math.abs(resolveDebtStoredNumber(row.total_amount, metadata.total_amount)) > 0.005
+      || Math.abs(resolveDebtStoredNumber(row.repaid_amount, metadata.repaid_amount)) > 0.005,
     id: row.id,
     interestRate: `${interestRateValue}% ${interestRatePeriod.toLowerCase()}`,
     interestRatePeriod,
     interestRateValue,
     isCreditCardDebt: isCreditCard,
+    isArchived: row.is_active === false || Boolean(row.archived_at) || String(metadata.lifecycle_status ?? "").toLowerCase() === "archived",
     usesManualCreditCardTerms: manualCreditCardTerms,
     lender: row.lender ?? (typeof metadata.lender === "string" ? metadata.lender : ""),
     monthlyPayment: formatMmk(monthlyPaymentValue),
@@ -439,9 +447,8 @@ export async function getDebts(
     fetchSupabaseRows<LinkedTransactionRow>((from, to) => {
       const query = supabase
         .from("transactions")
-        .select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date")
+        .select("id,related_entity_id,related_entity_type,account_id,transfer_account_id,type,amount,metadata,status,transaction_date,deleted_at")
         .eq("user_id", userId)
-        .is("deleted_at", null)
         .order("created_at", { ascending: true })
         .range(from, to);
       return options.asOfDate ? query.lte("transaction_date", options.asOfDate) : query;
@@ -470,9 +477,21 @@ export async function getDebts(
       return !startDate || startDate <= options.asOfDate!;
     })
     : debtRows;
+  const activeTransactionRows = transactionRows.filter((transaction) => !transaction.deleted_at);
+  const debtIdsWithHistory = new Set<string>([
+    ...transactionRows.flatMap((transaction) => {
+      const metadata = metadataRecord(transaction.metadata);
+      const directId = transaction.related_entity_type === "debt" ? transaction.related_entity_id : null;
+      const cardId = typeof metadata.credit_card_debt_id === "string" ? metadata.credit_card_debt_id : null;
+      return [directId, cardId].filter((id): id is string => Boolean(id));
+    }),
+    ...debtPaymentRows
+      .map((payment) => payment.debt_id)
+      .filter((debtId): debtId is string => Boolean(debtId)),
+  ]);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const accountCurrencies = new Map(accountRows.map((account) => [account.id, account.currency_code]));
-  const baseCurrencyTransactionRows = transactionRows.map((transaction) => {
+  const baseCurrencyTransactionRows = activeTransactionRows.map((transaction) => {
     const baseAmount = convertToBaseCurrency(
       Math.abs(Number(transaction.amount) || 0),
       accountCurrencies.get(transaction.account_id ?? ""),
@@ -492,7 +511,7 @@ export async function getDebts(
     ...standaloneDebtPaymentTransactions(debtPaymentRows),
   ], datedDebtRows);
   return datedDebtRows
-    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id), options.asOfDate))
+    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id), options.asOfDate, debtIdsWithHistory.has(row.id)))
     .sort((first, second) => dateTimeSortValue(first.nextPaymentDateTimeValue ?? "") - dateTimeSortValue(second.nextPaymentDateTimeValue ?? ""));
 }
 
@@ -514,7 +533,7 @@ export function getDebtSummaries(debts: DebtRecordWithValues[]): SummaryMetric[]
     { label: "Borrowing Repaid", value: formatMmk(repaid), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Remaining Borrowing", value: formatMmk(remaining), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Outstanding Lending", value: formatMmk(outstandingLending), icon: "account", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
-    { label: "Active Records", value: String(debts.filter((debt) => debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Active Records", value: String(debts.filter((debt) => !debt.isArchived && debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
   return creditCardUsed > 0 || debts.some((debt) => debt.isCreditCardDebt)
     ? [
@@ -529,7 +548,7 @@ export function getUpcomingDebtPayments(debts: DebtRecordWithValues[]): Upcoming
   const today = Date.now();
   return debts
     .flatMap((debt): UpcomingDebtPayment[] => {
-      if (debt.status === "Paid" || (!debt.isCreditCardDebt && debt.remainingBalanceValue <= 0)) return [];
+      if (debt.isArchived || debt.status === "Paid" || (!debt.isCreditCardDebt && debt.remainingBalanceValue <= 0)) return [];
       return upcomingInstallments(debt).flatMap((installment, index) => {
         if (installment.amountValue <= 0) return [];
         const dueDateTimeValue = combineDateWithTimestampTime(installment.dueDateValue, debt.createdAtValue);

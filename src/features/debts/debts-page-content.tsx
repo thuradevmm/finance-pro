@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { deleteDebt } from "@/app/debts/actions";
+import { archiveDebt, deleteDebt, restoreDebt } from "@/app/debts/actions";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
 import { ModalShell } from "@/components/ui/modal-shell";
 import { ProgressMeter } from "@/components/ui/progress-meter";
+import { RecordLifecycleActions } from "@/components/ui/record-lifecycle-actions";
 import { RecordActions } from "@/components/ui/record-actions";
 import { SearchField } from "@/components/ui/search-field";
 import { SelectFilter } from "@/components/ui/select-filter";
@@ -24,10 +25,11 @@ import { useSubmittedQueryFilter } from "@/hooks/use-submitted-query-filter";
 import { usePersistentFilterState } from "@/hooks/use-persistent-filter-state";
 import { readSubmittedQuery } from "@/lib/filters/submitted-query";
 
-const statusStyles: Record<DebtStatus, string> = {
+const statusStyles: Record<DebtStatus | "Archived", string> = {
   Active: "bg-[#d8e2ff] text-[#004395]",
   Overdue: "bg-[#ffdad6] text-[#93000a]",
   Paid: "bg-[#6ffbbe] text-[#005236]",
+  Archived: "bg-[#f8f9ff] text-[#45464d]",
 };
 type DebtSortKey = "monthlyPayment" | "name" | "remainingBalance" | "repaidAmount" | "status" | "totalAmount";
 
@@ -39,10 +41,6 @@ const debtSortOptions: { label: string; value: DebtSortKey }[] = [
   { label: "Payment / Return Due", value: "monthlyPayment" },
   { label: "Status", value: "status" },
 ];
-
-function recordLabelForDebt(debt: DebtRecordWithValues) {
-  return debt.isCreditCardDebt ? "credit card borrowing" : debt.nature.toLowerCase();
-}
 
 function parseCurrency(value: string) {
   return Number(value.replace(/[^0-9.-]/g, "")) || 0;
@@ -115,12 +113,16 @@ function DebtsTable({
   debts,
   emptyState,
   onDelete,
+  onArchive,
+  onRestore,
   onView,
   showActiveOnly,
 }: {
   debts: DebtRecordWithValues[];
   emptyState: DebtListEmptyState;
   onDelete: (id: string) => void | Promise<void>;
+  onArchive: (id: string) => Promise<boolean>;
+  onRestore: (id: string) => Promise<boolean>;
   onView: (debt: DebtRecordWithValues) => void;
   showActiveOnly: boolean;
 }) {
@@ -151,7 +153,7 @@ function DebtsTable({
       <div className="flex min-w-0 flex-col items-stretch gap-3 border-b border-[#c6c6cd]/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <h2 className="break-words text-lg font-semibold text-[#0b1c30] sm:text-xl">{showActiveOnly ? "Active Borrowing & Lending" : "All Borrowing & Lending"}</h2>
-          <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue borrowing and lending records" : "Showing paid records too"}</p>
+          <p className="mt-1 text-xs font-semibold text-[#45464d]">{showActiveOnly ? "Showing active and overdue borrowing and lending records" : "Showing paid and deactivated records too"}</p>
         </div>
       </div>
 
@@ -191,14 +193,29 @@ function DebtsTable({
                 </td>
                 <td className="whitespace-nowrap px-4 py-4 text-right text-[#0b1c30]">{debt.monthlyPayment}</td>
                 <td className="px-4 py-4 text-center">
-                  <span className={`inline-flex rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.status]}`}>{debt.status}</span>
+                  <span className={`inline-flex rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.isArchived ? "Archived" : debt.status]}`}>{debt.isArchived ? "Archived" : debt.status}</span>
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
                       <><span className="rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span><RecordActions editHref="#" itemId={debt.id} itemLabel={debt.name} onView={() => onView(debt)} showDelete={false} showEdit={false} /></>
                     ) : (
-                      <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} onView={() => onView(debt)} />
+                      <RecordLifecycleActions
+                        deactivateDescription={`Deactivate ${debt.name} without deleting its origination, payment, or return transactions. Its outstanding position remains in reconciliation, but new activity and reminders stop.`}
+                        deactivateTitle="Deactivate Borrowing & Lending record"
+                        deleteDescription={`Delete ${debt.name} only if it has no principal, origination, payment, return, or other linked history.`}
+                        editHref={`/debts/${debt.id}/edit`}
+                        isInactive={debt.isArchived}
+                        itemId={debt.id}
+                        itemLabel={debt.name}
+                        onDeactivate={onArchive}
+                        onDelete={onDelete}
+                        onRestore={onRestore}
+                        onView={() => onView(debt)}
+                        restoreDescription={`Restore ${debt.name} for new payments, returns, planning, and reminders. Its preserved financial position is unchanged.`}
+                        showDelete={!debt.hasFinancialHistory}
+                        showEdit={!debt.isArchived}
+                      />
                     )}
                   </div>
                 </td>
@@ -245,7 +262,7 @@ function DebtsTable({
                     <p className="mt-1 break-words text-xs font-medium text-[#45464d]">{debt.lender} · {debt.nature} · {debt.repaymentFrequency}</p>
                   </div>
                 </div>
-                <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.status]}`}>{debt.status}</span>
+                <span className={`w-fit shrink-0 rounded px-2 py-1 text-xs font-bold ${statusStyles[debt.isArchived ? "Archived" : debt.status]}`}>{debt.isArchived ? "Archived" : debt.status}</span>
               </div>
 
               <DebtProgress debt={debt} />
@@ -273,7 +290,22 @@ function DebtsTable({
                 {debt.isCreditCardDebt && !debt.usesManualCreditCardTerms ? (
                   <><span className="max-w-full break-words rounded-md bg-[#eff4ff] px-3 py-2 text-xs font-semibold text-[#0058be]" title="Automatic card borrowing is managed from Accounts">Managed in Accounts</span><RecordActions editHref="#" itemId={debt.id} itemLabel={debt.name} onView={() => onView(debt)} showDelete={false} showEdit={false} /></>
                 ) : (
-                  <RecordActions deleteDescription={`Deleting ${debt.name} will remove this ${recordLabelForDebt(debt)} record from your list.`} editHref={`/debts/${debt.id}/edit`} itemId={debt.id} itemLabel={debt.name} onDelete={onDelete} onView={() => onView(debt)} />
+                  <RecordLifecycleActions
+                    deactivateDescription={`Deactivate ${debt.name} without deleting its origination, payment, or return transactions. Its outstanding position remains in reconciliation, but new activity and reminders stop.`}
+                    deactivateTitle="Deactivate Borrowing & Lending record"
+                    deleteDescription={`Delete ${debt.name} only if it has no principal, origination, payment, return, or other linked history.`}
+                    editHref={`/debts/${debt.id}/edit`}
+                    isInactive={debt.isArchived}
+                    itemId={debt.id}
+                    itemLabel={debt.name}
+                    onDeactivate={onArchive}
+                    onDelete={onDelete}
+                    onRestore={onRestore}
+                    onView={() => onView(debt)}
+                    restoreDescription={`Restore ${debt.name} for new payments, returns, planning, and reminders. Its preserved financial position is unchanged.`}
+                    showDelete={!debt.hasFinancialHistory}
+                    showEdit={!debt.isArchived}
+                  />
                 )}
               </div>
             </article>
@@ -403,7 +435,7 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
     const normalizedSearch = search.trim().toLowerCase();
     return visibleDebts.filter((debt) => {
       const searchable = `${debt.name} ${debt.lender} ${debt.nature} ${debt.repaymentFrequency} ${debt.totalAmount} ${debt.repaidAmount} ${debt.remainingBalance} ${debt.monthlyPayment} ${debt.status}`.toLowerCase();
-      const statusMatches = !showActiveOnly || debt.status !== "Paid";
+      const statusMatches = !showActiveOnly || (!debt.isArchived && debt.status !== "Paid");
       return statusMatches && (normalizedSearch === "" || searchable.includes(normalizedSearch));
     });
   }, [search, showActiveOnly, visibleDebts]);
@@ -429,6 +461,32 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
     }
     setVisibleDebts((items) => items.filter((item) => item.id !== debtId));
     showSuccess(`${deletedDebt?.isCreditCardDebt ? "Credit card borrowing" : deletedDebt?.nature ?? "Record"} deleted successfully.`);
+  }
+
+  async function handleArchive(debtId: string) {
+    setIsPending(true);
+    const result = await archiveDebt(debtId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleDebts((items) => items.map((item) => item.id === debtId ? { ...item, isArchived: true } : item));
+    showSuccess("Record deactivated; its transactions and outstanding financial position are unchanged.");
+    return true;
+  }
+
+  async function handleRestore(debtId: string) {
+    setIsPending(true);
+    const result = await restoreDebt(debtId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleDebts((items) => items.map((item) => item.id === debtId ? { ...item, isArchived: false } : item));
+    showSuccess("Borrowing & Lending record restored for new activity.");
+    return true;
   }
 
   return (
@@ -460,7 +518,9 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
         <DebtsTable
           debts={filteredDebts}
           emptyState={emptyState}
+          onArchive={handleArchive}
           onDelete={handleDelete}
+          onRestore={handleRestore}
           onView={setViewedDebt}
           showActiveOnly={showActiveOnly}
         />
@@ -471,7 +531,7 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
         <DebtPaymentCalendarModal entries={calendarEntries} isOpen={isCalendarOpen} onClose={() => setIsCalendarOpen(false)} />
       </div>
       <DetailModal
-        actions={viewedDebt ? viewedDebt.isCreditCardDebt && !viewedDebt.usesManualCreditCardTerms ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/accounts"><Icon className="size-4" name="account" />Open account</Link> : <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/debts/${viewedDebt.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link> : null}
+        actions={viewedDebt ? viewedDebt.isCreditCardDebt && !viewedDebt.usesManualCreditCardTerms ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" href="/accounts"><Icon className="size-4" name="account" />Open account</Link> : !viewedDebt.isArchived ? <Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/debts/${viewedDebt.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link> : null : null}
         icon={viewedDebt?.icon}
         iconClassName={viewedDebt ? `${viewedDebt.bg} ${viewedDebt.tone}` : undefined}
         isOpen={viewedDebt !== null}
@@ -484,7 +544,7 @@ export function DebtsPageContent({ accounts, debts, payments }: { accounts: Acco
             <DetailModalField label="Nature" value={viewedDebt.nature} />
             <DetailModalField label="Category / type" value={viewedDebt.type} />
             <DetailModalField label={viewedDebt.nature === "Lending" ? "Borrower" : "Lender"} value={viewedDebt.lender || "Not set"} />
-            <DetailModalField label="Status" value={viewedDebt.status} />
+            <DetailModalField label="Status" value={viewedDebt.isArchived ? "Archived" : viewedDebt.status} />
             <DetailModalField label={viewedDebt.nature === "Lending" ? "Lending date" : "Borrowing date"} value={formatDisplayDate(viewedDebt.startDate, "Not set")} />
             <DetailModalField label={viewedDebt.nature === "Lending" ? "Expected full return" : "Expected payoff"} value={formatDisplayDate(viewedDebt.payoffDate, "Not set")} />
             <DetailModalField label="Settled date" value={formatDisplayDate(viewedDebt.settledAtValue, "Not settled")} />

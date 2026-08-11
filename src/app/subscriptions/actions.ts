@@ -12,10 +12,30 @@ import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
-type ActionResult = { error?: string };
+type ActionResult = { error?: string; status?: "active" | "expiring" };
 
-function revalidateSubscriptionPaths() {
-  for (const path of ["/subscriptions", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
+type SubscriptionLifecycleRow = {
+  account_id?: string | null;
+  archived_at?: string | null;
+  category_id?: string | null;
+  deleted_at: string | null;
+  id: string;
+  is_active?: boolean | null;
+  metadata: unknown;
+  status: string | null;
+};
+
+function revalidateSubscriptionPaths(extraPaths: string[] = []) {
+  for (const path of [
+    "/subscriptions",
+    "/accounts",
+    "/categories",
+    "/dashboard",
+    "/future-planning",
+    "/notifications",
+    "/transactions",
+    ...extraPaths,
+  ]) revalidatePath(path);
 }
 
 function storedAccountStatus(account: { is_active: boolean; metadata: unknown }) {
@@ -54,6 +74,14 @@ function normalizedSubscriptionAmounts(input: SubscriptionFormData) {
     billingCurrency,
     exchangeRate,
   };
+}
+
+function metadataTimestamp(metadata: Record<string, unknown>, key: string) {
+  return typeof metadata[key] === "string" && metadata[key] ? metadata[key] : null;
+}
+
+function normalizedStatus(status: unknown) {
+  return String(status ?? "").trim().toLowerCase();
 }
 
 function validateSubscriptionInput(input: SubscriptionFormData) {
@@ -95,22 +123,35 @@ async function validateSubscriptionLinks(
   return "";
 }
 
-function payload(input: SubscriptionFormData) {
+function payload(
+  input: SubscriptionFormData,
+  existing: { archivedAt?: string | null; metadata?: unknown } = {},
+) {
   const normalized = normalizedSubscriptionAmounts(input);
+  const isActive = input.status !== "Paused";
+  const existingMetadata = metadataRecord(existing.metadata);
+  const archivedAt = isActive
+    ? null
+    : existing.archivedAt ?? metadataTimestamp(existingMetadata, "archived_at") ?? new Date().toISOString();
   return {
     account_id: input.accountId || null,
     amount: normalized.amount,
+    archived_at: archivedAt,
     billing_cycle: input.billingCycle.toLowerCase(),
     category_id: input.categoryId || null,
+    is_active: isActive,
     metadata: {
       account_id: input.accountId || null,
       amount: normalized.amount,
+      archived_at: archivedAt,
       billing_anchor_date: input.nextBillingDate || null,
       billed_amount: input.billedAmount,
       billing_cycle: input.billingCycle.toLowerCase(),
       billing_currency: normalized.billingCurrency,
       category_id: input.categoryId || null,
       exchange_rate: normalized.exchangeRate,
+      is_active: isActive,
+      lifecycle_status: isActive ? "active" : "archived",
       next_billing_date: input.nextBillingDate || null,
       reminder_days_before: input.reminderDaysBefore,
       reminder_enabled: input.reminderEnabled,
@@ -126,6 +167,7 @@ function payload(input: SubscriptionFormData) {
 
 type RawSubscriptionPayload = ReturnType<typeof payload>;
 type SubscriptionPayload = Partial<Omit<RawSubscriptionPayload, "metadata">> & {
+  deleted_at?: string | null;
   metadata: Record<string, unknown>;
 };
 
@@ -157,13 +199,28 @@ async function paymentAwarePayload(
   userId: string,
   input: SubscriptionFormData,
 ) {
-  const nextPayload = payload(input);
-  const { data } = await supabase
+  let existingResult = await supabase
     .from("subscriptions")
-    .select("billing_cycle,metadata,next_billing_date")
+    .select("billing_cycle,metadata,next_billing_date,status,is_active,archived_at")
     .eq("id", subscriptionId)
     .eq("user_id", userId)
     .maybeSingle();
+  if (existingResult.error && isMissingDatabaseObject(existingResult.error, ["is_active", "archived_at"])) {
+    existingResult = await supabase
+      .from("subscriptions")
+      .select("billing_cycle,metadata,next_billing_date,status")
+      .eq("id", subscriptionId)
+      .eq("user_id", userId)
+      .maybeSingle();
+  }
+
+  const data = existingResult.data as {
+    archived_at?: string | null;
+    billing_cycle: string | null;
+    metadata: unknown;
+    next_billing_date: string | null;
+  } | null;
+  const nextPayload = payload(input, { archivedAt: data?.archived_at, metadata: data?.metadata });
 
   if (!data) return nextPayload;
 
@@ -211,13 +268,47 @@ async function updateSubscriptionRow(
   currentPayload: SubscriptionPayload,
   retries = 4,
 ): Promise<ActionResult> {
-  const { data, error } = await supabase.from("subscriptions").update(currentPayload).eq("id", subscriptionId).eq("user_id", userId).select("id").maybeSingle();
+  const { data, error } = await supabase.from("subscriptions").update(currentPayload).eq("id", subscriptionId).eq("user_id", userId).is("deleted_at", null).select("id").maybeSingle();
   if (!error && data) return {};
   if (!error && !data) return { error: "Subscription not found." };
   if (!error) return { error: "Could not update subscription." };
   const column = missingSchemaColumn(error.message);
   if (!column || retries <= 0) return { error: error.message };
   return updateSubscriptionRow(supabase, subscriptionId, userId, withoutColumn(currentPayload, column), retries - 1);
+}
+
+async function getOwnedSubscription(
+  supabase: Awaited<ReturnType<typeof authenticatedClient>>["supabase"],
+  userId: string,
+  subscriptionId: string,
+) {
+  let result = await supabase
+    .from("subscriptions")
+    .select("id,account_id,category_id,status,metadata,deleted_at,is_active,archived_at")
+    .eq("id", subscriptionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (result.error && isMissingDatabaseObject(result.error, ["is_active", "archived_at"])) {
+    result = await supabase
+      .from("subscriptions")
+      .select("id,account_id,category_id,status,metadata,deleted_at")
+      .eq("id", subscriptionId)
+      .eq("user_id", userId)
+      .maybeSingle();
+  }
+  return { data: result.data as SubscriptionLifecycleRow | null, error: result.error };
+}
+
+function subscriptionHasStoredPaymentHistory(metadata: Record<string, unknown>) {
+  return Number(metadata.paid_cycle_count) > 0
+    || [
+      "last_paid_billing_date",
+      "last_payment_amount",
+      "last_payment_billed_amount",
+      "last_payment_date",
+      "last_payment_transaction_id",
+      "last_subscription_reconciled_at",
+    ].some((key) => metadata[key] !== null && metadata[key] !== undefined && metadata[key] !== "");
 }
 
 export async function createSubscription(input: SubscriptionFormData): Promise<ActionResult> {
@@ -251,26 +342,137 @@ export async function updateSubscription(subscriptionId: string, input: Subscrip
   if (linkError) return { error: linkError };
   const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, await paymentAwarePayload(supabase, subscriptionId, user.id, input));
   if (result.error) return result;
-  revalidateSubscriptionPaths();
-  revalidatePath(`/subscriptions/${subscriptionId}/edit`);
+  revalidateSubscriptionPaths([`/subscriptions/${subscriptionId}/edit`]);
   return {};
 }
 
-export async function deleteSubscription(subscriptionId: string): Promise<ActionResult> {
+export async function deactivateSubscription(subscriptionId: string): Promise<ActionResult> {
+  if (!subscriptionId?.trim()) return { error: "Subscription not found." };
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
-  const [transactionsResult, paymentsResult] = await Promise.all([
-    supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "subscription").eq("related_entity_id", subscriptionId).is("deleted_at", null).limit(1),
-    supabase.from("subscription_payments").select("id").eq("user_id", user.id).eq("subscription_id", subscriptionId).limit(1),
+  const { data: target, error: targetError } = await getOwnedSubscription(supabase, user.id, subscriptionId);
+  if (targetError) return { error: targetError.message };
+  if (!target || target.deleted_at) return { error: "Subscription not found." };
+  const isPaused = normalizedStatus(target.status) === "paused";
+  if (isPaused && target.is_active !== true) return {};
+
+  const metadata = metadataRecord(target.metadata);
+  const deactivatedAt = target.archived_at
+    ?? metadataTimestamp(metadata, "deactivated_at")
+    ?? metadataTimestamp(metadata, "archived_at")
+    ?? new Date().toISOString();
+  const previousStatus = isPaused
+    ? String(metadata.status_before_deactivation ?? "active")
+    : normalizedStatus(target.status || metadata.status || "active");
+  const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, {
+    archived_at: deactivatedAt,
+    is_active: false,
+    metadata: {
+      ...metadata,
+      archived_at: deactivatedAt,
+      deactivated_at: deactivatedAt,
+      deactivation_reason: "user_requested",
+      is_active: false,
+      lifecycle_status: "archived",
+      retirement_reason: "no_longer_tracked",
+      status: "paused",
+      status_before_deactivation: previousStatus,
+    },
+    status: "paused",
+  });
+  if (result.error) return result;
+  revalidateSubscriptionPaths([`/subscriptions/${subscriptionId}/edit`]);
+  return {};
+}
+
+export async function restoreSubscription(subscriptionId: string): Promise<ActionResult> {
+  if (!subscriptionId?.trim()) return { error: "Subscription not found." };
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  const { data: target, error: targetError } = await getOwnedSubscription(supabase, user.id, subscriptionId);
+  if (targetError) return { error: targetError.message };
+  if (!target || target.deleted_at) return { error: "Subscription not found." };
+  if (normalizedStatus(target.status) !== "paused" && target.is_active !== false) return {};
+
+  const metadata = metadataRecord(target.metadata);
+  const [accountResult, categoryResult] = await Promise.all([
+    target.account_id
+      ? supabase.from("accounts").select("id,is_active").eq("id", target.account_id).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    target.category_id
+      ? supabase.from("categories").select("id,is_active").eq("id", target.category_id).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
-  const historyError = transactionsResult.error ?? paymentsResult.error;
+  const dependencyError = accountResult.error ?? categoryResult.error;
+  if (dependencyError) return { error: dependencyError.message };
+  if (!target.account_id || !accountResult.data || accountResult.data.is_active === false) {
+    return { error: "Restore or reassign the payment account before restoring this subscription." };
+  }
+  if (!target.category_id || !categoryResult.data || categoryResult.data.is_active === false) {
+    return { error: "Restore or reassign the subscription category before restoring this subscription." };
+  }
+  const restoredAt = new Date().toISOString();
+  const restoredStatus = normalizedStatus(metadata.status_before_deactivation) === "expiring" ? "expiring" : "active";
+  const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, {
+    archived_at: null,
+    is_active: true,
+    metadata: {
+      ...metadata,
+      archived_at: null,
+      deactivated_at: null,
+      is_active: true,
+      lifecycle_status: "active",
+      restored_at: restoredAt,
+      status: restoredStatus,
+    },
+    status: restoredStatus,
+  });
+  if (result.error) return result;
+  revalidateSubscriptionPaths([`/subscriptions/${subscriptionId}/edit`]);
+  return { status: restoredStatus };
+}
+
+export async function deleteSubscription(subscriptionId: string): Promise<ActionResult> {
+  if (!subscriptionId?.trim()) return { error: "Subscription not found." };
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  const { data: target, error: targetError } = await getOwnedSubscription(supabase, user.id, subscriptionId);
+  if (targetError) return { error: targetError.message };
+  if (!target) return { error: "Subscription not found." };
+  if (target.deleted_at) return {};
+
+  const [transactionsResult, paymentsResult, filesResult] = await Promise.all([
+    supabase.from("transactions").select("id").eq("user_id", user.id).ilike("related_entity_type", "subscription").eq("related_entity_id", subscriptionId).limit(1),
+    supabase.from("subscription_payments").select("id").eq("user_id", user.id).eq("subscription_id", subscriptionId).limit(1),
+    supabase.from("file_links").select("id").eq("user_id", user.id).ilike("entity_type", "subscription").eq("entity_id", subscriptionId).limit(1),
+  ]);
+  const historyError = transactionsResult.error ?? paymentsResult.error ?? filesResult.error;
   if (historyError) return { error: historyError.message };
-  if ((transactionsResult.data?.length ?? 0) > 0 || (paymentsResult.data?.length ?? 0) > 0) {
+  const metadata = metadataRecord(target.metadata);
+  if ((transactionsResult.data?.length ?? 0) > 0
+    || (paymentsResult.data?.length ?? 0) > 0
+    || (filesResult.data?.length ?? 0) > 0
+    || subscriptionHasStoredPaymentHistory(metadata)) {
     return { error: "This subscription has payment history and cannot be deleted. Change its status to Paused so its transactions remain reconcilable." };
   }
-  const { data, error } = await supabase.from("subscriptions").update({ deleted_at: new Date().toISOString(), status: "archived" }).eq("id", subscriptionId).eq("user_id", user.id).select("id").maybeSingle();
-  if (error) return { error: error.message };
-  if (!data) return { error: "Subscription not found." };
-  revalidateSubscriptionPaths();
+  const deletedAt = new Date().toISOString();
+  const archivedAt = target.archived_at ?? metadataTimestamp(metadata, "archived_at") ?? deletedAt;
+  const result = await updateSubscriptionRow(supabase, subscriptionId, user.id, {
+    archived_at: archivedAt,
+    deleted_at: deletedAt,
+    is_active: false,
+    metadata: {
+      ...metadata,
+      archived_at: archivedAt,
+      deleted_at: deletedAt,
+      deletion_reason: "user_requested_unused_record",
+      is_active: false,
+      lifecycle_status: "deleted",
+      status: "archived",
+    },
+    status: "archived",
+  });
+  if (result.error) return result;
+  revalidateSubscriptionPaths([`/subscriptions/${subscriptionId}/edit`]);
   return {};
 }

@@ -15,6 +15,20 @@ import { getUserSafely } from "@/lib/supabase/auth";
 import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 
 type ActionResult = { error?: string };
+type SavingsGoalLifecycleRow = {
+  account_id?: string | null;
+  archived_at?: string | null;
+  category_id?: string | null;
+  id: string;
+  is_active?: boolean | null;
+  metadata: unknown;
+};
+
+function metadataRecord(metadata: unknown) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+}
 
 function revalidateSavingsPaths() {
   for (const path of ["/savings-goals", "/accounts", "/transactions", "/categories", "/dashboard", "/future-planning", "/notifications"]) revalidatePath(path);
@@ -31,6 +45,39 @@ async function authenticatedClient() {
   const supabase = await createClient();
   const { user } = await getUserSafely(supabase);
   return { supabase, user };
+}
+
+async function getOwnedSavingsGoalLifecycle(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  goalId: string,
+) {
+  let result = await supabase
+    .from("savings_goals")
+    .select("id,account_id,category_id,metadata,is_active,archived_at")
+    .eq("id", goalId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (result.error && isMissingDatabaseObject(result.error, ["is_active", "archived_at"])) {
+    result = await supabase
+      .from("savings_goals")
+      .select("id,account_id,category_id,metadata")
+      .eq("id", goalId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+  }
+  return { data: result.data as SavingsGoalLifecycleRow | null, error: result.error };
+}
+
+function savingsGoalIsArchived(goal: SavingsGoalLifecycleRow) {
+  const metadata = metadataRecord(goal.metadata);
+  const lifecycle = String(metadata.lifecycle_status ?? "").trim().toLowerCase();
+  return goal.is_active === false
+    || Boolean(goal.archived_at)
+    || metadata.is_active === false
+    || ["archived", "deactivated", "inactive"].includes(lifecycle);
 }
 
 function validateGoalInput(input: SavingsGoalFormData) {
@@ -179,13 +226,16 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
   if (validationError) return { error: validationError };
   const { data: existingGoal, error: existingError } = await supabase
     .from("savings_goals")
-    .select("id,account_id,category_id")
+    .select("id,account_id,category_id,metadata,status")
     .eq("id", goalId)
     .eq("user_id", user.id)
     .is("deleted_at", null)
     .maybeSingle();
   if (existingError) return { error: existingError.message };
   if (!existingGoal) return { error: "Savings goal not found." };
+  if (String(metadataRecord(existingGoal.metadata).lifecycle_status ?? "").toLowerCase() === "archived") {
+    return { error: "Restore this savings goal or fund before editing it." };
+  }
   if (existingGoal.account_id && existingGoal.account_id !== input.accountId) {
     const [transactionsResult, entriesResult] = await Promise.all([
       supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null).limit(1),
@@ -217,18 +267,134 @@ export async function updateSavingsGoal(goalId: string, input: SavingsGoalFormDa
   return {};
 }
 
+async function updateSavingsGoalLifecycle(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  goalId: string,
+  payload: Record<string, unknown>,
+) {
+  let result = await supabase
+    .from("savings_goals")
+    .update(payload)
+    .eq("id", goalId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
+  if (result.error && isMissingDatabaseObject(result.error, ["is_active", "archived_at"])) {
+    const legacyPayload = { ...payload };
+    delete legacyPayload.is_active;
+    delete legacyPayload.archived_at;
+    result = await supabase
+      .from("savings_goals")
+      .update(legacyPayload)
+      .eq("id", goalId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .select("id")
+      .maybeSingle();
+  }
+  return result;
+}
+
+export async function archiveSavingsGoal(goalId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  const { data: goal, error: findError } = await getOwnedSavingsGoalLifecycle(supabase, user.id, goalId);
+  if (findError) return { error: findError.message };
+  if (!goal) return { error: "Savings goal not found." };
+  const metadata = metadataRecord(goal.metadata);
+  if (savingsGoalIsArchived(goal)) return {};
+  const archivedAt = new Date().toISOString();
+  const { data, error } = await updateSavingsGoalLifecycle(supabase, user.id, goalId, {
+    archived_at: archivedAt,
+    is_active: false,
+    metadata: {
+      ...metadata,
+      archived_at: archivedAt,
+      deactivated_at: archivedAt,
+      is_active: false,
+      lifecycle_status: "archived",
+      retirement_reason: "no_longer_tracked",
+    },
+  });
+  if (error) return { error: error.message };
+  if (!data) return { error: "Savings goal not found." };
+  revalidateSavingsPaths();
+  revalidatePath(`/savings-goals/${goalId}/edit`);
+  return {};
+}
+
+export async function restoreSavingsGoal(goalId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  const { data: goal, error: findError } = await getOwnedSavingsGoalLifecycle(supabase, user.id, goalId);
+  if (findError) return { error: findError.message };
+  if (!goal) return { error: "Savings goal not found." };
+  if (!savingsGoalIsArchived(goal)) return {};
+  const metadata = metadataRecord(goal.metadata);
+  const [accountResult, categoryResult] = await Promise.all([
+    goal.account_id
+      ? supabase.from("accounts").select("id,is_active").eq("id", goal.account_id).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    goal.category_id
+      ? supabase.from("categories").select("id,is_active").eq("id", goal.category_id).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const dependencyError = accountResult.error ?? categoryResult.error;
+  if (dependencyError) return { error: dependencyError.message };
+  if (!goal.account_id || !accountResult.data || accountResult.data.is_active === false) {
+    return { error: "Restore or reassign the savings account before restoring this goal or fund." };
+  }
+  if (!goal.category_id || !categoryResult.data || categoryResult.data.is_active === false) {
+    return { error: "Restore or reassign the savings category before restoring this goal or fund." };
+  }
+  const restoredAt = new Date().toISOString();
+  const { data, error } = await updateSavingsGoalLifecycle(supabase, user.id, goalId, {
+    archived_at: null,
+    is_active: true,
+    metadata: {
+      ...metadata,
+      archived_at: null,
+      deactivated_at: null,
+      is_active: true,
+      lifecycle_status: "active",
+      restored_at: restoredAt,
+    },
+  });
+  if (error) return { error: error.message };
+  if (!data) return { error: "Savings goal not found." };
+  revalidateSavingsPaths();
+  revalidatePath(`/savings-goals/${goalId}/edit`);
+  return {};
+}
+
 export async function deleteSavingsGoal(goalId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
 
-  const [transactionsResult, entriesResult] = await Promise.all([
-    supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).is("deleted_at", null).limit(1),
+  const [goalResult, transactionsResult, entriesResult, filesResult] = await Promise.all([
+    supabase.from("savings_goals").select("id,current_amount,initial_saved_amount,saved_amount,metadata").eq("id", goalId).eq("user_id", user.id).is("deleted_at", null).maybeSingle(),
+    supabase.from("transactions").select("id").eq("user_id", user.id).eq("related_entity_type", "savings_goal").eq("related_entity_id", goalId).limit(1),
     supabase.from("savings_goal_entries").select("id").eq("user_id", user.id).eq("savings_goal_id", goalId).limit(1),
+    supabase.from("file_links").select("id").eq("user_id", user.id).eq("entity_type", "savings_goal").eq("entity_id", goalId).limit(1),
   ]);
-  const historyError = transactionsResult.error ?? entriesResult.error;
+  const historyError = goalResult.error ?? transactionsResult.error ?? entriesResult.error ?? filesResult.error;
   if (historyError) return { error: historyError.message };
-  if ((transactionsResult.data?.length ?? 0) > 0 || (entriesResult.data?.length ?? 0) > 0) {
-    return { error: "This savings goal or fund has linked financial history and cannot be deleted because its transactions must remain reconcilable." };
+  if (!goalResult.data) return { error: "Savings goal not found." };
+  const storedMetadata = metadataRecord(goalResult.data.metadata);
+  const hasStoredCapital = [
+    goalResult.data.current_amount,
+    goalResult.data.initial_saved_amount,
+    goalResult.data.saved_amount,
+    storedMetadata.current_amount,
+    storedMetadata.saved_amount,
+  ].some((value) => Math.abs(Number(value) || 0) > 0.005);
+  if ((transactionsResult.data?.length ?? 0) > 0
+    || (entriesResult.data?.length ?? 0) > 0
+    || (filesResult.data?.length ?? 0) > 0
+    || hasStoredCapital) {
+    return { error: "This savings goal or fund has financial history. Deactivate it instead; its transfers and account balance will remain reconciled." };
   }
 
   const { data, error } = await supabase

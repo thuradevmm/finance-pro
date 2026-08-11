@@ -21,6 +21,7 @@ import {
   standaloneDebtPaymentTransactions,
 } from "@/lib/debts/transactions";
 import { buildAccountLedgerActivities, deriveCreditCardDebtMetadata, normalizeAmountType, roundCurrencyValue } from "@/lib/ledger";
+import { storedRecordIsInactive } from "@/lib/records/lifecycle";
 import {
   calculateLinkedSavingsAmounts,
   calculateSavingsContributionCapacity,
@@ -91,7 +92,9 @@ type TransactionRow = {
 type MutationTransaction = Pick<TransactionRow, "account_id" | "category_id" | "id" | "metadata" | "related_entity_id" | "related_entity_type" | "status" | "transfer_account_id" | "type">;
 
 type DebtRow = {
+  archived_at?: string | null;
   id: string;
+  is_active?: boolean | null;
   interest_rate?: number | string | null;
   metadata: unknown;
   monthly_payment?: number | string | null;
@@ -158,7 +161,9 @@ type CategoryRow = {
 };
 type RelatedReferenceRow = {
   account_id?: string | null;
+  archived_at?: string | null;
   id: string;
+  is_active?: boolean | null;
   metadata: unknown;
   name?: string | null;
   payment_account_id?: string | null;
@@ -494,6 +499,25 @@ function recordStatus(metadata: unknown, value: unknown) {
   return String(columnStatus || metadataRecord(metadata).status || "").trim().toLowerCase();
 }
 
+function recordIsDeactivated(record: RelatedReferenceRow) {
+  return storedRecordIsInactive(record);
+}
+
+async function selectOwnedRelatedReference(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: "assets" | "debts" | "savings_goals" | "subscriptions",
+  relatedEntityId: string,
+  userId: string,
+) {
+  return supabase
+    .from(table)
+    .select("*")
+    .eq("id", relatedEntityId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+}
+
 function storedNumericValue(columnValue: unknown, metadataValue: unknown) {
   if (columnValue !== null && columnValue !== undefined && columnValue !== "") return numericValue(columnValue);
   return numericValue(metadataValue);
@@ -579,26 +603,29 @@ async function validateAndResolveTransactionReferences(
   let savingsGoalRecord: SavingsGoalReferenceRow | null = null;
   let relatedError: { message: string } | null = null;
   if (input.relatedEntityType === "debt") {
-    const result = await supabase.from("debts").select("id,name,status,metadata,type,payment_account_id").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await selectOwnedRelatedReference(supabase, "debts", input.relatedEntityId, userId);
     relatedRecord = result.data as RelatedReferenceRow | null;
     relatedError = result.error;
   } else if (input.relatedEntityType === "savings_goal") {
-    const result = await supabase.from("savings_goals").select("id,status,metadata,account_id,account_amount_type,goal_type,target_amount,current_amount,saved_amount,initial_saved_amount").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await selectOwnedRelatedReference(supabase, "savings_goals", input.relatedEntityId, userId);
     savingsGoalRecord = result.data as SavingsGoalReferenceRow | null;
     relatedRecord = savingsGoalRecord;
     relatedError = result.error;
   } else if (input.relatedEntityType === "subscription") {
-    const result = await supabase.from("subscriptions").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await selectOwnedRelatedReference(supabase, "subscriptions", input.relatedEntityId, userId);
     relatedRecord = result.data as RelatedReferenceRow | null;
     relatedError = result.error;
   } else if (input.relatedEntityType === "asset") {
-    const result = await supabase.from("assets").select("id,status,metadata").eq("id", input.relatedEntityId).eq("user_id", userId).is("deleted_at", null).maybeSingle();
+    const result = await selectOwnedRelatedReference(supabase, "assets", input.relatedEntityId, userId);
     relatedRecord = result.data as RelatedReferenceRow | null;
     relatedError = result.error;
   }
   if (relatedError) return { error: relatedError.message, input };
   if (!relatedRecord) return { error: "The selected linked record does not exist.", input };
   const status = recordStatus(relatedRecord.metadata, relatedRecord.status);
+  if (!preservesExistingRelated && recordIsDeactivated(relatedRecord)) {
+    return { error: "Deactivated linked records cannot receive new financial activity. Restore the record first.", input };
+  }
   if (!preservesExistingRelated && input.relatedEntityType === "debt" && ["archived", "paid"].includes(status)) {
     return { error: "Completed or archived Borrowing & Lending records cannot receive new payment or return activity.", input };
   }
@@ -1667,16 +1694,16 @@ async function findCreditCardDebtId(
   referenceDateValue: string | undefined,
   options: { createIfMissing: boolean; initialChargeAmount?: number },
 ) {
-  const { data: debts, error: debtsError } = await supabase
+  const debtsResult = await supabase
     .from("debts")
-    .select("id,status,payment_account_id,total_amount,repaid_amount,metadata,type,next_payment_date")
+    .select("*")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
-  if (debtsError) return { error: debtsError.message };
+  if (debtsResult.error) return { error: debtsResult.error.message };
 
-  const debtRows = (debts as DebtRow[]).filter((debt) => debtStatusKey(debt) !== "archived");
+  const debtRows = (debtsResult.data as DebtRow[]).filter((debt) => !storedRecordIsInactive(debt) && debtStatusKey(debt) !== "archived");
   const creditCardDebtIds = new Set(debtRows
     .filter((debt) => isCreditCardDebt(debt) && creditCardDebtAccountId(debt) === account.id)
     .map((debt) => debt.id));

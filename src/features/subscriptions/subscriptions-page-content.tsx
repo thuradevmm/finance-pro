@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { deleteSubscription } from "@/app/subscriptions/actions";
+import { deactivateSubscription, deleteSubscription, restoreSubscription } from "@/app/subscriptions/actions";
 import { DetailModal, DetailModalField, DetailModalSection } from "@/components/ui/detail-modal";
 import { FilterActions, FilterForm } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
-import { RecordActions } from "@/components/ui/record-actions";
+import { RecordLifecycleActions } from "@/components/ui/record-lifecycle-actions";
 import { SearchField } from "@/components/ui/search-field";
 import { compareSortValues, SortHeader, type SortDirection } from "@/components/ui/sort-header";
 import { useToast } from "@/components/ui/toast-provider";
@@ -91,7 +91,7 @@ function billingTimelineMeta(billing: UpcomingSubscriptionBilling) {
 }
 
 function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
-  const reminderItems = subscriptions.filter((subscription) => subscription.status !== "Paused" && (subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in"))).slice(0, 4);
+  const reminderItems = subscriptions.filter((subscription) => !subscription.isArchived && subscription.status !== "Paused" && (subscription.reminderStatus === "Overdue" || subscription.reminderStatus === "Due today" || subscription.reminderStatus.startsWith("Due in"))).slice(0, 4);
 
   return (
     <section className="mb-6 min-w-0 rounded-lg border border-[#c6c6cd]/70 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)] sm:p-5">
@@ -125,8 +125,8 @@ function ReminderPanel({ subscriptions }: { subscriptions: SubscriptionRecord[] 
 }
 
 function PaidCyclePanel({ subscriptions }: { subscriptions: SubscriptionRecord[] }) {
-  const paidItems = subscriptions.filter((subscription) => subscription.status !== "Paused" && subscription.isPaidForCurrentPeriod).slice(0, 4);
-  const attentionItems = subscriptions.filter((subscription) => subscription.paymentStatus === "Overdue" || subscription.paymentStatus === "Due soon").slice(0, 4);
+  const paidItems = subscriptions.filter((subscription) => !subscription.isArchived && subscription.status !== "Paused" && subscription.isPaidForCurrentPeriod).slice(0, 4);
+  const attentionItems = subscriptions.filter((subscription) => !subscription.isArchived && (subscription.paymentStatus === "Overdue" || subscription.paymentStatus === "Due soon")).slice(0, 4);
 
   return (
     <section className="mb-6 grid min-w-0 gap-4 lg:grid-cols-2">
@@ -218,7 +218,12 @@ function BillingTimeline({ billings }: { billings: UpcomingSubscriptionBilling[]
   );
 }
 
-function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string) => void | Promise<void>; subscriptions: SubscriptionRecord[] }) {
+function SubscriptionsTable({ onDeactivate, onDelete, onRestore, subscriptions }: {
+  onDeactivate: (id: string) => Promise<boolean>;
+  onDelete: (id: string) => void | Promise<void>;
+  onRestore: (id: string) => Promise<boolean>;
+  subscriptions: SubscriptionRecord[];
+}) {
   const [sortKey, setSortKey] = useState<SubscriptionSortKey>("nextBillingDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [viewedSubscription, setViewedSubscription] = useState<SubscriptionRecord | null>(null);
@@ -303,20 +308,26 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-1">
-                      <Link
+                      {!subscription.isArchived && subscription.status !== "Paused" ? <Link
                         className="grid size-9 place-items-center rounded-md text-[#45464d] transition hover:bg-[#eff4ff] hover:text-[#0b1c30]"
                         href={`/transactions/add?subscription=${subscription.id}`}
                         title={`Record payment for ${subscription.name}`}
                       >
                         <Icon className="size-4" name="receipt" />
-                      </Link>
-                      <RecordActions
+                      </Link> : null}
+                      <RecordLifecycleActions
+                        deactivateDescription={`Deactivate ${subscription.name} without deleting any payment transactions or billing evidence. Reminders, forecasts, and new payments will pause.`}
+                        deleteDescription={`Delete ${subscription.name} only if it has no payment transaction, payment record, or recorded billing history.`}
                         editHref={`/subscriptions/${subscription.id}/edit`}
+                        isInactive={subscription.isArchived}
                         itemId={subscription.id}
                         itemLabel={subscription.name}
+                        onDeactivate={onDeactivate}
                         onDelete={onDelete}
+                        onRestore={onRestore}
                         onView={() => setViewedSubscription(subscription)}
-                        deleteDescription={`Deleting ${subscription.name} will remove this subscription from your list.`}
+                        restoreDescription={`Restore ${subscription.name} so it can receive new payments, reminders, and Future Planning suggestions. Existing payment history is unchanged.`}
+                        showDelete={!subscription.hasFinancialHistory}
                       />
                     </div>
                   </td>
@@ -414,14 +425,20 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
               </dl>
 
               <div className="mt-4 flex min-w-0 flex-wrap items-center justify-end gap-2 border-t border-[#c6c6cd]/40 pt-3">
-                <RecordPaymentLink className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-xs font-bold text-[#0b1c30] transition hover:bg-[#eff4ff]" subscription={subscription} />
-                <RecordActions
-                  deleteDescription={`Deleting ${subscription.name} will remove this subscription from your list.`}
+                {!subscription.isArchived && subscription.status !== "Paused" ? <RecordPaymentLink className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#c6c6cd]/70 bg-white px-3 text-xs font-bold text-[#0b1c30] transition hover:bg-[#eff4ff]" subscription={subscription} /> : null}
+                <RecordLifecycleActions
+                  deactivateDescription={`Deactivate ${subscription.name} without deleting any payment transactions or billing evidence. Reminders, forecasts, and new payments will pause.`}
+                  deleteDescription={`Delete ${subscription.name} only if it has no payment transaction, payment record, or recorded billing history.`}
                   editHref={`/subscriptions/${subscription.id}/edit`}
+                  isInactive={subscription.isArchived}
                   itemId={subscription.id}
                   itemLabel={subscription.name}
+                  onDeactivate={onDeactivate}
                   onDelete={onDelete}
+                  onRestore={onRestore}
                   onView={() => setViewedSubscription(subscription)}
+                  restoreDescription={`Restore ${subscription.name} so it can receive new payments, reminders, and Future Planning suggestions. Existing payment history is unchanged.`}
+                  showDelete={!subscription.hasFinancialHistory}
                 />
               </div>
             </article>
@@ -429,7 +446,7 @@ function SubscriptionsTable({ onDelete, subscriptions }: { onDelete: (id: string
         </div>
       </div>
       <DetailModal
-        actions={viewedSubscription ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/subscriptions/${viewedSubscription.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link><RecordPaymentLink className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" subscription={viewedSubscription} /></> : null}
+        actions={viewedSubscription ? <><Link className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0b1c30] hover:bg-[#eff4ff]" href={`/subscriptions/${viewedSubscription.id}/edit`}><Icon className="size-4" name="edit" />Edit</Link>{!viewedSubscription.isArchived && viewedSubscription.status !== "Paused" ? <RecordPaymentLink className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#c6c6cd] bg-white px-4 text-sm font-semibold text-[#0058be] hover:bg-[#eff4ff]" subscription={viewedSubscription} /> : null}</> : null}
         icon={viewedSubscription?.icon}
         iconClassName={viewedSubscription ? `${viewedSubscription.bg} ${viewedSubscription.tone}` : undefined}
         isOpen={viewedSubscription !== null}
@@ -508,6 +525,36 @@ export function SubscriptionsPageContent({
     showSuccess("Subscription deleted successfully.");
   }
 
+  async function handleDeactivate(subscriptionId: string) {
+    setIsPending(true);
+    const result = await deactivateSubscription(subscriptionId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleSubscriptions((items) => items.map((item) => item.id === subscriptionId
+      ? { ...item, isArchived: true, paymentStatus: "Paused", reminderStatus: "Paused", status: "Paused" }
+      : item));
+    showSuccess("Subscription deactivated; payment history is unchanged.");
+    return true;
+  }
+
+  async function handleRestore(subscriptionId: string) {
+    setIsPending(true);
+    const result = await restoreSubscription(subscriptionId);
+    setIsPending(false);
+    if (result.error) {
+      showError(result.error);
+      return false;
+    }
+    setVisibleSubscriptions((items) => items.map((item) => item.id === subscriptionId
+      ? { ...item, isArchived: false, paymentStatus: "Upcoming", reminderStatus: item.reminderEnabled ? item.reminderStatus === "Paused" ? "On" : item.reminderStatus : "Off", status: result.status === "expiring" ? "Expiring" : "Active" }
+      : item));
+    showSuccess("Subscription restored for new payments and reminders.");
+    return true;
+  }
+
   return (
     <>
       <FilterForm className="mb-6 rounded-lg border border-[#c6c6cd]/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.04)]" onSubmit={(event) => {
@@ -524,7 +571,9 @@ export function SubscriptionsPageContent({
       <PaidCyclePanel subscriptions={filteredSubscriptions} />
       <BillingTimeline billings={filteredBillings} />
       <SubscriptionsTable
+        onDeactivate={handleDeactivate}
         onDelete={handleDelete}
+        onRestore={handleRestore}
         subscriptions={filteredSubscriptions}
       />
     </>

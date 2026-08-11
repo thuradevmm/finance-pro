@@ -49,6 +49,7 @@ export type SavingsGoalFormData = {
 type SavingsGoalRow = {
   account_id?: string | null;
   account_amount_type?: string | null;
+  archived_at?: string | null;
   category_id?: string | null;
   created_at?: string | null;
   current_amount?: number | string | null;
@@ -56,6 +57,7 @@ type SavingsGoalRow = {
   contribution_type?: string | null;
   description?: string | null;
   id: string;
+  is_active?: boolean | null;
   goal_type?: string | null;
   initial_saved_amount?: number | string | null;
   metadata?: unknown;
@@ -70,6 +72,7 @@ type SavingsGoalRow = {
 type LinkedTransactionRow = {
   account_id: string | null;
   amount: number | string | null;
+  deleted_at?: string | null;
   id: string;
   metadata: unknown;
   related_entity_id: string | null;
@@ -128,6 +131,7 @@ function mapGoal(
   categoriesById: Map<string, CategoryRecord>,
   linkedSavingsByGoalId: Map<string, number>,
   reserveSavingsByGoalId: Map<string, number>,
+  goalsWithHistory: Set<string>,
 ): SavingsGoalRecord {
   const metadata = metadataRecord(row.metadata);
   const accountId = row.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "");
@@ -182,7 +186,9 @@ function mapGoal(
     contributionPercentage,
     contributionType,
     goalType,
+    hasFinancialHistory: goalsWithHistory.has(row.id) || storedSavedAmountValue > 0.005,
     id: row.id,
+    isArchived: row.is_active === false || Boolean(row.archived_at) || String(metadata.lifecycle_status ?? "").toLowerCase() === "archived",
     linkedSavedAmountValue,
     monthlyContribution: formatMmk(monthlyContributionValue),
     monthlyContributionValue,
@@ -220,10 +226,9 @@ export async function getSavingsGoals(
 
   let transactionsQuery = supabase
     .from("transactions")
-    .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata")
+    .select("id,account_id,transfer_account_id,related_entity_id,type,amount,status,transaction_date,metadata,deleted_at")
     .eq("user_id", userId)
-    .eq("related_entity_type", "savings_goal")
-    .is("deleted_at", null);
+    .eq("related_entity_type", "savings_goal");
   if (options.asOfDate) transactionsQuery = transactionsQuery.lte("transaction_date", options.asOfDate);
 
   let entriesQuery = supabase
@@ -250,7 +255,8 @@ export async function getSavingsGoals(
     const metadata = metadataRecord(goal.metadata);
     return [goal.id, goal.account_id ?? (typeof metadata.account_id === "string" ? metadata.account_id : "")];
   }));
-  const datedTransactions = transactionsResult.data as LinkedTransactionRow[];
+  const allDatedTransactions = transactionsResult.data as LinkedTransactionRow[];
+  const datedTransactions = allDatedTransactions.filter((transaction) => !transaction.deleted_at);
   const datedTransactionIds = new Set(datedTransactions.map((transaction) => transaction.id));
   const datedEntries = (entriesResult.data as SavingsGoalEntryInput[]).filter((entry) => {
     return !options.asOfDate || !entry.transaction_id || datedTransactionIds.has(entry.transaction_id);
@@ -268,6 +274,10 @@ export async function getSavingsGoals(
     })),
     goalAccountIdByGoalId,
   );
+  const goalsWithHistory = new Set<string>([
+    ...allDatedTransactions.flatMap((transaction) => transaction.related_entity_id ? [transaction.related_entity_id] : []),
+    ...(entriesResult.data as SavingsGoalEntryInput[]).map((entry) => entry.savings_goal_id),
+  ]);
 
   return (goalsResult.data as SavingsGoalRow[])
     .map((goal) => mapGoal(
@@ -276,6 +286,7 @@ export async function getSavingsGoals(
       categoriesById,
       linkedAmounts.progressByGoalId,
       linkedAmounts.reserveByGoalId,
+      goalsWithHistory,
     ))
     .sort((first, second) => dateTimeSortValue(first.targetDateTimeValue ?? "") - dateTimeSortValue(second.targetDateTimeValue ?? ""));
 }
@@ -292,15 +303,16 @@ export async function getSavingsGoal(
 }
 
 export function getSavingsGoalSummaries(goals: SavingsGoalRecord[]): SummaryMetric[] {
-  const targetGoals = goals.filter((goal) => goal.goalType === "Target");
+  const activeGoals = goals.filter((goal) => !goal.isArchived);
+  const targetGoals = activeGoals.filter((goal) => goal.goalType === "Target");
   const totalTarget = targetGoals.reduce((total, goal) => total + goal.targetAmountValue, 0);
-  const totalSaved = goals.reduce((total, goal) => total + goal.savedAmountValue, 0);
+  const totalSaved = activeGoals.reduce((total, goal) => total + goal.savedAmountValue, 0);
   const remaining = targetGoals.reduce((total, goal) => total + Math.max(goal.targetAmountValue - goal.savedAmountValue, 0), 0);
 
   return [
     { label: "Total Target", value: formatMmk(totalTarget), icon: "target", tone: "text-[#0b1c30]", bg: "bg-[#eff6ff]" },
     { label: "Total Saved", value: formatMmk(totalSaved), icon: "savings", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Remaining", value: formatMmk(remaining), icon: "timeline", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
-    { label: "Active Goals & Funds", value: String(goals.filter((goal) => goal.status !== "Completed").length), icon: "dashboard", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Active Goals & Funds", value: String(activeGoals.filter((goal) => goal.status !== "Completed").length), icon: "dashboard", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
 }

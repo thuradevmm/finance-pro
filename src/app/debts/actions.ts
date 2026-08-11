@@ -21,8 +21,10 @@ import { isMissingDatabaseObject } from "@/lib/supabase/schema-compat";
 type ActionResult = { error?: string };
 type DebtPayload = Record<string, unknown>;
 type DebtRow = {
+  archived_at?: string | null;
   category_id: string | null;
   id: string;
+  is_active?: boolean | null;
   metadata: unknown;
   monthly_payment: number | string | null;
   name: string;
@@ -491,16 +493,34 @@ async function fetchExistingDebtForUpdate(
   debtId: string,
   userId: string,
 ) {
-  const { data, error } = await supabase
+  let result = await supabase
     .from("debts")
-    .select("id,name,category_id,metadata,monthly_payment,next_payment_date,payment_account_id,repaid_amount,start_date,status,total_amount,type")
+    .select("id,name,category_id,metadata,monthly_payment,next_payment_date,payment_account_id,repaid_amount,start_date,status,total_amount,type,is_active,archived_at")
     .eq("id", debtId)
     .eq("user_id", userId)
     .is("deleted_at", null)
     .maybeSingle();
+  if (result.error && isMissingDatabaseObject(result.error, ["is_active", "archived_at"])) {
+    result = await supabase
+      .from("debts")
+      .select("id,name,category_id,metadata,monthly_payment,next_payment_date,payment_account_id,repaid_amount,start_date,status,total_amount,type")
+      .eq("id", debtId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+  }
 
-  if (error) throw new Error(error.message);
-  return data as DebtRow | null;
+  if (result.error) throw new Error(result.error.message);
+  return result.data as DebtRow | null;
+}
+
+function debtIsArchived(debt: DebtRow) {
+  const metadata = metadataRecord(debt.metadata);
+  const lifecycle = String(metadata.lifecycle_status ?? "").trim().toLowerCase();
+  return debt.is_active === false
+    || Boolean(debt.archived_at)
+    || metadata.is_active === false
+    || ["archived", "deactivated", "inactive"].includes(lifecycle);
 }
 
 function preserveDebtLedgerAmounts(debtPayload: DebtPayload, existingDebt: DebtRow | null, ledgerTotals: DebtLedgerTotals) {
@@ -569,6 +589,10 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
     canonical.input,
     canonical.input.isCreditCardDebt ? creditCardTermsForDebt(canonical.input, accountResult.account) : {},
   );
+  debtPayload.metadata = {
+    ...metadataRecord(debtPayload.metadata),
+    origination_state: "pending",
+  };
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const { data, error } = await supabase
@@ -589,6 +613,19 @@ export async function createDebt(input: DebtFormData): Promise<ActionResult> {
         await supabase.from("debts").delete().eq("id", data.id).eq("user_id", user.id);
         return { error: `${recordLabel(canonical.input)} origination could not be reconciled: ${originationError}` };
       }
+      // A linked transaction makes the record independently auditable. The
+      // pending marker exists only so a failed, unposted create can be cleaned
+      // up without weakening deletion guards for established principal.
+      await supabase
+        .from("debts")
+        .update({
+          metadata: {
+            ...metadataRecord(debtPayload.metadata),
+            origination_state: "reconciled",
+          },
+        })
+        .eq("id", data.id)
+        .eq("user_id", user.id);
       revalidateDebtViews();
       return {};
     }
@@ -619,7 +656,7 @@ async function updateDebtPayload(
   return { data: null, error: { message: "The Borrowing & Lending record could not be updated because the database schema is not aligned with this form." } };
 }
 
-async function archiveDebtPayload(
+async function deleteDebtPayload(
   supabase: Awaited<ReturnType<typeof createClient>>,
   debtId: string,
   userId: string,
@@ -648,6 +685,9 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   }
   if (!existingDebt) return { error: "Borrowing & Lending record not found." };
   const existingMetadata = metadataRecord(existingDebt.metadata);
+  if (debtIsArchived(existingDebt)) {
+    return { error: "Restore this Borrowing & Lending record before editing it." };
+  }
   if (isCreditCardDebtRow(existingDebt)
     && existingMetadata.auto_credit_card_terms === true
     && existingMetadata.manual_credit_card_terms !== true) {
@@ -725,6 +765,98 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   return {};
 }
 
+export async function archiveDebt(debtId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  let existingDebt: DebtRow | null;
+  try {
+    existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
+  }
+  if (!existingDebt) return { error: "Borrowing & Lending record not found." };
+  const metadata = metadataRecord(existingDebt.metadata);
+  if (debtIsArchived(existingDebt)) return {};
+  if (isCreditCardDebtRow(existingDebt)
+    && metadata.auto_credit_card_terms === true
+    && metadata.manual_credit_card_terms !== true) {
+    return { error: "Automatic credit card borrowing follows the linked account lifecycle. Archive the card account after its position is settled instead." };
+  }
+
+  const archivedAt = new Date().toISOString();
+  const lifecyclePayload: DebtPayload = {
+    archived_at: archivedAt,
+    is_active: false,
+    metadata: {
+      ...metadata,
+      archived_at: archivedAt,
+      deactivated_at: archivedAt,
+      is_active: false,
+      lifecycle_status: "archived",
+      retirement_reason: "no_longer_tracked",
+      status_before_deactivation: existingDebt.status ?? metadata.status ?? "active",
+    },
+  };
+  const { data, error } = await updateDebtPayload(supabase, debtId, user.id, lifecyclePayload);
+  if (error) return { error: error.message };
+  if (!data) return { error: "Borrowing & Lending record not found." };
+  revalidateDebtViews(debtId);
+  return {};
+}
+
+export async function restoreDebt(debtId: string): Promise<ActionResult> {
+  const { supabase, user } = await authenticatedClient();
+  if (!user) return { error: "You must be signed in." };
+  let existingDebt: DebtRow | null;
+  try {
+    existingDebt = await fetchExistingDebtForUpdate(supabase, debtId, user.id);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
+  }
+  if (!existingDebt) return { error: "Borrowing & Lending record not found." };
+  if (!debtIsArchived(existingDebt)) return {};
+  const metadata = metadataRecord(existingDebt.metadata);
+  const linkedAccountId = typeof metadata.credit_card_account_id === "string" && metadata.credit_card_account_id
+    ? metadata.credit_card_account_id
+    : typeof metadata.auto_credit_card_account_id === "string" && metadata.auto_credit_card_account_id
+      ? metadata.auto_credit_card_account_id
+      : existingDebt.payment_account_id;
+  const [accountResult, categoryResult] = await Promise.all([
+    linkedAccountId
+      ? supabase.from("accounts").select("id,is_active").eq("id", linkedAccountId).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    existingDebt.category_id
+      ? supabase.from("categories").select("id,is_active").eq("id", existingDebt.category_id).eq("user_id", user.id).is("deleted_at", null).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const dependencyError = accountResult.error ?? categoryResult.error;
+  if (dependencyError) return { error: dependencyError.message };
+  if (!linkedAccountId || !accountResult.data || accountResult.data.is_active === false) {
+    return { error: "Restore or reassign the linked account before restoring this Borrowing & Lending record." };
+  }
+  if (existingDebt.category_id && (!categoryResult.data || categoryResult.data.is_active === false)) {
+    return { error: "Restore or reassign the Borrowing & Lending category before restoring this record." };
+  }
+  const restoredAt = new Date().toISOString();
+  const lifecyclePayload: DebtPayload = {
+    archived_at: null,
+    is_active: true,
+    metadata: {
+      ...metadata,
+      archived_at: null,
+      deactivated_at: null,
+      is_active: true,
+      lifecycle_status: "active",
+      restored_at: restoredAt,
+    },
+  };
+  const { data, error } = await updateDebtPayload(supabase, debtId, user.id, lifecyclePayload);
+  if (error) return { error: error.message };
+  if (!data) return { error: "Borrowing & Lending record not found." };
+  revalidateDebtViews(debtId);
+  return {};
+}
+
 export async function deleteDebt(debtId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
@@ -735,20 +867,26 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
     return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
   }
   if (!existingDebt) return { error: "Borrowing & Lending record not found." };
-  const [transactionsResult, paymentsResult] = await Promise.all([
+  const [transactionsResult, paymentsResult, filesResult] = await Promise.all([
     supabase
       .from("transactions")
       .select("id,metadata,related_entity_id,related_entity_type")
-      .eq("user_id", user.id)
-      .is("deleted_at", null),
+      .eq("user_id", user.id),
     supabase
       .from("debt_payments")
       .select("id")
       .eq("user_id", user.id)
       .eq("debt_id", debtId)
       .limit(1),
+    supabase
+      .from("file_links")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("entity_type", "debt")
+      .eq("entity_id", debtId)
+      .limit(1),
   ]);
-  const linkedError = transactionsResult.error ?? paymentsResult.error;
+  const linkedError = transactionsResult.error ?? paymentsResult.error ?? filesResult.error;
   if (linkedError) return { error: linkedError.message };
   const linkedTransactions = transactionsResult.data ?? [];
   const hasLinkedHistory = linkedTransactions.some((transaction) => {
@@ -758,18 +896,18 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
   });
   const existingMetadata = metadataRecord(existingDebt.metadata);
   const hasStoredRepayment = resolveDebtStoredNumber(existingDebt.repaid_amount, existingMetadata.repaid_amount) > 0.005;
-  const hasCardOpeningBalance = isCreditCardDebtRow(existingDebt)
-    && Math.abs(
-      resolveDebtStoredNumber(existingDebt.total_amount, existingMetadata.total_amount)
-      - resolveDebtStoredNumber(existingDebt.repaid_amount, existingMetadata.repaid_amount),
-    ) > 0.005;
-  if (hasLinkedHistory || (paymentsResult.data?.length ?? 0) > 0 || hasStoredRepayment || hasCardOpeningBalance) {
+  const hasStoredPrincipal = Math.abs(resolveDebtStoredNumber(existingDebt.total_amount, existingMetadata.total_amount)) > 0.005;
+  if (hasLinkedHistory
+    || (paymentsResult.data?.length ?? 0) > 0
+    || (filesResult.data?.length ?? 0) > 0
+    || hasStoredRepayment
+    || hasStoredPrincipal) {
     const nature = isCreditCardDebtRow(existingDebt)
       ? "credit card borrowing"
       : normalizeDebtNature(existingMetadata.debt_nature, existingDebt.name).toLowerCase();
-    return { error: `This ${nature} record has linked financial history and cannot be deleted without breaking account and ${nature === "lending" ? "return" : "repayment"} calculations. Keep the record for reconciliation.` };
+    return { error: `This ${nature} record has financial history. Deactivate it instead; account, ${nature === "lending" ? "return" : "repayment"}, and net-worth calculations will remain reconciled.` };
   }
-  const { data, error } = await archiveDebtPayload(supabase, debtId, user.id);
+  const { data, error } = await deleteDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };
   if (!data) return { error: "Borrowing & Lending record not found." };
   revalidateDebtViews();

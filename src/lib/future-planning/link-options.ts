@@ -26,7 +26,7 @@ export async function getFuturePlanLinkOptions(
 
   return [
     ...savingsGoals
-      .filter((goal) => goal.status !== "Completed")
+      .filter((goal) => !goal.isArchived && goal.status !== "Completed")
       .flatMap((goal): FuturePlanLinkOption[] => {
         const amount = goal.contributionType === "Percentage"
           ? 0
@@ -44,7 +44,7 @@ export async function getFuturePlanLinkOptions(
         }];
       }),
     ...debts
-      .filter((debt) => debt.status !== "Paid")
+      .filter((debt) => !debt.isArchived && debt.status !== "Paid")
       .map((debt): FuturePlanLinkOption => ({
         accountAmountType: debt.accountAmountType,
         accountId: debt.paymentAccountId,

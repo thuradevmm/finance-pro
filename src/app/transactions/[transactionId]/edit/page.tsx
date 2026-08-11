@@ -27,7 +27,7 @@ function relatedOptions(
   const preserves = (type: TransactionRelatedOption["type"], id: string) => transaction?.relatedEntityType === type && transaction.relatedEntityId === id;
   return [
     { label: "No linked record", type: "none", value: "" },
-    ...savingsGoals.map((goal) => ({
+    ...savingsGoals.filter((goal) => !goal.isArchived || preserves("savings_goal", goal.id)).map((goal) => ({
       accountAmountType: goal.accountAmountType,
       accountId: goal.accountId,
       availableAmount: goal.savedAmountValue,
@@ -37,7 +37,7 @@ function relatedOptions(
       type: "savings_goal" as const,
       value: goal.id,
     })),
-    ...debts.filter((debt) => debt.status !== "Paid" || preserves("debt", debt.id)).map((debt) => ({
+    ...debts.filter((debt) => (!debt.isArchived && debt.status !== "Paid") || preserves("debt", debt.id)).map((debt) => ({
       creditCardDebt: debt.isCreditCardDebt ? {
         accountId: debt.creditCardAccountId,
         accountName: accounts.find((account) => account.id === debt.creditCardAccountId)?.name ?? debt.lender,

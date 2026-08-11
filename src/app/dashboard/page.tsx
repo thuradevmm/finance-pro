@@ -63,7 +63,7 @@ export default async function DashboardPage({
       getSavingsGoals(supabase, user.id, accounts, categories, { asOfDate: dateRange.dateTo }),
     ])
     : [[], [], [], []];
-  const amountTypeOptions = dashboardAmountTypeOptions(accounts);
+  const amountTypeOptions = dashboardAmountTypeOptions([...accounts, ...openingAccounts]);
   const selectedAmountTypes = sanitizeDashboardAmountTypes(requestedAmountTypes, amountTypeOptions);
   const hasExplicitAmountTypeFilter = requestedAmountTypes.some((requested) => (
     amountTypeOptions.some((option) => option.toLowerCase() === requested.trim().toLowerCase())
