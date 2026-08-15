@@ -97,7 +97,9 @@ implementations.
 - Total liabilities = card outstanding + other borrowing outstanding.
 - Closing net worth = total assets − total liabilities.
 - Expected closing net worth = opening net worth immediately before the
-  selected period + period net activity.
+  selected period + period net activity + debt cancellation adjustments.
+- Debt cancellation adjustment = borrowing obligations waived − lending
+  receivables abandoned. Undoing a cancellation applies the opposite sign.
 - Reconciliation difference = actual closing net worth − expected closing net
   worth.
 
@@ -110,8 +112,8 @@ The combined dashboard table intentionally presents:
 3. Current liabilities: Credit-card balances owed, Other debt owed, Total
    liabilities.
 4. Closing net worth.
-5. Reconciliation bridge: Opening net worth, Plus net activity, Expected close,
-   Actual close.
+5. Reconciliation bridge: Opening net worth, Plus net activity, Debt
+   cancellation adjustments, Expected close, Actual close.
 
 Period activity and point-in-time position have separate group labels and are
 not presented as though their individual rows directly reconcile.
@@ -140,8 +142,8 @@ metadata.
 
 | Module | Card / total | Authoritative source and formula |
 | --- | --- | --- |
-| Dashboard | Assets, liabilities, net worth | `summarizeNetWorth`; accounts active at the selected date plus every non-deleted debt position as of that date, including deactivated debts with an outstanding balance |
-| Dashboard | Reconciliation | Independent opening snapshot + finalized period activity compared with the ending snapshot |
+| Dashboard | Assets, liabilities, net worth | `summarizeNetWorth`; accounts active at the selected date plus non-canceled debt positions as of that date |
+| Dashboard | Reconciliation | Independent opening snapshot + finalized period activity + effective-dated debt cancellation adjustments compared with the ending snapshot |
 | Accounts | Amount-type totals | `buildAccountLedgerActivities` grouped by active amount type |
 | Accounts | Card limit/outstanding/available | `calculateCreditCardPosition` per card, then `summarizeCreditCardLookup` |
 | Accounts | Credited, debited, repayments, pending, fees, interest | `LedgerAccountActivity`; finalized activity separated from pending reservations |
@@ -169,7 +171,7 @@ linked file, the parent record and all of that evidence are retained.
 | Accounts | Archive / restore | Archive requires a zero reconciled position and no active dependents because archived accounts leave current account totals. Transactions remain unchanged, and dated reports use effective lifecycle history. |
 | Categories | Hide / restore or merge | Historical category references and Future Planning columns remain resolvable. A category used by an active or inactive planning column cannot be deleted. |
 | Assets | Archive / restore | Purchase transactions, recorded value, files, and history events remain unchanged; archived assets reject new purchase activity. |
-| Borrowing & Lending | Deactivate / restore | Origination, repayment, and return events remain unchanged. Outstanding borrowing remains a liability and outstanding lending remains a receivable in net worth; only new activity, reminders, and plans stop. |
+| Borrowing & Lending | Cancel / undo cancellation | Origination, repayment, and return events remain unchanged. The remaining borrowing obligation or lending receivable leaves position reporting from the cancellation date; undo restores it. The non-cash change is shown explicitly in dashboard reconciliation. |
 | Savings goals and funds | Deactivate / restore | Transfers, goal entries, the goal-owned amount type, and account cash remain unchanged; inactive goals leave new selectors and active-goal summaries. |
 | Subscriptions | Pause / restore | Payment history remains unchanged; paused subscriptions stop new payments, reminders, upcoming bills, and recurring projections. |
 | Future Planning columns | Remove / add again | Removal sets the column inactive. Re-adding the category restores the same column and retained monthly amounts. |
@@ -184,7 +186,8 @@ inactive historical reference. These guards inspect all linked transactions,
 including already soft-deleted transaction rows, and never alter transaction
 visibility. A migration recovers legacy tombstones only when they already have
 financial or dependent evidence, preserving stored savings capital exactly.
-Deactivation uses `is_active` and lifecycle metadata instead of `deleted_at`.
+Deactivation and Borrowing & Lending cancellation use `is_active` and
+lifecycle metadata instead of `deleted_at`.
 
 ## Import, currency, cash advances, and exports
 

@@ -9,6 +9,7 @@ import { RecordActions } from "@/components/ui/record-actions";
 type RecordLifecycleActionsProps = {
   deactivateDescription: string;
   deactivateLabel?: string;
+  deactivatePendingLabel?: string;
   deactivateTitle?: string;
   deleteDescription: string;
   deleteTitle?: string;
@@ -22,6 +23,7 @@ type RecordLifecycleActionsProps = {
   onView?: () => void;
   restoreDescription: string;
   restoreLabel?: string;
+  restorePendingLabel?: string;
   restoreTitle?: string;
   showDelete?: boolean;
   showEdit?: boolean;
@@ -35,6 +37,7 @@ type RecordLifecycleActionsProps = {
 export function RecordLifecycleActions({
   deactivateDescription,
   deactivateLabel = "Deactivate",
+  deactivatePendingLabel = "Deactivating…",
   deactivateTitle = "Deactivate record",
   deleteDescription,
   deleteTitle = "Delete unused record",
@@ -48,6 +51,7 @@ export function RecordLifecycleActions({
   onView,
   restoreDescription,
   restoreLabel = "Restore",
+  restorePendingLabel = "Restoring…",
   restoreTitle = "Restore record",
   showDelete = true,
   showEdit = true,
@@ -101,7 +105,7 @@ export function RecordLifecycleActions({
             setIsPending(false);
           }
         }}
-        pendingLabel={isInactive ? "Restoring…" : "Deactivating…"}
+        pendingLabel={isInactive ? restorePendingLabel : deactivatePendingLabel}
         title={isInactive ? restoreTitle : deactivateTitle}
         tone="primary"
       />

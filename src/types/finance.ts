@@ -77,6 +77,7 @@ export type DebtRecord = {
   progressPercent: number;
   hasFinancialHistory: boolean;
   isArchived: boolean;
+  isCanceled: boolean;
   status: DebtStatus;
   icon: IconName;
   tone: string;

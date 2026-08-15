@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "sealedThrough": "20260811200546",
+  "sealedThrough": "202608150001",
   "migrations": [
     {
       "version": "202606180001",
@@ -231,6 +231,11 @@
       "version": "20260811200546",
       "file": "20260811200546_safe_module_lifecycles.sql",
       "sha256": "8030122f3da3f2b41ed10ee430ab620ac00bbc8590e0434a54ee8f89922d6746"
+    },
+    {
+      "version": "202608150001",
+      "file": "202608150001_debt_cancellation_lifecycle.sql",
+      "sha256": "dd6dc060255a39697e23059e02c20477b800df4d16a5320d95dfe1452720c72c"
     }
   ],
   "historyRepairs": [

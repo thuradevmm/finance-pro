@@ -9,8 +9,10 @@ import {
   summarizeAccountPositionForAmountTypes,
   transactionMatchesDashboardAmountTypes,
 } from "../src/lib/dashboard/amount-type-filter.ts";
+import { dashboardFilterHref, normalizeDashboardFilterState } from "../src/lib/dashboard/filter-state.ts";
 
 const filterSource = readFileSync(new URL("../src/features/dashboard/financial-position-date-filter.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("../src/app/dashboard/page.tsx", import.meta.url), "utf8");
 
 const account = (overrides) => ({
   balanceBreakdowns: [],
@@ -63,4 +65,33 @@ test("dashboard amount types use a compact overlay instead of an expanding chip 
   assert.match(filterSource, /Select all/);
   assert.match(filterSource, /selectedCount}\/\{options\.length/);
   assert.doesNotMatch(filterSource, /flex min-h-12 flex-wrap items-center gap-2/);
+});
+
+test("dashboard amount-type selections remain successful after the overlay closes", () => {
+  assert.match(filterSource, /draftAmountTypes\.map\(\(amountType\) => \([\s\S]*name="amountType"[\s\S]*type="hidden"/);
+  assert.doesNotMatch(filterSource, /className="size-4 shrink-0 accent\[#0058be\]"\s+name="amountType"/);
+  assert.match(pageSource, /requestedAmountTypes = Array\.isArray\(resolvedSearchParams\.amountType\)/);
+  assert.match(pageSource, /hasExplicitAmountTypeFilter/);
+});
+
+test("dashboard filter state normalizes, serializes, and restores every filter", () => {
+  const defaults = { dateFrom: "2025-08-15", dateTo: "2026-08-15" };
+  const restored = normalizeDashboardFilterState({
+    amountTypes: ["operation", "Unknown"],
+    dateFrom: "2026-07-01",
+    dateTo: "2026-08-01",
+  }, defaults, ["Emergency", "Operation"]);
+  assert.deepEqual(restored, {
+    amountTypes: ["Operation"],
+    dateFrom: "2026-07-01",
+    dateTo: "2026-08-01",
+  });
+  assert.equal(
+    dashboardFilterHref(restored),
+    "/dashboard?dateFrom=2026-07-01&dateTo=2026-08-01&amountType=Operation",
+  );
+  assert.match(filterSource, /finance-pro:filters:\/dashboard/);
+  assert.match(filterSource, /window\.localStorage\.setItem/);
+  assert.match(filterSource, /router\.replace\(dashboardFilterHref\(restored\)/);
+  assert.match(pageSource, /hasSubmittedFilters=/);
 });

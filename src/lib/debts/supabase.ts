@@ -10,6 +10,7 @@ import type { CategoryRecord } from "@/lib/categories/supabase";
 import { buildEmiSchedule, calculateDebtPayoffSummary, formatDateInput, normalizeDebtRepaymentDate, parseDateInput, unpaidEmiInstallments } from "@/lib/debts/emi";
 import type { DebtInterestRatePeriod } from "@/lib/debts/emi";
 import { calculateDebtProgressPercent } from "@/lib/debts/progress";
+import { debtWasCanceledByDate } from "@/lib/debts/cancellation";
 import { calculateDebtStatus } from "@/lib/debts/status";
 import { resolveDebtStoredNumber } from "@/lib/debts/stored-values";
 import { normalizeCreditCardDebtDisplayName } from "@/lib/debts/naming";
@@ -252,6 +253,7 @@ function mapDebt(
   transactionLedger?: DebtTransactionLedger,
   referenceDate = formatDateInput(new Date()),
   hasLinkedHistory = false,
+  asOfDate?: string,
 ): DebtRecordWithValues {
   const metadata = metadataRecord(row.metadata);
   const categoryId = row.category_id ?? (typeof metadata.category_id === "string" ? metadata.category_id : "");
@@ -365,6 +367,7 @@ function mapDebt(
   // keeps Total, Repaid, Remaining, and the percentage arithmetically aligned.
   const progressAmountValue = isCreditCard ? totalChargedAmountValue : totalAmountValue;
   const progressPercent = calculateDebtProgressPercent(repaidPrincipalValue, progressAmountValue);
+  const isCanceled = debtWasCanceledByDate(row, asOfDate);
 
   return {
     ...appearance,
@@ -385,7 +388,10 @@ function mapDebt(
     interestRatePeriod,
     interestRateValue,
     isCreditCardDebt: isCreditCard,
-    isArchived: row.is_active === false || Boolean(row.archived_at) || String(metadata.lifecycle_status ?? "").toLowerCase() === "archived",
+    // Keep the compatibility alias until every related-record selector has
+    // moved from the old archive vocabulary to cancellation.
+    isArchived: isCanceled,
+    isCanceled,
     usesManualCreditCardTerms: manualCreditCardTerms,
     lender: row.lender ?? (typeof metadata.lender === "string" ? metadata.lender : ""),
     monthlyPayment: formatMmk(monthlyPaymentValue),
@@ -511,7 +517,7 @@ export async function getDebts(
     ...standaloneDebtPaymentTransactions(debtPaymentRows),
   ], datedDebtRows);
   return datedDebtRows
-    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id), options.asOfDate, debtIdsWithHistory.has(row.id)))
+    .map((row) => mapDebt(row, categoriesById, transactionLedgers.get(row.id), options.asOfDate, debtIdsWithHistory.has(row.id), options.asOfDate))
     .sort((first, second) => dateTimeSortValue(first.nextPaymentDateTimeValue ?? "") - dateTimeSortValue(second.nextPaymentDateTimeValue ?? ""));
 }
 
@@ -521,19 +527,20 @@ export async function getDebt(supabase: SupabaseClient, userId: string, debtId: 
 }
 
 export function getDebtSummaries(debts: DebtRecordWithValues[]): SummaryMetric[] {
-  const borrowedDebts = debts.filter((debt) => debt.nature === "Borrowing");
-  const lendingDebts = debts.filter((debt) => debt.nature === "Lending");
+  const financiallyOpenDebts = debts.filter((debt) => !debt.isCanceled);
+  const borrowedDebts = financiallyOpenDebts.filter((debt) => debt.nature === "Borrowing");
+  const lendingDebts = financiallyOpenDebts.filter((debt) => debt.nature === "Lending");
   const totalDebt = borrowedDebts.reduce((sum, debt) => sum + debt.totalAmountValue, 0);
   const repaid = borrowedDebts.reduce((sum, debt) => sum + debt.repaidAmountValue, 0);
   const remaining = borrowedDebts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
   const outstandingLending = lendingDebts.reduce((sum, debt) => sum + debt.remainingBalanceValue, 0);
-  const creditCardUsed = debts.reduce((sum, debt) => sum + debt.creditCardUsedAmountValue, 0);
+  const creditCardUsed = financiallyOpenDebts.reduce((sum, debt) => sum + debt.creditCardUsedAmountValue, 0);
   const summaries: SummaryMetric[] = [
     { label: "Total Borrowing", value: formatMmk(totalDebt), icon: "trendingDown", tone: "text-[#b42318]", bg: "bg-[#fff1f0]" },
     { label: "Borrowing Repaid", value: formatMmk(repaid), icon: "trendingUp", tone: "text-[#047857]", bg: "bg-[#ecfdf5]" },
     { label: "Remaining Borrowing", value: formatMmk(remaining), icon: "timeline", tone: "text-[#0058be]", bg: "bg-[#eff6ff]" },
     { label: "Outstanding Lending", value: formatMmk(outstandingLending), icon: "account", tone: "text-[#7c3aed]", bg: "bg-[#f5f3ff]" },
-    { label: "Active Records", value: String(debts.filter((debt) => !debt.isArchived && debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
+    { label: "Active Records", value: String(debts.filter((debt) => !debt.isCanceled && debt.status !== "Paid").length), icon: "document", tone: "text-[#4f46e5]", bg: "bg-[#eef2ff]" },
   ];
   return creditCardUsed > 0 || debts.some((debt) => debt.isCreditCardDebt)
     ? [
@@ -548,7 +555,7 @@ export function getUpcomingDebtPayments(debts: DebtRecordWithValues[]): Upcoming
   const today = Date.now();
   return debts
     .flatMap((debt): UpcomingDebtPayment[] => {
-      if (debt.isArchived || debt.status === "Paid" || (!debt.isCreditCardDebt && debt.remainingBalanceValue <= 0)) return [];
+      if (debt.isCanceled || debt.status === "Paid" || (!debt.isCreditCardDebt && debt.remainingBalanceValue <= 0)) return [];
       return upcomingInstallments(debt).flatMap((installment, index) => {
         if (installment.amountValue <= 0) return [];
         const dueDateTimeValue = combineDateWithTimestampTime(installment.dueDateValue, debt.createdAtValue);

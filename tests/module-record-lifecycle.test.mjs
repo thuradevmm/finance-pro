@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { recordWasInactiveByDate, storedRecordIsInactive } from "../src/lib/records/lifecycle.ts";
+import { debtIsCanceled, debtWasCanceledByDate } from "../src/lib/debts/cancellation.ts";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -48,10 +49,38 @@ test("account retirement is effective-dated for historical reconciliation", () =
   assert.equal(recordWasInactiveByDate(restored, "2026-08-21"), false);
 });
 
+test("debt cancellation is effective-dated and can be undone", () => {
+  const canceled = {
+    is_active: false,
+    metadata: {
+      cancellation_events: [{ at: "2026-08-11T10:00:00Z", state: "canceled" }],
+      cancellation_status: "canceled",
+    },
+  };
+  assert.equal(debtIsCanceled(canceled), true);
+  assert.equal(debtWasCanceledByDate(canceled, "2026-08-10"), false);
+  assert.equal(debtWasCanceledByDate(canceled, "2026-08-11"), true);
+
+  const undone = {
+    is_active: true,
+    metadata: {
+      cancellation_events: [
+        { at: "2026-08-11T10:00:00Z", state: "canceled" },
+        { at: "2026-08-20T10:00:00Z", state: "active" },
+      ],
+      cancellation_status: "active",
+      lifecycle_status: "active",
+    },
+  };
+  assert.equal(debtIsCanceled(undone), false);
+  assert.equal(debtWasCanceledByDate(undone, "2026-08-15"), true);
+  assert.equal(debtWasCanceledByDate(undone, "2026-08-21"), false);
+});
+
 test("module retirement changes lifecycle state without mutating transactions", () => {
   const actions = [
     ["src/app/assets/actions.ts", "archiveAsset", "restoreAsset"],
-    ["src/app/debts/actions.ts", "archiveDebt", "restoreDebt"],
+    ["src/app/debts/actions.ts", "cancelDebt", "undoDebtCancellation"],
     ["src/app/savings-goals/actions.ts", "archiveSavingsGoal", "restoreSavingsGoal"],
     ["src/app/subscriptions/actions.ts", "deactivateSubscription", "restoreSubscription"],
   ];
@@ -197,10 +226,19 @@ test("Future Planning removal preserves column identity and monthly amounts", ()
   assert.doesNotMatch(archive, /future_planning_amounts/);
 });
 
-test("retired debts keep financial position while only workflow totals stop", () => {
+test("canceled debts leave financial position, summaries, and schedules", () => {
   const debts = source("src/lib/debts/supabase.ts");
-  assert.match(debts, /const borrowedDebts = debts\.filter\(\(debt\) => debt\.nature === "Borrowing"\)/);
-  assert.doesNotMatch(debts, /const borrowedDebts = debts\.filter\([^\n]+isArchived/);
-  assert.match(debts, /Active Records[\s\S]*!debt\.isArchived/);
-  assert.match(debts, /if \(debt\.isArchived \|\| debt\.status === "Paid"/);
+  assert.match(debts, /const financiallyOpenDebts = debts\.filter\(\(debt\) => !debt\.isCanceled\)/);
+  assert.match(debts, /Active Records[\s\S]*!debt\.isCanceled/);
+  assert.match(debts, /if \(debt\.isCanceled \|\| debt\.status === "Paid"/);
+  assert.match(source("src/lib/reconciliation.ts"), /&& !debt\.isCanceled/);
+});
+
+test("legacy debt archives migrate to auditable cancellations", () => {
+  const migration = source("supabase/migrations/202608150001_debt_cancellation_lifecycle.sql");
+  assert.match(migration, /cancellation_targets/);
+  assert.match(migration, /'cancellation_status', 'canceled'/);
+  assert.match(migration, /'cancellation_events'/);
+  assert.match(migration, /'obligation_waived_or_receivable_abandoned'/);
+  assert.doesNotMatch(migration, /(delete\s+from|update\s+public\.transactions)/i);
 });

@@ -15,7 +15,7 @@ import {
   summarizeAccountPositionForAmountTypes,
   transactionMatchesDashboardAmountTypes,
 } from "@/lib/dashboard/amount-type-filter";
-import { normalizeReconciliationDateRange, reconcileFinancialPosition, summarizeNetWorth } from "@/lib/reconciliation";
+import { normalizeReconciliationDateRange, reconcileFinancialPosition, summarizeDebtCancellationAdjustments, summarizeNetWorth } from "@/lib/reconciliation";
 import { getUserSafely } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getDefaultTransactionDateRange } from "@/lib/transactions/date-range";
@@ -33,6 +33,9 @@ export default async function DashboardPage({
   }>;
 }) {
   const resolvedSearchParams = await searchParams;
+  const hasSubmittedFilters = resolvedSearchParams.dateFrom !== undefined
+    || resolvedSearchParams.dateTo !== undefined
+    || resolvedSearchParams.amountType !== undefined;
   const defaultDateRange = getDefaultTransactionDateRange();
   const requestedDateFrom = Array.isArray(resolvedSearchParams.dateFrom) ? resolvedSearchParams.dateFrom[0] : resolvedSearchParams.dateFrom;
   const requestedDateTo = Array.isArray(resolvedSearchParams.dateTo) ? resolvedSearchParams.dateTo[0] : resolvedSearchParams.dateTo;
@@ -82,6 +85,7 @@ export default async function DashboardPage({
     getTransactionSummaryValues(periodTransactions),
     summarizeNetWorth(summarizeAccountPositionForAmountTypes(openingAccounts, selectedAmountTypes), filteredOpeningDebts).netWorth,
     dashboardScopeTransferNet(periodTransactions),
+    summarizeDebtCancellationAdjustments(filteredOpeningDebts, filteredDebts),
   );
   const healthSignals = buildFinancialHealthSignals({ categories, dateFrom: dateRange.dateFrom, dateTo: dateRange.dateTo, savingsGoals: filteredSavingsGoals, transactions: periodTransactions });
 
@@ -106,6 +110,7 @@ export default async function DashboardPage({
         dateTo={dateRange.dateTo}
         defaultDateFrom={defaultDateRange.dateFrom}
         defaultDateTo={defaultDateRange.dateTo}
+        hasSubmittedFilters={hasSubmittedFilters}
         reconciliation={reconciliation}
         selectedAmountTypes={selectedAmountTypes}
       />

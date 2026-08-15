@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { nextCreditCardPaymentDate } from "@/lib/accounts/credit-card-dates";
+import { appendDebtCancellationEvent, debtIsCanceled } from "@/lib/debts/cancellation";
 import { buildEmiSchedule, normalizeDebtRepaymentDate } from "@/lib/debts/emi";
 import { debtOriginationTransactionType, normalizeDebtNature } from "@/lib/debts/nature";
 import { calculateDebtStatus } from "@/lib/debts/status";
@@ -514,15 +515,6 @@ async function fetchExistingDebtForUpdate(
   return result.data as DebtRow | null;
 }
 
-function debtIsArchived(debt: DebtRow) {
-  const metadata = metadataRecord(debt.metadata);
-  const lifecycle = String(metadata.lifecycle_status ?? "").trim().toLowerCase();
-  return debt.is_active === false
-    || Boolean(debt.archived_at)
-    || metadata.is_active === false
-    || ["archived", "deactivated", "inactive"].includes(lifecycle);
-}
-
 function preserveDebtLedgerAmounts(debtPayload: DebtPayload, existingDebt: DebtRow | null, ledgerTotals: DebtLedgerTotals) {
   if (!existingDebt) return debtPayload;
 
@@ -685,8 +677,8 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   }
   if (!existingDebt) return { error: "Borrowing & Lending record not found." };
   const existingMetadata = metadataRecord(existingDebt.metadata);
-  if (debtIsArchived(existingDebt)) {
-    return { error: "Restore this Borrowing & Lending record before editing it." };
+  if (debtIsCanceled(existingDebt)) {
+    return { error: "Undo this Borrowing & Lending cancellation before editing it." };
   }
   if (isCreditCardDebtRow(existingDebt)
     && existingMetadata.auto_credit_card_terms === true
@@ -765,7 +757,7 @@ export async function updateDebt(debtId: string, input: DebtFormData): Promise<A
   return {};
 }
 
-export async function archiveDebt(debtId: string): Promise<ActionResult> {
+export async function cancelDebt(debtId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
   let existingDebt: DebtRow | null;
@@ -776,25 +768,29 @@ export async function archiveDebt(debtId: string): Promise<ActionResult> {
   }
   if (!existingDebt) return { error: "Borrowing & Lending record not found." };
   const metadata = metadataRecord(existingDebt.metadata);
-  if (debtIsArchived(existingDebt)) return {};
+  if (debtIsCanceled(existingDebt)) return {};
   if (isCreditCardDebtRow(existingDebt)
     && metadata.auto_credit_card_terms === true
     && metadata.manual_credit_card_terms !== true) {
-    return { error: "Automatic credit card borrowing follows the linked account lifecycle. Archive the card account after its position is settled instead." };
+    return { error: "Automatic credit card borrowing follows the linked account lifecycle and cannot be canceled independently." };
   }
 
-  const archivedAt = new Date().toISOString();
+  const canceledAt = new Date().toISOString();
   const lifecyclePayload: DebtPayload = {
-    archived_at: archivedAt,
+    archived_at: canceledAt,
     is_active: false,
     metadata: {
       ...metadata,
-      archived_at: archivedAt,
-      deactivated_at: archivedAt,
+      archived_at: null,
+      canceled_at: canceledAt,
+      cancellation_events: appendDebtCancellationEvent(metadata, { at: canceledAt, state: "canceled" }),
+      cancellation_reason: "obligation_waived_or_receivable_abandoned",
+      cancellation_status: "canceled",
+      deactivated_at: canceledAt,
       is_active: false,
-      lifecycle_status: "archived",
-      retirement_reason: "no_longer_tracked",
-      status_before_deactivation: existingDebt.status ?? metadata.status ?? "active",
+      lifecycle_status: "canceled",
+      retirement_reason: "financial_cancellation",
+      status_before_cancellation: existingDebt.status ?? metadata.status ?? "active",
     },
   };
   const { data, error } = await updateDebtPayload(supabase, debtId, user.id, lifecyclePayload);
@@ -804,7 +800,7 @@ export async function archiveDebt(debtId: string): Promise<ActionResult> {
   return {};
 }
 
-export async function restoreDebt(debtId: string): Promise<ActionResult> {
+export async function undoDebtCancellation(debtId: string): Promise<ActionResult> {
   const { supabase, user } = await authenticatedClient();
   if (!user) return { error: "You must be signed in." };
   let existingDebt: DebtRow | null;
@@ -814,7 +810,7 @@ export async function restoreDebt(debtId: string): Promise<ActionResult> {
     return { error: error instanceof Error ? error.message : "Unable to load the Borrowing & Lending record." };
   }
   if (!existingDebt) return { error: "Borrowing & Lending record not found." };
-  if (!debtIsArchived(existingDebt)) return {};
+  if (!debtIsCanceled(existingDebt)) return {};
   const metadata = metadataRecord(existingDebt.metadata);
   const linkedAccountId = typeof metadata.credit_card_account_id === "string" && metadata.credit_card_account_id
     ? metadata.credit_card_account_id
@@ -832,10 +828,10 @@ export async function restoreDebt(debtId: string): Promise<ActionResult> {
   const dependencyError = accountResult.error ?? categoryResult.error;
   if (dependencyError) return { error: dependencyError.message };
   if (!linkedAccountId || !accountResult.data || accountResult.data.is_active === false) {
-    return { error: "Restore or reassign the linked account before restoring this Borrowing & Lending record." };
+    return { error: "Restore or reassign the linked account before undoing this cancellation." };
   }
   if (existingDebt.category_id && (!categoryResult.data || categoryResult.data.is_active === false)) {
-    return { error: "Restore or reassign the Borrowing & Lending category before restoring this record." };
+    return { error: "Restore or reassign the Borrowing & Lending category before undoing this cancellation." };
   }
   const restoredAt = new Date().toISOString();
   const lifecyclePayload: DebtPayload = {
@@ -844,6 +840,9 @@ export async function restoreDebt(debtId: string): Promise<ActionResult> {
     metadata: {
       ...metadata,
       archived_at: null,
+      canceled_at: null,
+      cancellation_events: appendDebtCancellationEvent(metadata, { at: restoredAt, state: "active" }),
+      cancellation_status: "active",
       deactivated_at: null,
       is_active: true,
       lifecycle_status: "active",
@@ -905,7 +904,7 @@ export async function deleteDebt(debtId: string): Promise<ActionResult> {
     const nature = isCreditCardDebtRow(existingDebt)
       ? "credit card borrowing"
       : normalizeDebtNature(existingMetadata.debt_nature, existingDebt.name).toLowerCase();
-    return { error: `This ${nature} record has financial history. Deactivate it instead; account, ${nature === "lending" ? "return" : "repayment"}, and net-worth calculations will remain reconciled.` };
+    return { error: `This ${nature} record has financial history. Cancel it instead to waive its remaining ${nature === "lending" ? "receivable" : "obligation"} while preserving the account and transaction audit trail.` };
   }
   const { data, error } = await deleteDebtPayload(supabase, debtId, user.id);
   if (error) return { error: error.message };

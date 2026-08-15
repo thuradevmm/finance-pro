@@ -19,8 +19,8 @@ test("linked module records retire without deleting their financial history", ()
   assert.match(assets, /from\("transactions"\)[\s\S]*related_entity_type", "asset"/);
   assert.match(assets, /export async function archiveAsset/);
   assert.match(assets, /Change its status to Archived so its transactions remain reconcilable/);
-  assert.match(debts, /export async function archiveDebt/);
-  assert.match(debts, /Deactivate it instead; account,/);
+  assert.match(debts, /export async function cancelDebt/);
+  assert.match(debts, /Cancel it instead to waive its remaining/);
   assert.match(savings, /from\("transactions"\)[\s\S]*related_entity_type", "savings_goal"/);
   assert.match(savings, /export async function archiveSavingsGoal/);
   assert.match(savings, /Deactivate it instead; its transfers and account balance will remain reconciled/);

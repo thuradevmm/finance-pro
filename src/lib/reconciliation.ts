@@ -2,7 +2,9 @@ import { roundCurrencyValue, type FinancialPositionSummary, type LedgerSummary }
 import { normalizeTransactionDate } from "./transactions/filters.ts";
 
 export type ReconciliationDebtInput = {
+  id?: string | null;
   isCreditCardDebt?: boolean;
+  isCanceled?: boolean;
   nature?: string | null;
   remainingBalanceValue?: number | string | null;
   status?: string | null;
@@ -19,6 +21,7 @@ export type NetWorthSummary = {
 };
 
 export type FinancialReconciliation = NetWorthSummary & LedgerSummary & {
+  cancellationAdjustments: number;
   difference: number;
   hasIndependentOpeningPosition: boolean;
   openingPositionAndAdjustments: number;
@@ -50,6 +53,7 @@ function numericValue(value: unknown) {
 
 function activeStandardDebt(debt: ReconciliationDebtInput) {
   return !debt.isCreditCardDebt
+    && !debt.isCanceled
     && String(debt.status ?? "").trim().toLowerCase() !== "archived"
     && numericValue(debt.remainingBalanceValue) > 0;
 }
@@ -86,6 +90,29 @@ export function summarizeNetWorth(
 }
 
 /**
+ * Waiving borrowing increases net worth; abandoning a lending receivable
+ * decreases it. Undoing either cancellation applies the exact opposite. This
+ * non-cash movement belongs in the reconciliation bridge, not operating
+ * Credits or Debits and not the account ledger.
+ */
+export function summarizeDebtCancellationAdjustments(
+  openingDebts: ReconciliationDebtInput[],
+  closingDebts: ReconciliationDebtInput[],
+) {
+  const openingById = new Map(openingDebts.flatMap((debt) => debt.id ? [[debt.id, debt]] : []));
+  return roundCurrencyValue(closingDebts.reduce((total, debt) => {
+    if (!debt.id || debt.isCreditCardDebt) return total;
+    const opening = openingById.get(debt.id);
+    const wasCanceled = opening?.isCanceled ?? false;
+    const isCanceled = debt.isCanceled ?? false;
+    if (wasCanceled === isCanceled) return total;
+    const amount = numericValue(debt.remainingBalanceValue);
+    const cancellationSign = String(debt.nature).toLowerCase() === "lending" ? -1 : 1;
+    return total + (isCanceled ? cancellationSign * amount : -cancellationSign * amount);
+  }, 0));
+}
+
+/**
  * A complete historical bridge cannot assume that every opening account,
  * manually-created debt, or lending record has a corresponding transaction.
  * Those legacy/opening values are presented explicitly instead of being
@@ -97,11 +124,13 @@ export function reconcileFinancialPosition(
   transactions: Pick<LedgerSummary, "expenses" | "income">,
   openingNetWorth?: number,
   scopeTransfers = 0,
+  cancellationAdjustments = 0,
 ): FinancialReconciliation {
   const netWorth = summarizeNetWorth(accountPosition, debts);
   const income = roundCurrencyValue(transactions.income);
   const expenses = roundCurrencyValue(transactions.expenses);
   const normalizedScopeTransfers = roundCurrencyValue(scopeTransfers);
+  const normalizedCancellationAdjustments = roundCurrencyValue(cancellationAdjustments);
   const net = roundCurrencyValue(income - expenses + normalizedScopeTransfers);
   const hasIndependentOpeningPosition = Number.isFinite(openingNetWorth);
   // The optional opening position is calculated independently as of the day
@@ -111,10 +140,11 @@ export function reconcileFinancialPosition(
   const openingPositionAndAdjustments = hasIndependentOpeningPosition
     ? roundCurrencyValue(openingNetWorth!)
     : roundCurrencyValue(netWorth.netWorth - net);
-  const reconciledClosingNetWorth = roundCurrencyValue(openingPositionAndAdjustments + net);
+  const reconciledClosingNetWorth = roundCurrencyValue(openingPositionAndAdjustments + net + normalizedCancellationAdjustments);
 
   return {
     ...netWorth,
+    cancellationAdjustments: normalizedCancellationAdjustments,
     difference: roundCurrencyValue(netWorth.netWorth - reconciledClosingNetWorth),
     expenses,
     hasIndependentOpeningPosition,

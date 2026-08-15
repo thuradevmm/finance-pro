@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { DateRangeField } from "@/components/ui/date-range-field";
 import { FilterActions } from "@/components/ui/filter-actions";
 import { Icon } from "@/components/ui/icon";
+import { dashboardFilterHref, normalizeDashboardFilterState, type DashboardFilterState } from "@/lib/dashboard/filter-state";
 
 type FinancialPositionDateFilterProps = {
   amountTypeOptions: string[];
@@ -13,6 +14,7 @@ type FinancialPositionDateFilterProps = {
   dateTo: string;
   defaultDateFrom: string;
   defaultDateTo: string;
+  hasSubmittedFilters: boolean;
   selectedAmountTypes: string[];
 };
 
@@ -113,7 +115,6 @@ function AmountTypeFilter({ onChange, options, value }: AmountTypeFilterProps) {
                   <input
                     checked={checked}
                     className="size-4 shrink-0 accent-[#0058be]"
-                    name="amountType"
                     onChange={(event) => toggleAmountType(amountType, event.target.checked)}
                     type="checkbox"
                     value={amountType}
@@ -136,12 +137,68 @@ export function FinancialPositionDateFilter({
   dateTo,
   defaultDateFrom,
   defaultDateTo,
+  hasSubmittedFilters,
   selectedAmountTypes,
 }: FinancialPositionDateFilterProps) {
   const router = useRouter();
   const [draftFrom, setDraftFrom] = useState(dateFrom);
   const [draftTo, setDraftTo] = useState(dateTo);
   const [draftAmountTypes, setDraftAmountTypes] = useState(selectedAmountTypes);
+  const appliedFilterKey = JSON.stringify({ amountTypes: selectedAmountTypes, dateFrom, dateTo });
+  const [syncedAppliedFilterKey, setSyncedAppliedFilterKey] = useState(appliedFilterKey);
+  const restoredRef = useRef(false);
+  const storageKey = "finance-pro:filters:/dashboard";
+
+  // Keep drafts aligned with Apply, Reset, and browser Back/Forward without an
+  // effect-driven synchronization render.
+  if (syncedAppliedFilterKey !== appliedFilterKey) {
+    setSyncedAppliedFilterKey(appliedFilterKey);
+    setDraftFrom(dateFrom);
+    setDraftTo(dateTo);
+    setDraftAmountTypes(selectedAmountTypes);
+  }
+
+  useEffect(() => {
+    const current = normalizeDashboardFilterState({
+      amountTypes: selectedAmountTypes,
+      dateFrom,
+      dateTo,
+    }, { dateFrom: defaultDateFrom, dateTo: defaultDateTo }, amountTypeOptions);
+
+    if (hasSubmittedFilters) {
+      restoredRef.current = true;
+      window.localStorage.setItem(storageKey, JSON.stringify(current));
+      return;
+    }
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    let stored: Partial<DashboardFilterState> | null = null;
+    try {
+      stored = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
+    } catch {
+      stored = null;
+    }
+    const restored = normalizeDashboardFilterState(
+      stored,
+      { dateFrom: defaultDateFrom, dateTo: defaultDateTo },
+      amountTypeOptions,
+    );
+    window.localStorage.setItem(storageKey, JSON.stringify(restored));
+    router.replace(dashboardFilterHref(restored), { scroll: false });
+  }, [amountTypeOptions, dateFrom, dateTo, defaultDateFrom, defaultDateTo, hasSubmittedFilters, router, selectedAmountTypes]);
+
+  function currentDraftState() {
+    return normalizeDashboardFilterState({
+      amountTypes: draftAmountTypes,
+      dateFrom: draftFrom,
+      dateTo: draftTo,
+    }, { dateFrom: defaultDateFrom, dateTo: defaultDateTo }, amountTypeOptions);
+  }
+
+  function storeDraftFilters() {
+    window.localStorage.setItem(storageKey, JSON.stringify(currentDraftState()));
+  }
 
   function updateFrom(value: string) {
     setDraftFrom(value);
@@ -154,7 +211,7 @@ export function FinancialPositionDateFilter({
   }
 
   return (
-    <form action="/dashboard" className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(22rem,1fr)_minmax(15rem,20rem)_auto] xl:items-center" method="get">
+    <form action="/dashboard" className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(22rem,1fr)_minmax(15rem,20rem)_auto] xl:items-center" method="get" onSubmit={storeDraftFilters}>
       <div className="min-w-0 sm:col-span-2 xl:col-span-1">
         <DateRangeField
           fromName="dateFrom"
@@ -167,12 +224,17 @@ export function FinancialPositionDateFilter({
         />
       </div>
       <AmountTypeFilter onChange={setDraftAmountTypes} options={amountTypeOptions} value={draftAmountTypes} />
+      {draftAmountTypes.map((amountType) => (
+        <input key={amountType} name="amountType" type="hidden" value={amountType} />
+      ))}
       <FilterActions
         onReset={() => {
-          setDraftFrom(defaultDateFrom);
-          setDraftTo(defaultDateTo);
-          setDraftAmountTypes(amountTypeOptions);
-          router.replace("/dashboard", { scroll: false });
+          const defaults = normalizeDashboardFilterState(null, { dateFrom: defaultDateFrom, dateTo: defaultDateTo }, amountTypeOptions);
+          setDraftFrom(defaults.dateFrom);
+          setDraftTo(defaults.dateTo);
+          setDraftAmountTypes(defaults.amountTypes);
+          window.localStorage.setItem(storageKey, JSON.stringify(defaults));
+          router.replace(dashboardFilterHref(defaults), { scroll: false });
         }}
         searchLabel="Apply Filters"
       />

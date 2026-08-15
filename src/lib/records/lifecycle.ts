@@ -21,7 +21,7 @@ export function storedRecordIsInactive(record: StoredLifecycleRecord) {
   return record.is_active === false
     || Boolean(record.archived_at)
     || metadata.is_active === false
-    || ["archived", "deactivated", "inactive"].includes(lifecycle);
+    || ["archived", "canceled", "cancelled", "deactivated", "inactive"].includes(lifecycle);
 }
 
 export function recordWasInactiveByDate(record: StoredLifecycleRecord, asOfDate?: string) {

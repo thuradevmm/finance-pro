@@ -11,6 +11,7 @@ type FinancialPositionReconciliationProps = {
   dateTo: string;
   defaultDateFrom: string;
   defaultDateTo: string;
+  hasSubmittedFilters: boolean;
   reconciliation: FinancialReconciliation;
   selectedAmountTypes: string[];
 };
@@ -34,6 +35,7 @@ export function FinancialPositionReconciliation({
   dateTo,
   defaultDateFrom,
   defaultDateTo,
+  hasSubmittedFilters,
   reconciliation,
   selectedAmountTypes,
 }: FinancialPositionReconciliationProps) {
@@ -48,7 +50,8 @@ export function FinancialPositionReconciliation({
    * 1. Period activity: Credits − Debits = Net activity.
    * 2. Current position: liquid assets + receivables, then card + borrowing
    *    liabilities, followed by Assets − Liabilities = Closing net worth.
-   * 3. Reconciliation: Opening net worth + Net activity = Expected close;
+   * 3. Reconciliation: Opening net worth + Net activity + non-cash debt
+   *    cancellations = Expected close;
    *    Actual close − Expected close = Difference.
    * Activity and position are deliberately separated by group labels because
    * they describe a period and a point in time respectively.
@@ -67,7 +70,8 @@ export function FinancialPositionReconciliation({
     { amount: reconciliation.netWorth, explanation: "Total assets − total liabilities", group: "Current position", label: "Closing net worth", subtotal: true },
     { amount: reconciliation.openingPositionAndAdjustments, explanation: `Net worth immediately before ${positionDateLabel(dateFrom)}`, group: "Reconciliation", label: "Opening net worth" },
     { amount: reconciliation.net, explanation: "Credits − Debits + scoped transfers during this period", group: "Reconciliation", label: "Plus net activity" },
-    { amount: reconciliation.reconciledClosingNetWorth, explanation: "Opening net worth + net activity", group: "Reconciliation", label: "Expected closing net worth", subtotal: true },
+    { amount: reconciliation.cancellationAdjustments, explanation: "Borrowing waived − lending receivables abandoned; undoing a cancellation reverses the adjustment", group: "Reconciliation", label: "Debt cancellation adjustments" },
+    { amount: reconciliation.reconciledClosingNetWorth, explanation: "Opening net worth + net activity + debt cancellation adjustments", group: "Reconciliation", label: "Expected closing net worth", subtotal: true },
     { amount: reconciliation.netWorth, explanation: `Assets − liabilities as of ${positionLabel}`, group: "Reconciliation", label: "Actual closing net worth", subtotal: true },
   ];
 
@@ -93,6 +97,7 @@ export function FinancialPositionReconciliation({
             dateTo={dateTo}
             defaultDateFrom={defaultDateFrom}
             defaultDateTo={defaultDateTo}
+            hasSubmittedFilters={hasSubmittedFilters}
             selectedAmountTypes={selectedAmountTypes}
           />
           <p className="mt-2 text-xs font-medium text-[#45464d]">Selected period: {periodLabel} · Amount types: {selectedAmountTypes.join(", ") || "All"}</p>
@@ -163,7 +168,7 @@ export function FinancialPositionReconciliation({
           <details className="mt-3 border-t border-current/15 pt-3 text-xs leading-5 text-[#45464d]">
             <summary className="cursor-pointer font-bold text-[#0058be]">How reconciliation is calculated</summary>
             <p className="mt-2">
-              Expected closing net worth = opening net worth + finalized Credits − finalized Debits + net transfers crossing the selected amount-type boundary. Difference = actual closing net worth − expected closing net worth. Pending entries affect working account availability but are excluded from finalized activity until cleared.
+              Expected closing net worth = opening net worth + finalized Credits − finalized Debits + net transfers crossing the selected amount-type boundary + non-cash debt cancellation adjustments. Difference = actual closing net worth − expected closing net worth. Pending entries affect working account availability but are excluded from finalized activity until cleared.
             </p>
           </details>
         </div>

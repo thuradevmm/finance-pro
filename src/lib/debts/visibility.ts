@@ -44,7 +44,7 @@ export function getDebtListEmptyState({
 
   if (showActiveOnly) {
     return {
-      description: "All borrowing and lending records are completed or deactivated. Show all records to review their history.",
+      description: "All borrowing and lending records are completed or canceled. Show all records to review their history.",
       title: "No active borrowing or lending",
     };
   }

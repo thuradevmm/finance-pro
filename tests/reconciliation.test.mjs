@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   normalizeReconciliationDateRange,
   reconcileFinancialPosition,
+  summarizeDebtCancellationAdjustments,
   summarizeNetWorth,
 } from "../src/lib/reconciliation.ts";
 
@@ -19,6 +20,7 @@ const debts = [
   { isCreditCardDebt: false, nature: "Borrowing", remainingBalanceValue: 2_000, status: "Active" },
   { isCreditCardDebt: false, nature: "Lending", remainingBalanceValue: 1_200, status: "Active" },
   { isCreditCardDebt: false, nature: "Borrowing", remainingBalanceValue: 900, status: "Archived" },
+  { isCanceled: true, isCreditCardDebt: false, nature: "Lending", remainingBalanceValue: 700, status: "Active" },
 ];
 
 test("dashboard reconciliation dates default safely and normalize reversed ranges", () => {
@@ -47,6 +49,16 @@ test("net worth includes lending receivables and standard debts without double-c
   });
 });
 
+test("debt cancellation and undo become explicit non-cash reconciliation adjustments", () => {
+  const opening = [
+    { id: "borrow", isCanceled: false, nature: "Borrowing", remainingBalanceValue: 2_000 },
+    { id: "lend", isCanceled: false, nature: "Lending", remainingBalanceValue: 1_200 },
+  ];
+  const canceled = opening.map((debt) => ({ ...debt, isCanceled: true }));
+  assert.equal(summarizeDebtCancellationAdjustments(opening, canceled), 800);
+  assert.equal(summarizeDebtCancellationAdjustments(canceled, opening), -800);
+});
+
 test("historical income and expense reconcile through explicit opening and legacy adjustments", () => {
   assert.deepEqual(reconcileFinancialPosition(accountPosition, debts, {
     expenses: 3_000,
@@ -54,6 +66,7 @@ test("historical income and expense reconcile through explicit opening and legac
     income: 10_000,
   }), {
     borrowingLiabilities: 2_000,
+    cancellationAdjustments: 0,
     cardLiabilities: 500,
     cashAndCardCredit: 10_100,
     difference: 0,
